@@ -1,0 +1,30 @@
+# .gitignore compatible file for ignoring files with chalk apply
+# Chalk also respects .gitignore
+
+# Ignore test files
+tests
+
+# Python artifacts
+venv
+*venv*
+virtualenv
+__pycache__
+*.pyc
+*.py~
+.eggs
+*.egg-info
+dist
+*.ipynb_checkpoints*
+
+# Editor configuration
+.vscode
+.zed
+.helix
+
+# Intellij
+*.iml
+idea
+
+# Git artifacts
+.git
+.github

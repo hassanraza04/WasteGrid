@@ -1,0 +1,8 @@
+{
+  "python.languageServer": "None",
+  "pyright.disableLanguageServices": true,
+  "basedpyright.disableLanguageServices": true,
+  "ty.disableLanguageServices": true,
+  "ty.diagnosticMode": "off",
+  "ruff.enable": false
+}

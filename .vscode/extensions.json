@@ -1,0 +1,10 @@
+{
+  "recommendations": ["chalk-ai.chalk-vscode"],
+  "unwantedRecommendations": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "ms-pyright.pyright",
+    "detachhead.basedpyright",
+    "astral-sh.ty"
+  ]
+}

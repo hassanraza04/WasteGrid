@@ -1,0 +1,35 @@
+
+[project]
+name = "chalk-project"
+version = "0.1.0"
+description = "Chalk project"
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+  "chalkcompute",
+  "chalkpy[runtime]",
+]
+
+[tool.uv]
+dev-dependencies = [
+  "pytest>=7.0",
+  "pytest-cov>=4.0",
+  "black>=23.0",
+  "isort>=5.0",
+  "flake8>=6.0",
+  "ipython>=8.37.0",
+  "jupyter>=1.1.1",
+  "ipykernel>=6.29.5",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.pyright]
+ignore = ["."]
+
+[tool.mypy]
+ignore_errors = true
+
+[tool.ty.rules]
+all = "ignore"
