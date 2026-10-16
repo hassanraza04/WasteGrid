@@ -8,6 +8,7 @@ requires-python = ">=3.11,<3.15"
 dependencies = [
   "chalkcompute",
   "chalkpy[runtime]",
+  "photonhq-api>=0.5.0",
 ]
 
 [tool.uv]
