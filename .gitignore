@@ -1,4 +1,3 @@
-
 # Python artifacts
 venv
 *venv*
@@ -9,6 +8,11 @@ __pycache__
 .eggs
 *.egg-info
 dist
+.coverage
+.pytest_cache/
+
+# Local configuration
+.env
 
 # Intellij
 *.iml
