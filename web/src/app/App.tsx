@@ -1,5 +1,10 @@
 import { Route, Routes } from "react-router-dom";
 
+import { AdminDashboardPage } from "../admin/AdminDashboardPage";
+import { AdminSignInPage } from "../admin/AdminSignInPage";
+import { RequireAdmin } from "../admin/RequireAdmin";
+import { BrowserAdminSession } from "../auth/browserAdminSession";
+import type { AdminSession } from "../auth/adminSession";
 import { CreateReportPage } from "../customer/CreateReportPage";
 import { CustomerHomePage } from "../customer/CustomerHomePage";
 import { ReportDetailPage } from "../customer/ReportDetailPage";
@@ -8,12 +13,17 @@ import { BrowserReportRepository } from "../data/browserReportRepository";
 import type { ReportRepository } from "../data/reportRepository";
 
 const defaultRepository = new BrowserReportRepository(window.localStorage);
+const defaultAdminSession = new BrowserAdminSession(window.localStorage);
 
 interface AppProperties {
   repository?: ReportRepository;
+  adminSession?: AdminSession;
 }
 
-export function App({ repository = defaultRepository }: AppProperties) {
+export function App({
+  repository = defaultRepository,
+  adminSession = defaultAdminSession,
+}: AppProperties) {
   return (
     <Routes>
       <Route path="/" element={<CustomerHomePage repository={repository} />} />
@@ -23,6 +33,15 @@ export function App({ repository = defaultRepository }: AppProperties) {
         path="/report/:reference"
         element={<ReportDetailPage repository={repository} />}
       />
+      <Route
+        path="/admin"
+        element={
+          <RequireAdmin session={adminSession}>
+            <AdminDashboardPage repository={repository} session={adminSession} />
+          </RequireAdmin>
+        }
+      />
+      <Route path="/admin/sign-in" element={<AdminSignInPage session={adminSession} />} />
     </Routes>
   );
 }
