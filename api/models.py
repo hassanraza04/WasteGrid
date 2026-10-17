@@ -38,6 +38,14 @@ class Crew(Base):
     illustrative: Mapped[bool] = mapped_column(Boolean, default=False)
     version: Mapped[int] = mapped_column(Integer, default=1)
 
+    location_recorded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    location_received_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    location_revision: Mapped[int] = mapped_column(Integer, default=0)
+
 
 class StaffRole(Base):
     __tablename__ = "staff_roles"
@@ -65,6 +73,9 @@ class Job(Base):
     route_position: Mapped[int | None] = mapped_column(Integer)
     travel_minutes: Mapped[float] = mapped_column(Float, default=0)
     decision_summary: Mapped[str] = mapped_column(Text, default="")
+    collection_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
 
 class Report(Base):
@@ -189,6 +200,19 @@ class Plan(Base):
     payload: Mapped[dict] = mapped_column(JSON)
     stale: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    routing_mode: Mapped[str] = mapped_column(String(20), default="legacy")
+
+
+class RoutingPreview(Base):
+    __tablename__ = "routing_previews"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    payload: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    dispatched_plan_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("wastegrid.plans.id")
+    )
+    dispatch_command_id: Mapped[UUID | None] = mapped_column(Uuid, unique=True)
+    dispatched_by: Mapped[UUID | None] = mapped_column(Uuid)
 
 
 class Assignment(Base):

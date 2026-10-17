@@ -25,6 +25,7 @@ from api.models import (
     Photo,
     Plan,
     Report,
+    RoutingPreview,
     Task,
 )
 from api.schemas import (
@@ -166,6 +167,7 @@ def seed(engine, cloud, reset=False):
                     OutgoingMessage,
                     Task,
                     Assignment,
+                    RoutingPreview,
                     Plan,
                     Event,
                     Conversation,

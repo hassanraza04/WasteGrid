@@ -4,7 +4,7 @@
       "crew_id": "30000000-0000-4000-8000-000000000001",
       "job_id": "20000000-0000-4000-8000-000000000001",
       "position": 0,
-      "service_minutes": 15,
+      "service_minutes": 15.0,
       "travel_minutes": 0.0
     }
   ],
