@@ -1083,3 +1083,35 @@ def test_manual_reassignment_is_audited_and_planned(client, png, engine, seeded)
         e["details"].get("reason") == "Organizer resource adjustment"
         for e in detail["events"]
     )
+
+
+@pytest.mark.parametrize("hazard", [False, True])
+def test_postgres_assessment_gates_legacy_jobs(client, png, engine, hazard):
+    from types import SimpleNamespace
+
+    from api.models import Job
+    from tests.test_assessment import assessment, ordinary_proposal
+
+    created = report(client, png)
+    rid = UUID(created["report"]["id"])
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        assert row.assessment_status == "pending"
+        with pytest.raises(HTTPException) as error:
+            apply_triage(db, ordinary_proposal(row))
+        assert error.value.status_code == 409
+        db.rollback()
+    model = SimpleNamespace(
+        assess=lambda *args: assessment(
+            special_handling="suspected" if hazard else "none_identified"
+        )
+    )
+    assert process_one(engine, None, client.app.state.cloud, model)
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        assert row.assessment_status == ("needs_review" if hazard else "assessed")
+        assert row.needs_review is hazard
+        apply_triage(db, ordinary_proposal(row))
+        db.commit()
+        assert (row.job_id is None) is hazard
+        assert (db.scalar(select(Job)) is None) is hazard

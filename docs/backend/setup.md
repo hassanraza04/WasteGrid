@@ -58,7 +58,7 @@ analytics, organizer listings or model context.
    `wastegrid`, with client access revoked and RLS enabled. Keep it out of the
    Supabase exposed API schemas. Migration 0002 creates the private 8 MiB
    JPEG/PNG/WebP bucket. Do not add public Storage policies for this bucket.
-   Existing installations also apply additive migrations 0004–0008 for report
+   Existing installations also apply additive migrations 0004–0009 for report
    identity, event status snapshots and conversation history. Existing references
    are backfilled; unknown addresses/historical statuses stay null. No existing
    migration checksum changes are needed. Apply these before deploying API v0.2.

@@ -158,7 +158,7 @@ Supported high/medium priority is preserved; routine becomes null when there is
 an unresolved contradiction/positive hazard claim. Other priority rules remain
 ordinary Python.
 
-Deploy migrations 0007 and 0008 before these API/worker changes. The Render worker
+Deploy migrations 0007–0009 (including the assessment task-kind constraint) before these API/worker changes. The Render worker
 blueprint now lists Chalk credentials, model, base URL and timeout. Secrets must
 still be configured in the target environment. PR integration is not live service
 verification: this branch is still draft/unmerged and no live credentials or
