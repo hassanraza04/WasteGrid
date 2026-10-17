@@ -16,6 +16,12 @@ type Props = {
   caption: string;
   onCaptionChange: (caption: string) => void;
   canSubmit: boolean;
+  busy: boolean;
+  frozen: boolean;
+  fire: boolean | null;
+  sharp: boolean | null;
+  onFireChange: (value: boolean) => void;
+  onSharpChange: (value: boolean) => void;
   onRetake: () => void;
   onSubmit: () => void;
   onClose: () => void;
@@ -29,7 +35,7 @@ export function ReportForm(props: Props) {
     <KeyboardAvoidingView style={s.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <SafeAreaView edges={["top", "bottom"]} style={s.flex}>
         <View style={s.header}>
-          <Pressable onPress={props.onClose} hitSlop={8}><Feather name="x" size={24} color="#1E2B26" /></Pressable>
+          <Pressable onPress={props.onClose} disabled={props.busy} hitSlop={8}><Feather name="x" size={24} color="#1E2B26" /></Pressable>
           <Text style={s.title}>New report</Text>
           <View style={{ width: 24 }} />
         </View>
@@ -37,7 +43,7 @@ export function ReportForm(props: Props) {
         <ScrollView contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
           <View>
             <Image source={{ uri: photoUri }} style={s.preview} contentFit="cover" />
-            <Pressable style={s.retake} onPress={props.onRetake}>
+            <Pressable style={s.retake} disabled={props.frozen} onPress={props.onRetake}>
               <Feather name="refresh-ccw" size={16} color="#fff" />
               <Text style={s.retakeText}>Retake</Text>
             </Pressable>
@@ -48,11 +54,12 @@ export function ReportForm(props: Props) {
             <TextInput
               style={[s.input, s.flex]}
               value={location?.address ?? ""}
+              editable={!props.frozen}
               onChangeText={props.onAddressChange}
               placeholder={locating ? "Finding your location…" : "Street, area or landmark"}
               placeholderTextColor="#8A9690"
             />
-            <Pressable style={s.locate} onPress={props.onRelocate} disabled={locating} hitSlop={4}>
+            <Pressable style={s.locate} onPress={props.onRelocate} disabled={locating || props.frozen} hitSlop={4}>
               {locating ? <ActivityIndicator color="#2F6B55" /> : <Feather name="crosshair" size={20} color="#2F6B55" />}
             </Pressable>
           </View>
@@ -64,6 +71,7 @@ export function ReportForm(props: Props) {
           <TextInput
             style={[s.input, s.caption]}
             value={caption}
+            editable={!props.frozen}
             onChangeText={props.onCaptionChange}
             placeholder="What's the problem? e.g. overflowing bin, dumped bags"
             placeholderTextColor="#8A9690"
@@ -72,10 +80,16 @@ export function ReportForm(props: Props) {
             textAlignVertical="top"
           />
           <Text style={s.hint}>{caption.length}/{CAPTION_MAX}</Text>
+          {!location?.coords && <Text accessibilityRole="alert">Enable location to submit this report.</Text>}
+          <Text style={s.label}>Is there fire or smoke?</Text>
+          <View style={s.row}>{[true, false].map(value => <Pressable key={String(value)} disabled={props.frozen} accessibilityRole="radio" accessibilityState={{ checked: props.fire === value }} onPress={() => props.onFireChange(value)} style={s.input}><Text>{props.fire === value ? "● " : "○ "}{value ? "Yes" : "No"}</Text></Pressable>)}</View>
+          <Text style={s.label}>Are there sharp objects?</Text>
+          <View style={s.row}>{[true, false].map(value => <Pressable key={String(value)} disabled={props.frozen} accessibilityRole="radio" accessibilityState={{ checked: props.sharp === value }} onPress={() => props.onSharpChange(value)} style={s.input}><Text>{props.sharp === value ? "● " : "○ "}{value ? "Yes" : "No"}</Text></Pressable>)}</View>
+          {props.frozen && !props.busy && <Text>The original upload is saved. Retry it here or from My reports.</Text>}
         </ScrollView>
 
         <Pressable style={[s.submit, !canSubmit && s.disabled]} onPress={props.onSubmit} disabled={!canSubmit}>
-          <Text style={s.submitText}>Submit report</Text>
+          <Text style={s.submitText}>{props.busy ? "Submitting…" : props.frozen ? "Retry saved upload" : "Submit report"}</Text>
         </Pressable>
       </SafeAreaView>
     </KeyboardAvoidingView>

@@ -56,8 +56,8 @@ EXPO_PUBLIC_SUPABASE_URL=https://einjnvlhdogzdxafauyr.supabase.co
 EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=REPLACE_WITH_PUBLISHABLE_KEY
 ```
 
-These variable names are the proposed adapter configuration; they are not already
-wired into the mobile app. API paths below are relative to the base URL, with no
+The native resident adapter now reads `EXPO_PUBLIC_API_BASE_URL`. The two
+Supabase settings remain reserved for future mobile staff sign-in. API paths below are relative to the base URL, with no
 extra `/api` prefix. Resident-only screens need just the API base URL. The two
 Supabase values are needed when implementing staff sign-in.
 
@@ -189,7 +189,7 @@ Illustrative response shape (IDs below are examples; token is a placeholder):
 
 `latest_update` and `timeline` are populated when available; tolerate null/empty
 values. Actual fixture records have `illustrative: true`; newly submitted reports
-are not automatically marked illustrative. Creation queues triage, but the worker
+are not automatically marked illustrative. Creation queues assessment, but the worker
 is currently inactive: do not display invented AI decisions or promise an automatic
 status transition immediately after upload.
 
