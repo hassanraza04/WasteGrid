@@ -11,6 +11,27 @@ from api.schemas import (
 )
 
 
+def seed_eligible_assessment(report):
+    """Explicit synthetic assessment for legacy planning/messaging fixtures."""
+    from api.schemas import WasteAssessment
+
+    report.assessment = WasteAssessment(
+        description="Illustrative fixture waste",
+        size="medium",
+        obstruction="none_visible",
+        obstruction_level="none",
+        forces_people_into_traffic="no",
+        special_handling="none_identified",
+        visible_fire="no",
+        visible_sharp_objects="no",
+        reason="Synthetic test fixture; no visible obstruction.",
+    ).model_dump(mode="json")
+    report.assessment_status = "assessed"
+    report.priority = "routine"
+    report.needs_review = False
+    report.priority_reason = "Synthetic test fixture assessment."
+
+
 class TestProvider:
     __test__ = False
 

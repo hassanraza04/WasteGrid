@@ -11,20 +11,23 @@ from pydantic import ValidationError
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
+from api.assessment import calculate_priority
 from api.config import Settings
 from api.db import make_engine, mutation_lock
-from api.integrations import load_provider
-from api.models import Conversation, OutgoingMessage, Photo, Report, Task, now
+from api.integrations import ChalkAssessmentClient, load_provider
+from api.models import Conversation, Event, OutgoingMessage, Photo, Report, Task, now
 from api.schemas import (
     ConversationView,
     Equipment,
     FollowupInput,
     FollowupResult,
     PlanProposal,
+    ResidentAnswers,
     TriageInput,
     TriageRecommendation,
+    WasteAssessment,
 )
-from api.services import apply_clarification, apply_recheck, event, snapshot
+from api.services import apply_clarification, apply_recheck, enqueue, event, snapshot
 from api.storage import SupabaseCloud
 from api.workflows import apply_plan, apply_triage, build_planning_input, distance_km
 
@@ -54,7 +57,29 @@ def nearby_snapshots(db, report, radius_km=1.0):
     return results
 
 
-def process_one(engine, provider, cloud) -> bool:
+def fail_assessment(report):
+    report.assessment_status = "failed"
+    report.priority = None
+    report.needs_review = True
+    report.priority_reason = "Assessment failed; organizer review required."
+    report.assessment = None
+    if report.state == "received":
+        report.state = "needs_review"
+    report.version += 1
+
+
+def process_one(
+    engine, provider, cloud, assessment_client=None, *, duplicate_radius_meters=10
+) -> bool:
+    if provider is None and assessment_client is not None:
+        from api.decisions import AssessmentDecisionProvider
+
+        provider = AssessmentDecisionProvider(duplicate_radius_meters)
+    supported_kinds = []
+    if assessment_client is not None:
+        supported_kinds.append("assessment")
+    if provider is not None:
+        supported_kinds.extend(("triage", "plan", "followup"))
     with Session(engine) as db:
         mutation_lock(db)
         task = db.scalar(
@@ -65,12 +90,31 @@ def process_one(engine, provider, cloud) -> bool:
                     and_(Task.status == "running", Task.leased_until < now()),
                 )
             )
+            .where(
+                or_(
+                    Task.kind.in_(supported_kinds),
+                    # Recover interrupted one-call work even without credentials;
+                    # this branch terminalizes it below without invoking a model.
+                    and_(Task.kind == "assessment", Task.attempts > 0),
+                )
+            )
             .order_by(Task.created_at, Task.id)
             .with_for_update(skip_locked=True)
             .limit(1)
         )
         if task is None:
             return False
+        # An expired assessment lease may already have called the model. Never replay it.
+        if task.kind == "assessment" and task.attempts > 0:
+            report = db.get(Report, UUID(task.payload["report_id"]))
+            if report is not None and report.assessment_status == "pending":
+                fail_assessment(report)
+                event(db, "report.assessment_failed", report_id=report.id)
+            task.status = "failed"
+            task.last_error = "assessment_interrupted"
+            task.leased_until = None
+            db.commit()
+            return True
         task.status = "running"
         task.attempts += 1
         task.lease_id = uuid4()
@@ -85,7 +129,18 @@ def process_one(engine, provider, cloud) -> bool:
     try:
         # Read and release DB transaction before any remote provider invocation.
         with Session(engine) as db:
-            if kind == "triage":
+            if kind == "assessment":
+                report = db.get(Report, UUID(payload["report_id"]))
+                if report is None:
+                    raise HTTPException(404, "Report removed")
+                photo = db.get(Photo, report.photo_id)
+                request = (
+                    cloud.signed_url(photo.object_path),
+                    report.note,
+                    report.location,
+                    report.resident_answers,
+                )
+            elif kind == "triage":
                 report = db.get(Report, UUID(payload["report_id"]))
                 if report is None:
                     raise HTTPException(404, "Report removed")
@@ -111,7 +166,11 @@ def process_one(engine, provider, cloud) -> bool:
                     incoming_message=payload["text"],
                     snapshot=snapshot(db, report),
                 )
-        if kind == "triage":
+        if kind == "assessment":
+            if assessment_client is None:
+                raise RuntimeError("Assessment client not configured")
+            output = WasteAssessment.model_validate(assessment_client.assess(*request))
+        elif kind == "triage":
             output = (
                 TriageRecommendation.model_validate(provider.triage_report(request))
                 if request
@@ -133,7 +192,43 @@ def process_one(engine, provider, cloud) -> bool:
             task = db.get(Task, task_id)
             if task is None or task.status != "running" or task.lease_id != lease_id:
                 return True
-            if kind == "triage":
+            if kind == "assessment":
+                report = db.get(Report, UUID(payload["report_id"]))
+                decision = calculate_priority(
+                    output, ResidentAnswers.model_validate(report.resident_answers)
+                )
+                report.assessment = output.model_dump(mode="json")
+                report.priority = decision.priority
+                duplicate = db.scalar(
+                    select(Event.id).where(
+                        Event.report_id == report.id,
+                        Event.kind == "report.possible_duplicate",
+                    )
+                )
+                if report.organizer_review_required:
+                    decision.needs_review = True
+                    decision.priority_reason += " Organizer review must be resolved before automatic assignment."
+                if duplicate:
+                    decision.needs_review = True
+                    decision.priority_reason += " Nearby report is a possible duplicate; organizer review required."
+                report.needs_review = decision.needs_review
+                report.priority_reason = decision.priority_reason
+                report.assessment_status = (
+                    "needs_review" if decision.needs_review else "assessed"
+                )
+                if decision.needs_review and report.state == "received":
+                    report.state = "needs_review"
+                report.version += 1
+                event(db, "report.assessed", report_id=report.id)
+                if not decision.needs_review and decision.priority is not None:
+                    enqueue(
+                        db,
+                        "triage",
+                        f"triage:{report.id}:{report.version}",
+                        {"report_id": str(report.id)},
+                    )
+                result = {"report_id": str(report.id), **decision.model_dump()}
+            elif kind == "triage":
                 report = (
                     apply_triage(db, output)
                     if output
@@ -154,7 +249,11 @@ def process_one(engine, provider, cloud) -> bool:
                     action.data.command_id = uuid5(task_id, "followup-action")
                 if action.kind == "clarification":
                     apply_clarification(
-                        db, report.id, action.data, actor="agent-followup"
+                        db,
+                        report.id,
+                        action.data,
+                        actor="agent-followup",
+                        duplicate_radius_meters=duplicate_radius_meters,
                     )
                 elif action.kind == "recheck":
                     apply_recheck(db, report, action.data, actor="agent-followup")
@@ -200,7 +299,14 @@ def process_one(engine, provider, cloud) -> bool:
                 and task.lease_id == lease_id
             ):
                 task.last_error = code
-                task.status = "failed" if task.attempts >= 5 else "pending"
+                if kind == "assessment":
+                    report = db.get(Report, UUID(payload["report_id"]))
+                    if report is not None:
+                        fail_assessment(report)
+                        event(db, "report.assessment_failed", report_id=report.id)
+                    task.status = "failed"
+                else:
+                    task.status = "failed" if task.attempts >= 5 else "pending"
                 task.next_attempt_at = now() + timedelta(
                     seconds=min(300, 2**task.attempts)
                 )
@@ -217,21 +323,39 @@ def main():
     args = parser.parse_args()
     settings = Settings()
     engine, provider = make_engine(settings), load_provider(settings)
-    if engine is None or provider is None:
+    assessment_client = (
+        ChalkAssessmentClient(settings)
+        if settings.chalk_router_api_key and settings.chalk_env_id
+        else None
+    )
+    if engine is None or (provider is None and assessment_client is None):
         raise SystemExit(
-            "Configure DATABASE_URL and PERSON3_BASE_URL or INTEGRATION_FACTORY; queued work is preserved"
+            "Configure DATABASE_URL and CHALK_ROUTER_API_KEY/CHALK_ENV_ID or a decision provider; queued work is preserved"
+        )
+    if assessment_client is None:
+        logger.warning(
+            "Chalk assessment is not configured; unattempted assessment tasks remain pending"
         )
     cloud = SupabaseCloud(settings)
     try:
         while True:
-            worked = process_one(engine, provider, cloud)
+            worked = process_one(
+                engine,
+                provider,
+                cloud,
+                assessment_client,
+                duplicate_radius_meters=settings.duplicate_radius_meters,
+            )
             if args.once:
                 break
             if not worked:
                 time.sleep(2)
     finally:
         cloud.close()
-        provider.close()
+        if provider is not None:
+            provider.close()
+        if assessment_client is not None:
+            assessment_client.close()
         engine.dispose()
 
 

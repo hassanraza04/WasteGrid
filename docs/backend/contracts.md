@@ -129,7 +129,9 @@ reassign it. The backend does not silently violate the lock or permit a new star
 
 ## Person 3 boundary
 
-Choose either a Python factory returning `DecisionProvider` or an HTTP facade:
+With Chalk configured, the worker defaults to `api.decisions.AssessmentDecisionProvider`.
+It implements the following methods over validated snapshots without extra model
+calls. An explicitly configured Python factory or HTTP facade takes precedence:
 
 | Python method | HTTP POST | Typed input → output |
 | --- | --- | --- |
@@ -150,6 +152,14 @@ needs_info; insufficient evidence → review; uncertain duplicates → review.
 `duplicate_candidate_id` refers to another **report**. Confirmed linking requires
 that report in `evidence_report_ids` and an open linked job. Ordinary creation
 requires location, sufficient evidence, equipment, and a positive service estimate.
+An organizer-only decision can approve a settled assessment for job creation or
+linking, clearing the review flag with an actor/reason/previous-state audit. Raw
+assessment output is preserved. An explicit organizer review is persisted independently of the assessment;
+automatic completion/triage and clarification cannot clear it. A successful audited
+organizer approval clears the hold. Coordinate clarification runs the same configured
+proximity review as submission and excludes the report itself. Pending assessments cannot be overridden, and
+automated decisions cannot grant themselves this exception. Nearby real reports
+are retained with private possible-duplicate evidence, never automatically merged.
 The backend stores the recommendation and applied state; confidence alone has no
 approval meaning. All report originals remain separate. Clarifications append
 history; they do not replace the original note.

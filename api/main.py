@@ -87,6 +87,7 @@ from api.schemas import (
     ReportDetails,
     ReportUpdates,
     ReportView,
+    ResidentAnswers,
     Snapshot,
     TaskView,
     TriageRecommendation,
@@ -99,6 +100,7 @@ from api.services import (
     command_seen,
     enqueue,
     event,
+    flag_nearby_report,
     invalidate_plan,
     organizer_report_view,
     report_event_condition,
@@ -188,6 +190,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         responses={
             code: {
                 "model": ErrorResponse,
+                # Python versions use different default phrases for HTTP 413.
                 **({"description": "Content Too Large"} if code == 413 else {}),
             }
             for code in (401, 403, 404, 409, 413, 415, 503)
@@ -265,6 +268,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         longitude: float | None = Form(default=None),
         landmark: str | None = Form(default=None, max_length=300),
         note: str | None = Form(default=None, max_length=2000),
+        resident_fire: bool | None = Form(default=None),
+        resident_sharp_objects: bool | None = Form(default=None),
         title: str | None = Form(default=None, min_length=1, max_length=160),
         address: str | None = Form(default=None, min_length=1, max_length=500),
         client_report_id: UUID | None = Form(default=None),
@@ -301,6 +306,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Preserve fingerprints for retries from callers predating these fields.
         if title is not None or address is not None:
             request_content.update(title=title, address=address)
+        resident_answers = ResidentAnswers(
+            fire=resident_fire, sharp_objects=resident_sharp_objects
+        ).model_dump(exclude_none=True)
+        # Omitted answers preserve fingerprints for older retry-safe clients.
+        if resident_answers:
+            request_content["resident_answers"] = resident_answers
         request_hash = digest(json.dumps(request_content, sort_keys=True))
         if client_report_id:
             previous = db.get(Report, client_report_id)
@@ -325,6 +336,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             title=title if title is not None else "Cleanup report",
             address=address,
             request_hash=request_hash,
+            resident_answers=resident_answers,
         )
         db.add(report)
         db.flush()
@@ -338,7 +350,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         )
         event(db, "report.received", report_id=report_id)
-        enqueue(db, "triage", f"triage:{report_id}:1", {"report_id": str(report_id)})
+        flag_nearby_report(db, report, settings.duplicate_radius_meters)
+        enqueue(
+            db, "assessment", f"assessment:{report_id}", {"report_id": str(report_id)}
+        )
         upload_commit(request, db, path, content, mime)
         return ReportCreated(report=report_view(db, report), access_token=token)
 
@@ -692,7 +707,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ):
         if body.report_id != report_id:
             raise HTTPException(422, "Report ID does not match request path")
-        report = apply_triage(db, body, actor=str(staff.user_id))
+        report = apply_triage(
+            db, body, actor=str(staff.user_id), organizer_override=True
+        )
         db.commit()
         return organizer_report_view(db, report)
 
@@ -724,6 +741,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Task not found")
         if task.status != "failed":
             raise HTTPException(409, "Only failed tasks can be retried")
+        if task.kind == "assessment":
+            raise HTTPException(
+                409, "One-call assessments require organizer review after failure"
+            )
         task.status, task.attempts, task.next_attempt_at = "pending", 0, now()
         db.commit()
         return task
@@ -783,7 +804,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         conversation_id: UUID, body: Clarification, db: Session = Depends(get_db)
     ):
         conversation = linked_conversation(db, conversation_id)
-        report = apply_clarification(db, conversation.report_id, body)
+        report = apply_clarification(
+            db,
+            conversation.report_id,
+            body,
+            duplicate_radius_meters=settings.duplicate_radius_meters,
+        )
         db.commit()
         return snapshot(db, report)
 

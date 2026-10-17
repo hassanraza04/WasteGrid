@@ -13,13 +13,35 @@ from api.worker import process_one
 from api.workflows import apply_plan, apply_triage, build_planning_input
 from scripts.migrate import migrate
 from tests.backend.conftest import INTERNAL, auth, bind, report
-from tests.backend.providers import TestProvider
+from tests.backend.providers import TestProvider, seed_eligible_assessment
+
+
+def prepare_legacy_triage(engine):
+    # Explicitly seed legacy triage work for these planning/messaging scenarios.
+    # New-report assessment processing is tested independently in test_assessment.py.
+    with Session(engine) as db:
+        for task in db.scalars(
+            select(Task).where(
+                Task.kind.in_(["assessment", "triage"]), Task.status == "pending"
+            )
+        ):
+            task.kind = "triage"
+            row = db.get(Report, UUID(task.payload["report_id"]))
+            if row.assessment_status == "pending":
+                seed_eligible_assessment(row)
+        db.commit()
 
 
 def drain(client, engine, provider=None):
     provider = provider or TestProvider()
+    prepare_legacy_triage(engine)
     for _ in range(50):
-        if not process_one(engine, provider, client.app.state.cloud):
+        if not process_one(
+            engine,
+            provider,
+            client.app.state.cloud,
+            duplicate_radius_meters=client.app.state.settings.duplicate_radius_meters,
+        ):
             break
     with Session(engine) as db:
         bad = db.scalars(select(Task).where(Task.status != "succeeded")).all()
@@ -409,6 +431,7 @@ def test_blocked_job_retains_assignment_and_can_resume_after_replan(
 
 def test_planner_cannot_assign_an_unassigned_blocked_job(client, png, engine, seeded):
     report(client, png)
+    prepare_legacy_triage(engine)
     assert process_one(engine, TestProvider(), client.app.state.cloud)
     job = client.get("/jobs", headers=auth("org")).json()[0]
     assert job["status"] == "unassigned"
@@ -525,6 +548,11 @@ def test_worker_failures_are_durable_and_retryable(
     client, png, engine, http_unavailable
 ):
     report(client, png)
+    # This regression checks retryable legacy tasks, not one-call assessments.
+    with Session(engine) as db:
+        task = db.scalar(select(Task).where(Task.kind == "assessment"))
+        task.kind = "triage"
+        db.commit()
 
     class Broken(TestProvider):
         def triage_report(self, request):
@@ -665,6 +693,7 @@ def test_triage_safety_duplicate_and_stale_decision(client, png, engine):
         estimated_service_minutes=10,
     )
     with Session(engine) as db:
+        seed_eligible_assessment(db.get(Report, rid))
         row = apply_triage(db, proposal)
         assert row.state == "needs_review" and row.job_id is None
         db.commit()
@@ -830,6 +859,24 @@ def test_contract_exports_match_source():
         ]
         == "Content Too Large"
     )
+
+
+@pytest.mark.parametrize("phrase", ["Request Entity Too Large", "Content Too Large"])
+def test_openapi_413_description_is_independent_of_python_version(monkeypatch, phrase):
+    import http.client
+
+    from scripts.export_contracts import artifacts
+
+    monkeypatch.setitem(http.client.responses, 413, phrase)
+    spec = artifacts()["openapi.json"]
+    responses = [
+        operation["responses"]["413"]
+        for path in spec["paths"].values()
+        for operation in path.values()
+        if isinstance(operation, dict) and "413" in operation.get("responses", {})
+    ]
+    assert responses
+    assert all(response["description"] == "Content Too Large" for response in responses)
 
 
 def test_commit_acknowledgement_loss_preserves_committed_photo(
@@ -1041,3 +1088,609 @@ def test_manual_reassignment_is_audited_and_planned(client, png, engine, seeded)
         e["details"].get("reason") == "Organizer resource adjustment"
         for e in detail["events"]
     )
+
+
+@pytest.mark.parametrize("hazard", [False, True])
+def test_postgres_assessment_gates_legacy_jobs(client, png, engine, hazard):
+    from types import SimpleNamespace
+
+    from api.models import Job
+    from tests.test_assessment import assessment, ordinary_proposal
+
+    created = report(client, png)
+    rid = UUID(created["report"]["id"])
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        assert row.assessment_status == "pending"
+        with pytest.raises(HTTPException) as error:
+            apply_triage(db, ordinary_proposal(row))
+        assert error.value.status_code == 409
+        db.rollback()
+    model = SimpleNamespace(
+        assess=lambda *args: assessment(
+            special_handling="suspected" if hazard else "none_identified"
+        )
+    )
+    assert process_one(engine, None, client.app.state.cloud, model)
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        assert row.assessment_status == ("needs_review" if hazard else "assessed")
+        assert row.needs_review is hazard
+        apply_triage(db, ordinary_proposal(row))
+        db.commit()
+        assert (row.job_id is None) is hazard
+        assert (db.scalar(select(Job)) is None) is hazard
+
+
+@pytest.mark.parametrize("action", ["create_job", "link_job"])
+@pytest.mark.parametrize("status", ["needs_review", "failed"])
+def test_organizer_override_is_authorized_audited_and_idempotent(
+    client, png, engine, action, status
+):
+    from tests.test_assessment import assessment, ordinary_proposal
+
+    first = report(client, png)
+    drain(client, engine)
+    second = report(client, png, latitude=25.0)
+    rid = UUID(second["report"]["id"])
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        row.assessment_status = status
+        row.needs_review = True
+        row.assessment = (
+            assessment(visible_fire="yes", special_handling="suspected").model_dump()
+            if status == "needs_review"
+            else None
+        )
+        row.state = "needs_review"
+        proposal = ordinary_proposal(row, next_action=action)
+        proposal.decision_summary = (
+            "Organizer checked evidence and approved appropriate cleanup equipment."
+        )
+        if action == "link_job":
+            proposal.duplicate_candidate_id = UUID(first["report"]["id"])
+            proposal.duplicate_confirmed = True
+            proposal.evidence_report_ids.append(proposal.duplicate_candidate_id)
+        db.commit()
+    path = f"/organizer/reports/{rid}/decision"
+    body = proposal.model_dump(mode="json")
+    assert (
+        client.post(path, headers=auth(second["access_token"]), json=body).status_code
+        == 403
+    )
+    assert client.post(path, headers=auth("a"), json=body).status_code == 403
+    response = client.post(path, headers=auth("org"), json=body)
+    assert response.status_code == 200, response.text
+    assert response.json()["job_id"] is not None
+    assert not response.json()["needs_review"]
+    assert (
+        response.json()["assessment_status"] == status
+    )  # Preserve the original model outcome.
+    assert client.post(path, headers=auth("org"), json=body).json() == response.json()
+    with Session(engine) as db:
+        records = list(
+            db.scalars(
+                select(Event).where(
+                    Event.report_id == rid, Event.kind == "report.triaged"
+                )
+            )
+        )
+        assert len(records) == 1
+        record = records[0]
+        assert record.actor != "agent" and record.details["organizer_override"]
+        assert record.details["reason"] == proposal.decision_summary
+        assert record.details["previous_review"]["needs_review"]
+    # Audit detail and other reports' identifiers stay out of resident responses.
+    resident = client.get(f"/reports/{rid}", headers=auth(second["access_token"]))
+    assert "Organizer checked evidence" not in resident.text
+    assert "previous_review" not in resident.text
+
+
+def test_organizer_cannot_override_pending_assessment(client, png, engine):
+    from tests.test_assessment import ordinary_proposal
+
+    created = report(client, png)
+    rid = UUID(created["report"]["id"])
+    with Session(engine) as db:
+        body = ordinary_proposal(db.get(Report, rid)).model_dump(mode="json")
+    assert (
+        client.post(
+            f"/organizer/reports/{rid}/decision", headers=auth("org"), json=body
+        ).status_code
+        == 409
+    )
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ["default", "locked", "ongoing", "held", "recheck", "unavailable", "short_shift"],
+)
+def test_builtin_planner_outputs_pass_existing_backend_validator(
+    engine, client, scenario
+):
+    from api.decisions import AssessmentDecisionProvider
+    from api.models import Crew, Job
+    from scripts.seed_demo import seed
+
+    seed(engine, client.app.state.cloud)
+    with Session(engine) as db:
+        job = db.scalar(select(Job).where(Job.status == "assigned").order_by(Job.id))
+        if scenario == "locked":
+            job.locked = True
+        elif scenario == "ongoing":
+            job.status = "in_progress"
+        elif scenario == "held":
+            job.held = True
+        elif scenario == "recheck":
+            job.status = "recheck_requested"
+        elif scenario in ("unavailable", "short_shift"):
+            for crew in db.scalars(select(Crew)):
+                if scenario == "unavailable":
+                    crew.available = False
+                else:
+                    crew.shift_minutes = 1
+        db.flush()
+        request = build_planning_input(db)
+        proposal = AssessmentDecisionProvider().generate_plan(request)
+        plan = apply_plan(db, proposal)
+        assert plan is not None
+        assert len(
+            {s.job_id for s in proposal.assignments}
+            | {s.job_id for s in proposal.unassigned}
+        ) == len(request.jobs)
+        assert len({s.job_id for s in proposal.assignments}) == len(
+            proposal.assignments
+        )
+        db.commit()
+
+
+@pytest.mark.parametrize("claimed", [False, True])
+def test_migration_seed_refresh_reconciles_assessments_before_worker(
+    engine, client, claimed
+):
+    from types import SimpleNamespace
+
+    from api.decisions import AssessmentDecisionProvider
+    from scripts.seed_demo import seed
+    from tests.test_assessment import assessment
+
+    seed(engine, client.app.state.cloud)
+    with Session(engine) as db:
+        job_links = {row.id: row.job_id for row in db.scalars(select(Report))}
+        photos = set(db.scalars(select(Photo.id)))
+        for row in db.scalars(select(Report)):
+            row.assessment = None
+            row.assessment_status = "pending"
+            row.priority = None
+        db.commit()
+    # Reproduce an old seed upgraded through the actual backfill migration.
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "DELETE FROM wastegrid.schema_migrations WHERE name = '0011_legacy_assessment_backfill.sql'"
+            )
+        )
+    migrate(engine)
+    with Session(engine) as db:
+        tasks = list(db.scalars(select(Task).where(Task.kind == "assessment")))
+        assert len(tasks) == 3 and all(t.status == "pending" for t in tasks)
+        if claimed:
+            tasks[0].status = "running"
+            tasks[0].attempts = 1
+            tasks[0].lease_id = uuid4()
+            tasks[0].leased_until = now() + timedelta(minutes=5)
+        task_attempts = {t.id: t.attempts for t in tasks}
+        db.commit()
+    refreshed = seed(engine, client.app.state.cloud)
+    assert refreshed["status"] == "refreshed"
+    assert refreshed["assessments_refreshed"] == 10
+    assert refreshed["assessment_tasks_reconciled"] == 3
+    with Session(engine) as db:
+        rows = list(db.scalars(select(Report)))
+        assessments = {row.id: row.assessment for row in rows}
+        assert all(r.assessment_status != "pending" for r in rows)
+        assert all(
+            r.assessment_status == "assessed" and not r.needs_review
+            for r in rows
+            if r.job_id
+        )
+        for task in db.scalars(select(Task).where(Task.kind == "assessment")):
+            assert task.status == "succeeded"
+            assert task.result == {"skipped": "illustrative_fixture_refresh"}
+            assert task.attempts == task_attempts[task.id]
+            assert task.lease_id is None and task.leased_until is None
+    # Repair the prior buggy refresh too: assessments may already be synthetic
+    # while migration work remains pending. Do not alter completed task history.
+    with Session(engine) as db:
+        task = db.scalar(select(Task).where(Task.kind == "assessment"))
+        task.status, task.result = "pending", None
+        db.commit()
+    repaired = seed(engine, client.app.state.cloud)
+    assert repaired["status"] == "refreshed"
+    assert repaired["assessments_refreshed"] == 0
+    assert repaired["assessment_tasks_reconciled"] == 1
+    calls = []
+    model = SimpleNamespace(assess=lambda *args: calls.append(args) or assessment())
+    for _ in range(30):
+        if not process_one(
+            engine, AssessmentDecisionProvider(0), client.app.state.cloud, model
+        ):
+            break
+    assert calls == []
+    with Session(engine) as db:
+        assert {row.id: row.assessment for row in db.scalars(select(Report))} == (
+            assessments
+        )
+        assert {row.id: row.job_id for row in db.scalars(select(Report))} == job_links
+        assert set(db.scalars(select(Photo.id))) == photos
+    assert seed(engine, client.app.state.cloud)["status"] == "already_seeded"
+
+
+def test_chalk_configuration_processes_real_bind_followup_claim_loop(
+    client, png, engine
+):
+    from types import SimpleNamespace
+
+    from api.config import Settings
+    from api.decisions import AssessmentDecisionProvider
+    from api.integrations import load_provider
+    from tests.test_assessment import assessment
+
+    provider = load_provider(
+        Settings(
+            _env_file=None, chalk_router_api_key="test-key", chalk_env_id="test-env"
+        )
+    )
+    assert isinstance(provider, AssessmentDecisionProvider)
+    created = report(client, png)
+    conversation = bind(client, created)
+    calls = []
+    model = SimpleNamespace(assess=lambda *args: calls.append(args) or assessment())
+    for _ in range(10):
+        if not process_one(engine, provider, client.app.state.cloud, model):
+            break
+    current = client.get(
+        f"/reports/{created['report']['id']}", headers=auth(created["access_token"])
+    ).json()
+    assert current["job_id"] and current["display_status"] == "assigned"
+    accepted = client.post(
+        f"/internal/conversations/{conversation['id']}/followup",
+        headers=INTERNAL,
+        json={"message_id": "builtin-status", "text": "status?"},
+    )
+    assert accepted.status_code == 202
+    assert process_one(engine, provider, client.app.state.cloud, model)
+    outgoing = client.post(
+        "/internal/outgoing-messages/claim", headers=INTERNAL, json={"limit": 100}
+    ).json()
+    reply = next(
+        row for row in outgoing if "assigned" in row["payload"].get("reply_text", "")
+    )
+    assert reply["conversation"]["id"] == conversation["id"]
+    delivered = client.post(
+        f"/internal/outgoing-messages/{reply['id']}/delivered",
+        headers=INTERNAL,
+        json={
+            "lease_id": reply["lease_id"],
+            "sent_text": reply["payload"]["reply_text"],
+        },
+    )
+    assert delivered.status_code == 200, delivered.text
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("in_flight", [False, True])
+def test_api_organizer_review_persists_through_pending_assessment(
+    client, png, engine, in_flight
+):
+    from types import SimpleNamespace
+
+    from api.models import Job
+    from tests.test_assessment import assessment, ordinary_proposal
+
+    created = report(client, png)
+    rid = UUID(created["report"]["id"])
+    convo = bind(client, created)
+    path = f"/organizer/reports/{rid}/decision"
+
+    def request_review():
+        with Session(engine) as db:
+            body = ordinary_proposal(
+                db.get(Report, rid), next_action="review"
+            ).model_dump(mode="json")
+        response = client.post(path, headers=auth("org"), json=body)
+        assert response.status_code == 200, response.text
+        assert response.json()["needs_review"]
+        assert response.json()["assessment_status"] == "pending"
+
+    if not in_flight:
+        request_review()
+
+    def assess(*args):
+        if in_flight:
+            request_review()
+        return assessment()
+
+    model = SimpleNamespace(assess=assess)
+    assert process_one(engine, None, client.app.state.cloud, model)
+    assert not process_one(engine, None, client.app.state.cloud, model)
+    current = client.get(
+        f"/reports/{rid}", headers=auth(created["access_token"])
+    ).json()
+    assert current["needs_review"] and current["assessment_status"] == "needs_review"
+    clarified = client.post(
+        f"/internal/conversations/{convo['id']}/clarification",
+        headers=INTERNAL,
+        json={
+            "command_id": str(uuid4()),
+            "expected_version": current["version"],
+            "note": "Extra detail",
+        },
+    )
+    assert clarified.status_code == 200, clarified.text
+    assert clarified.json()["report"]["needs_review"]
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        assert row.organizer_review_required and row.job_id is None
+        assert db.scalar(select(Job)) is None
+        assert db.scalar(select(Task).where(Task.kind == "triage")) is None
+        body = ordinary_proposal(row).model_dump(mode="json")
+    approved = client.post(path, headers=auth("org"), json=body)
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["job_id"] and not approved.json()["needs_review"]
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        assert not row.organizer_review_required
+        audit = db.scalar(
+            select(Event).where(Event.command_id == UUID(body["command_id"]))
+        )
+        assert audit.details["previous_review"]["organizer_review_required"]
+
+
+@pytest.mark.parametrize("via_worker", [False, True])
+@pytest.mark.parametrize("radius", [0, 2, 10])
+def test_clarification_entrypoints_apply_configured_proximity(
+    client, png, engine, via_worker, radius
+):
+    from api.schemas import FollowupResult
+    from api.services import enqueue
+    from tests.test_assessment import ordinary_proposal
+
+    client.app.state.settings.duplicate_radius_meters = radius
+    first = report(client, png)
+    second_response = client.post(
+        "/reports", files={"photo": ("a.png", png, "image/png")}
+    )
+    assert second_response.status_code == 201
+    second = second_response.json()
+    rid = UUID(second["report"]["id"])
+    convo = bind(client, second)
+    with Session(engine) as db:
+        seed_eligible_assessment(db.get(Report, rid))
+        # Isolate the settled-assessment clarification path from photo processing.
+        for task in db.scalars(select(Task).where(Task.kind == "assessment")):
+            task.status = "succeeded"
+        db.commit()
+    body = {
+        "command_id": str(uuid4()),
+        "expected_version": 1,
+        "note": "Adding GPS",
+        "location": {"latitude": 24.92005, "longitude": 67.09},
+    }
+    if via_worker:
+
+        class Clarifier(TestProvider):
+            def handle_followup(self, request):
+                return FollowupResult(
+                    reply_text="Location recorded.",
+                    action={"kind": "clarification", "data": body},
+                )
+
+        with Session(engine) as db:
+            enqueue(
+                db,
+                "followup",
+                "test:gps",
+                {"conversation_id": convo["id"], "text": "Adding GPS"},
+            )
+            db.commit()
+        assert process_one(
+            engine, Clarifier(), client.app.state.cloud, duplicate_radius_meters=radius
+        )
+    else:
+        response = client.post(
+            f"/internal/conversations/{convo['id']}/clarification",
+            headers=INTERNAL,
+            json=body,
+        )
+        assert response.status_code == 200, response.text
+        replay = client.post(
+            f"/internal/conversations/{convo['id']}/clarification",
+            headers=INTERNAL,
+            json=body,
+        )
+        assert replay.json() == response.json()
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        assert row.location["latitude"] == body["location"]["latitude"]
+        assert row.needs_review is (radius == 10)
+        duplicate = db.scalar(
+            select(Event).where(
+                Event.report_id == rid, Event.kind == "report.possible_duplicate"
+            )
+        )
+        triage = db.scalar(select(Task).where(Task.kind == "triage"))
+        if radius == 10:
+            assert duplicate.details["candidate_report_id"] == first["report"]["id"]
+            assert row.state == "needs_review" and triage is None
+            apply_triage(db, ordinary_proposal(row))
+            assert row.job_id is None
+        else:
+            assert duplicate is None and triage is not None
+
+
+def test_upgrade_backfills_legacy_reports_without_replaying_assessments(
+    client, png, engine
+):
+    from types import SimpleNamespace
+
+    from api.decisions import AssessmentDecisionProvider
+    from api.models import Job
+    from api.services import enqueue
+    from tests.test_assessment import assessment, ordinary_proposal
+
+    names = ("legacy", "existing", "failed", "linked", "held", "assessed")
+    ids = {name: UUID(report(client, png)["report"]["id"]) for name in names}
+    original_tasks = {}
+    with Session(engine) as db:
+        for name, rid in ids.items():
+            task = db.scalar(
+                select(Task).where(
+                    Task.kind == "assessment",
+                    Task.payload["report_id"].as_string() == str(rid),
+                )
+            )
+            original_tasks[name] = task.id
+            if name in ("legacy", "linked", "held"):
+                db.delete(task)
+            elif name == "failed":
+                task.status, task.attempts = "failed", 1
+            elif name == "assessed":
+                task.status, task.attempts = "succeeded", 1
+                seed_eligible_assessment(db.get(Report, rid))
+            else:
+                task.next_attempt_at = now() + timedelta(days=1)
+        # Simulate a pre-assessment triage queue; it is not an assessment attempt.
+        old_triage = enqueue(
+            db, "triage", f"triage:{ids['legacy']}:1", {"report_id": str(ids["legacy"])}
+        )
+        old_triage.next_attempt_at = now() + timedelta(days=1)
+        held = db.get(Report, ids["held"])
+        held.organizer_review_required = True
+        held.needs_review = True
+        held.state = "needs_review"
+        linked = db.get(Report, ids["linked"])
+        job = Job(
+            location=linked.location,
+            category="legacy",
+            required_equipment=["gloves"],
+            estimated_service_minutes=10,
+        )
+        db.add(job)
+        db.flush()
+        linked.job_id, linked.state = job.id, "linked_to_job"
+        original_job = job.id
+        missing = Report(
+            # A valid FK but mismatched ownership makes photo metadata unusable.
+            photo_id=linked.photo_id,
+            token_hash="a" * 64,
+            location={"latitude": 24.92, "longitude": 67.09},
+        )
+        db.add(missing)
+        db.flush()
+        missing_id = missing.id
+        db.commit()
+    # Simulate upgrading from 0010; all prior checksums and data remain intact.
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "DELETE FROM wastegrid.schema_migrations WHERE name = '0011_legacy_assessment_backfill.sql'"
+            )
+        )
+    migrate(engine)
+    with Session(engine) as db:
+        for name in ("legacy", "held"):
+            tasks = list(
+                db.scalars(
+                    select(Task).where(
+                        Task.kind == "assessment",
+                        Task.payload["report_id"].as_string() == str(ids[name]),
+                    )
+                )
+            )
+            assert (
+                len(tasks) == 1
+                and tasks[0].status == "pending"
+                and tasks[0].attempts == 0
+            )
+        assert db.get(Task, original_tasks["existing"]).status == "pending"
+        assert db.get(Task, original_tasks["failed"]).status == "failed"
+        assert db.get(Task, original_tasks["failed"]).attempts == 1
+        assert db.get(Task, original_tasks["assessed"]).status == "succeeded"
+        assert db.get(Report, ids["linked"]).job_id == original_job
+        assert (
+            db.scalar(
+                select(Task).where(
+                    Task.kind == "assessment",
+                    Task.payload["report_id"].as_string() == str(ids["linked"]),
+                )
+            )
+            is None
+        )
+        for rid in (missing_id, ids["failed"]):
+            row = db.get(Report, rid)
+            assert row.assessment_status == "needs_review"
+            assert row.organizer_review_required and row.needs_review
+        approval = ordinary_proposal(db.get(Report, missing_id)).model_dump(mode="json")
+    response = client.post(
+        f"/organizer/reports/{missing_id}/decision", headers=auth("org"), json=approval
+    )
+    assert response.status_code == 200 and response.json()["job_id"], response.text
+    calls = []
+    model = SimpleNamespace(assess=lambda *args: calls.append(args) or assessment())
+    for _ in range(10):
+        if not process_one(
+            engine,
+            AssessmentDecisionProvider(0),
+            client.app.state.cloud,
+            model,
+            duplicate_radius_meters=0,
+        ):
+            break
+    with Session(engine) as db:
+        assert db.get(Report, ids["legacy"]).job_id is not None
+        assert db.get(Report, ids["held"]).organizer_review_required
+        assert db.get(Report, ids["held"]).job_id is None
+        before = db.scalar(
+            select(func.count()).select_from(Task).where(Task.kind == "assessment")
+        )
+    assert len(calls) == 2
+    migrate(engine)
+    with Session(engine) as db:
+        assert (
+            db.scalar(
+                select(func.count()).select_from(Task).where(Task.kind == "assessment")
+            )
+            == before
+        )
+
+
+def test_postgres_external_only_worker_defers_until_chalk_is_configured(
+    client, png, engine
+):
+    from types import SimpleNamespace
+
+    from api.decisions import AssessmentDecisionProvider
+    from api.services import enqueue
+    from tests.test_assessment import assessment
+
+    created = report(client, png)
+    rid = UUID(created["report"]["id"])
+    with Session(engine) as db:
+        enqueue(db, "plan", "test:legacy-plan-without-chalk", {})
+        db.commit()
+    provider = AssessmentDecisionProvider(0)
+    assert process_one(engine, provider, client.app.state.cloud)
+    assert not process_one(engine, provider, client.app.state.cloud)
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        task = db.scalar(select(Task).where(Task.kind == "assessment"))
+        assert row.assessment_status == "pending"
+        assert task.status == "pending" and task.attempts == 0
+        assert task.lease_id is None and task.last_error is None
+        assert db.scalar(select(Task).where(Task.kind == "plan")).status == "succeeded"
+    model = SimpleNamespace(assess=lambda *args: assessment())
+    assert process_one(engine, provider, client.app.state.cloud, model)
+    with Session(engine) as db:
+        assert db.get(Report, rid).assessment_status == "assessed"
+        assert db.scalar(select(Task).where(Task.kind == "assessment")).attempts == 1
