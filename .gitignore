@@ -24,4 +24,4 @@ idea
 
 # Git artifacts
 .git
-.github
+.idea/caches/

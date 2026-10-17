@@ -52,9 +52,15 @@ def extract_inbound_text(message: object) -> InboundMessage | None:
     space = _object_attribute(payload, "space")
     message_id = _string_attribute(payload, "id")
     agent_sender_id = (
-        _string_attribute(_unwrap_root_model(agent), "id") if agent is not None else None
+        _string_attribute(_unwrap_root_model(agent), "id")
+        if agent is not None
+        else None
     )
-    space_id = _string_attribute(_unwrap_root_model(space), "id") if space is not None else None
+    space_id = (
+        _string_attribute(_unwrap_root_model(space), "id")
+        if space is not None
+        else None
+    )
     if not all((message_id, agent_sender_id, space_id)):
         return None
 

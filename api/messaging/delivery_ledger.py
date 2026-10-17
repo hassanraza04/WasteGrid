@@ -1,11 +1,11 @@
 """Local SQLite checkpoint and reply spool for Photon delivery."""
 
+import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-import sqlite3
-from contextlib import contextmanager
-from collections.abc import Iterator
 
 from api.messaging.messages import InboundMessage
 
