@@ -173,6 +173,28 @@ def test_load_photon_config_does_not_chain_invalid_timeout_value() -> None:
     assert secret_timeout not in "".join(traceback.format_exception(error.value))
 
 
+def test_load_photon_config_does_not_chain_invalid_poll_interval_value() -> None:
+    secret_interval = "interval-secret-value"
+    with pytest.raises(
+        ConfigurationError, match="PHOTON_POLL_INTERVAL_SECONDS"
+    ) as error:
+        load_photon_config(
+            {
+                "PHOTON_PROJECT_ID": "pho_prj_test",
+                "PHOTON_API_KEY": "pho_sk_test",
+                "WASTEGRID_BACKEND_URL": "https://backend.example.test/api",
+                "WASTEGRID_MESSAGING_API_KEY": "backend-key",
+                "PHOTON_AGENT_SENDER_ID": "pho_usr_agent",
+                "PHOTON_POLL_INTERVAL_SECONDS": secret_interval,
+            }
+        )
+
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
+    assert not error.value.__suppress_context__
+    assert secret_interval not in "".join(traceback.format_exception(error.value))
+
+
 @pytest.mark.parametrize(
     ("name", "environment"),
     [

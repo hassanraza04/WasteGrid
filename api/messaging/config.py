@@ -116,12 +116,15 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
         )
 
     interval_text = environ.get("PHOTON_POLL_INTERVAL_SECONDS", "2")
+    invalid_interval = False
     try:
         poll_interval_seconds = float(interval_text)
-    except ValueError as error:
+    except ValueError:
+        invalid_interval = True
+    if invalid_interval:
         raise ConfigurationError(
             "PHOTON_POLL_INTERVAL_SECONDS must be a number"
-        ) from error
+        )
 
     if poll_interval_seconds <= 0:
         raise ConfigurationError(
