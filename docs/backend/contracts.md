@@ -82,7 +82,9 @@ Identity increment examples: `fixtures/report-created.json` for POST `/reports`,
 `fixtures/report.json` for either lookup route, `fixtures/organizer-report-list.json`
 for listing, `fixtures/organizer-report-detail.json` for organizer detail, and
 `fixtures/auth-me.json` for the Supabase-authenticated role response. Local base
-URL is `http://localhost:8000` after setup/startup; no shared dev URL is provisioned.
+URL is `http://localhost:8000` after setup/startup. The shared development API is
+`https://wastegrid-api-dev.onrender.com`; browser clients must use an origin
+allowed by CORS. See the [deployment runbook](shared-development-api.md).
 
 Report views also expose `updated_at`, `latest_update` (nullable for a legacy
 report without events) and `dashboard_status`. `updated_at` is the last customer

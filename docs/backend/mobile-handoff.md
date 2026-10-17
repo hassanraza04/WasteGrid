@@ -25,7 +25,7 @@ trying requests; Swagger is not a mobile framework or a product requirement.
 | Resident report submission, tracking and private photos | Implemented |
 | Organizer/crew authorization | Implemented; demo accounts provisioned |
 | AI triage and route planning | Integration pending; worker inactive, new work stays queued |
-| Messaging transport | Photon integration pending; no live delivery claimed |
+| Messaging transport | PR #9 adapter merged; separate Photon process not activated and live delivery not yet verified |
 | Public hosting | Render API deployed from `main` commit `7b77f8d`; 23 hosted checks passed. Free instances can sleep when idle. |
 
 The configured demo has **10 illustrative reports, 6 jobs, 2 crews, 10 photos and

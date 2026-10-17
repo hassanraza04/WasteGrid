@@ -15,6 +15,8 @@ Releases remain manual; the worker remains inactive. Hassan should confirm the
 actual browser address of his dashboard so Omer can allow that exact origin in
 Render CORS settings, then test a browser request. The currently configured
 origins are `http://localhost:5173` and `http://127.0.0.1:8000`.
+PR #9's Photon adapter is now merged. It is a separate process that has not been
+activated for this API deployment; live messaging delivery remains unverified.
 
 Run `uv run --extra backend python -m scripts.verify_live_backend` for live
 authentication/read/privacy checks. It checks the ten reports, six jobs,
@@ -125,8 +127,10 @@ their adapters; these payload shapes remain proposed until coordinated.
 
 - **Local API:** `http://localhost:8000` after the configuration and startup in
   [setup.md](setup.md). This is a local address, not a shared team deployment.
-  **Shared dev API:** not provisioned; supply the actual HTTPS URL after hosting
-  and Supabase setup. Interactive documentation is at `/docs`.
+  **Shared dev API:** `https://wastegrid-api-dev.onrender.com`. Interactive
+  documentation is at `/docs`. Confirm the dashboard's exact browser origin
+  and complete its CORS browser test; hosted HTTP preflight checks alone do not
+  establish that the dashboard is connected.
 - **Organizer:** sign in with Supabase email/password, then send
   `Authorization: Bearer <user-access-JWT>`. A backend-provisioned organizer role
   is required. `/auth/me` confirms it. Never send service-role keys from a browser.
