@@ -37,13 +37,24 @@ class Sender(Protocol):
     ) -> None: ...
 
 
+class OutgoingTextStore(Protocol):
+    def bind_outgoing_text(self, message_id: str, text: str) -> str: ...
+
+
 class BackendCoordinator:
     """Keep conversation and outgoing delivery state in the backend."""
 
-    def __init__(self, backend: Backend, sender: Sender, agent_sender_id: str) -> None:
+    def __init__(
+        self,
+        backend: Backend,
+        sender: Sender,
+        agent_sender_id: str,
+        text_store: OutgoingTextStore,
+    ) -> None:
         self._backend = backend
         self._sender = sender
         self._agent_sender_id = agent_sender_id
+        self._text_store = text_store
 
     def submit_inbound(self, message: InboundMessage) -> bool:
         try:
@@ -78,6 +89,7 @@ class BackendCoordinator:
                 )
                 if not text.strip():
                     continue
+                text = self._text_store.bind_outgoing_text(message.id, text)
                 self._sender.send_to_space(
                     space_id=message.external_id,
                     sender_id=self._agent_sender_id,

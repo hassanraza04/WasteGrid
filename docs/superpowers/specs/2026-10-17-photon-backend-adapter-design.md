@@ -22,7 +22,9 @@ mock-tested until Person 2's backend pull request is merged and deployed.
 
 - Do not implement backend persistence, reasoning, report creation, or mobile
   photo upload.
-- Do not keep a local reply or retry ledger in backend mode.
+- Do not keep a local reply queue or retry scheduler in backend mode. The adapter
+  may persist the immutable rendered text for an outgoing UUID so every delivery
+  attempt for that UUID has the same provider idempotency payload.
 - Do not provide a local echo fallback when backend settings are absent.
 - Do not call a real backend or require Person 2's unmerged branch in tests.
 
@@ -70,7 +72,9 @@ the required configured sender ID becomes Photon `senderId`. The adapter
 acknowledges only after Photon succeeds, with `provider_message_id=None`. The
 backend accepts this value because Photon currently returns no provider message
 ID. If Photon sending fails, it does not acknowledge; the backend lease expiry
-controls the retry.
+controls the retry. Before the first Photon send, the adapter stores the rendered
+text against the outgoing UUID and reuses that exact text after an acknowledgement
+failure or process restart.
 
 ## Error handling
 

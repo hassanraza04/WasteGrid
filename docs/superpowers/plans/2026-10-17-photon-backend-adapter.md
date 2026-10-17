@@ -4,7 +4,7 @@
 
 **Goal:** Route Photon follow-ups and replies through the proposed WasteGrid backend while it owns message idempotency, leases, and delivery acknowledgements.
 
-**Architecture:** A narrow synchronous `httpx` client implements four documented internal endpoints. A backend coordinator translates Photon input to backend follow-ups and claimed backend replies to Photon sends. SQLite remains only as a poll checkpoint, not a reply/retry queue.
+**Architecture:** A narrow synchronous `httpx` client implements four documented internal endpoints. A backend coordinator translates Photon input to backend follow-ups and claimed backend replies to Photon sends. SQLite stores the poll checkpoint plus immutable rendered text bound to outgoing UUIDs, not a reply/retry queue.
 
 **Tech Stack:** Python 3.13, `httpx`, pytest, Photon Beta API, SQLite checkpoint.
 
@@ -14,7 +14,7 @@
 - The backend URL must be an absolute `http` or `https` URL with no credentials, query, or fragment.
 - Send Person 4 backend messaging requests with `X-Integration-Key: <messaging key>` and bounded timeouts. Photon API requests separately use `Authorization: Bearer <Photon API key>`.
 - Do not log credentials, message text, response bodies, or signed URLs.
-- The backend owns outgoing retries, leases, and delivery state. `DeliveryLedger` stores only the polling checkpoint in backend mode.
+- The backend owns outgoing retries, leases, and delivery state. `DeliveryLedger` stores the polling checkpoint and immutable text bindings for outgoing UUIDs in backend mode.
 - Preserve the Photon gateway as the only Photon SDK boundary and use fake transports only in tests.
 
 ---
@@ -251,7 +251,7 @@ Catch only operational errors, logging class/name and stable message IDs. Never 
 
 - [ ] **Step 4: Replace the production echo path**
 
-Change `run_once` to accept `BackendMessagingCoordinator`. Keep `DeliveryLedger` only for `checkpoint_or_initialize` and `advance_checkpoint`. Call `dispatch_claimed()` before Photon fetch, submit all extracted inbound messages, advance the checkpoint after successful fetch processing, then call `dispatch_claimed()` again. In `run_forever`, build `WasteGridBackendClient(config.backend)` and the coordinator; remove `SmokeTestReplyPolicy` and local reply queue usage.
+Change `run_once` to accept `BackendMessagingCoordinator`. Use `DeliveryLedger` for `checkpoint_or_initialize`, `advance_checkpoint`, and immutable outgoing UUID text bindings. Call `dispatch_claimed()` before Photon fetch, submit all extracted inbound messages, advance the checkpoint after successful fetch processing, then call `dispatch_claimed()` again. In `run_forever`, build `WasteGridBackendClient(config.backend)` and the coordinator; remove `SmokeTestReplyPolicy` and local reply queue usage.
 
 - [ ] **Step 5: Verify green and commit**
 
@@ -297,7 +297,7 @@ Expected: FAIL until backend-mode settings are documented.
 
 - [ ] **Step 3: Update documentation**
 
-Add the three setting names to `.env.example`. Update README setup to state that the agent requires a reachable WasteGrid backend before polling, the backend owns follow-up/delivery retries, and SQLite stores only the polling checkpoint in this mode.
+Add the three setting names to `.env.example`. Update README setup to state that the agent requires a reachable WasteGrid backend before polling, the backend owns follow-up/delivery retries, and SQLite stores the polling checkpoint plus immutable outgoing text bindings in this mode.
 
 - [ ] **Step 4: Run full verification**
 

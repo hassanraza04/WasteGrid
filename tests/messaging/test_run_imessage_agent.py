@@ -184,7 +184,7 @@ def test_run_forever_constructs_backend_coordinator(
     monkeypatch.setattr(
         run_imessage_agent,
         "BackendCoordinator",
-        lambda b, g, a: constructed.append((b, g, a)) or coordinator,
+        lambda b, g, a, ledger: constructed.append((b, g, a, ledger)) or coordinator,
     )
     monkeypatch.setattr(
         run_imessage_agent.time,
@@ -194,7 +194,8 @@ def test_run_forever_constructs_backend_coordinator(
 
     run_imessage_agent.run_forever()
 
-    assert constructed == [(backend, gateway, "agent-1")]
+    assert constructed[0][:3] == (backend, gateway, "agent-1")
+    assert isinstance(constructed[0][3], DeliveryLedger)
     assert gateway.requested_since is not None
     assert coordinator.events == ["dispatch", "dispatch"]
 

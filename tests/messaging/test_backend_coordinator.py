@@ -15,6 +15,7 @@ class FakeBackend:
     submitted: list[tuple[str, str, str]] = field(default_factory=list)
     acknowledged: list[tuple[str, str, str | None, str]] = field(default_factory=list)
     status_response: str = "Current status"
+    fail_acknowledgement: bool = False
 
     def resolve_conversation(
         self, channel: str, external_id: str
@@ -39,6 +40,8 @@ class FakeBackend:
         sent_text: str,
     ) -> None:
         self.acknowledged.append((message_id, lease_id, provider_message_id, sent_text))
+        if self.fail_acknowledgement:
+            raise TimeoutError("acknowledgement timed out")
 
 
 @dataclass
@@ -52,6 +55,14 @@ class FakeGateway:
             raise TimeoutError("private reply https://secret.example token")
 
 
+@dataclass
+class FakeTextStore:
+    values: dict[str, str] = field(default_factory=dict)
+
+    def bind_outgoing_text(self, message_id: str, text: str) -> str:
+        return self.values.setdefault(message_id, text)
+
+
 def inbound() -> InboundMessage:
     return InboundMessage("photon-1", "received-by", "space-1", "  exact text  ")
 
@@ -62,7 +73,7 @@ def outgoing(channel: str = "imessage", text: str = "Reply") -> ClaimedOutgoingM
 
 def test_unlinked_inbound_is_not_submitted() -> None:
     backend = FakeBackend()
-    coordinator = BackendCoordinator(backend, FakeGateway(), "agent-1")
+    coordinator = BackendCoordinator(backend, FakeGateway(), "agent-1", FakeTextStore())
 
     assert coordinator.submit_inbound(inbound()) is False
     assert backend.resolved == [("imessage", "space-1")]
@@ -73,7 +84,7 @@ def test_linked_inbound_submits_original_id_and_text() -> None:
     backend = FakeBackend(
         conversation=Conversation("conversation-1", "imessage", "space-1")
     )
-    coordinator = BackendCoordinator(backend, FakeGateway(), "agent-1")
+    coordinator = BackendCoordinator(backend, FakeGateway(), "agent-1", FakeTextStore())
 
     assert coordinator.submit_inbound(inbound()) is True
     assert backend.submitted == [("conversation-1", "photon-1", "  exact text  ")]
@@ -82,7 +93,7 @@ def test_linked_inbound_submits_original_id_and_text() -> None:
 def test_failed_send_is_not_acknowledged(caplog: pytest.LogCaptureFixture) -> None:
     backend = FakeBackend(claims=[outgoing()])
     gateway = FakeGateway(fail_send=True)
-    coordinator = BackendCoordinator(backend, gateway, "agent-1")
+    coordinator = BackendCoordinator(backend, gateway, "agent-1", FakeTextStore())
 
     assert coordinator.dispatch_claimed() == []
     assert backend.acknowledged == []
@@ -93,7 +104,7 @@ def test_failed_send_is_not_acknowledged(caplog: pytest.LogCaptureFixture) -> No
 def test_successful_send_is_acknowledged_without_provider_id() -> None:
     backend = FakeBackend(claims=[outgoing()])
     gateway = FakeGateway()
-    coordinator = BackendCoordinator(backend, gateway, "agent-1")
+    coordinator = BackendCoordinator(backend, gateway, "agent-1", FakeTextStore())
 
     assert coordinator.dispatch_claimed() == ["out-1"]
     assert gateway.sent == [
@@ -110,7 +121,7 @@ def test_successful_send_is_acknowledged_without_provider_id() -> None:
 def test_non_imessage_and_blank_replies_are_skipped() -> None:
     backend = FakeBackend(claims=[outgoing("sms"), outgoing(text="  ")])
     gateway = FakeGateway()
-    coordinator = BackendCoordinator(backend, gateway, "agent-1")
+    coordinator = BackendCoordinator(backend, gateway, "agent-1", FakeTextStore())
 
     assert coordinator.dispatch_claimed() == []
     assert gateway.sent == []
@@ -135,7 +146,41 @@ def test_status_event_uses_current_snapshot_text() -> None:
     )
     gateway = FakeGateway()
 
-    assert BackendCoordinator(backend, gateway, "agent-1").dispatch_claimed() == [
-        "out-1"
-    ]
+    assert BackendCoordinator(
+        backend, gateway, "agent-1", FakeTextStore()
+    ).dispatch_claimed() == ["out-1"]
     assert gateway.sent[0]["text"] == "WG-ABCDEF123456: Your report has been received."
+
+
+def test_status_retry_reuses_first_rendered_text() -> None:
+    backend = FakeBackend(
+        claims=[
+            ClaimedOutgoingMessage(
+                "out-1",
+                "lease-1",
+                "imessage",
+                "space-1",
+                None,
+                "conversation-1",
+                "report.received",
+                "report-1",
+            )
+        ],
+        status_response="WG-ABCDEF123456: Original status",
+        fail_acknowledgement=True,
+    )
+    store = FakeTextStore()
+    first_gateway = FakeGateway()
+    assert (
+        BackendCoordinator(backend, first_gateway, "agent-1", store).dispatch_claimed()
+        == []
+    )
+
+    backend.status_response = "WG-ABCDEF123456: Changed status"
+    backend.fail_acknowledgement = False
+    retry_gateway = FakeGateway()
+    assert BackendCoordinator(
+        backend, retry_gateway, "agent-1", store
+    ).dispatch_claimed() == ["out-1"]
+
+    assert retry_gateway.sent[0]["text"] == "WG-ABCDEF123456: Original status"

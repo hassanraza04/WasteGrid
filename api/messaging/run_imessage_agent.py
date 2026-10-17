@@ -52,7 +52,9 @@ def run_forever() -> None:
     gateway = PhotonGateway(config)
     backend = WasteGridBackendClient(config.backend)
     ledger = DeliveryLedger(config.delivery_db_path)
-    coordinator = BackendCoordinator(backend, gateway, config.backend.agent_sender_id)
+    coordinator = BackendCoordinator(
+        backend, gateway, config.backend.agent_sender_id, ledger
+    )
     logger.info("Photon iMessage agent is polling for new messages")
 
     try:

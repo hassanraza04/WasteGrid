@@ -29,8 +29,9 @@ fallback.
 
 The first run starts at the current time. Later runs resume from the saved poll
 checkpoint. The agent ignores non-iMessage events and blank messages. The backend
-owns follow-up retries, delivery retries, idempotency, and leases. SQLite stores only the
-Photon poll checkpoint in backend mode. It defaults to
+owns follow-up retries, delivery retries, idempotency, and leases. SQLite stores the
+Photon poll checkpoint plus immutable rendered text bound to each outgoing UUID in
+backend mode. It defaults to
 `.data/photon-delivery.db`; set
 `PHOTON_DELIVERY_DB_PATH` to change the path. `.env` and the checkpoint database
 are ignored by Git. Never commit `.env`.
