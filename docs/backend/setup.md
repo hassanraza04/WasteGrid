@@ -83,9 +83,14 @@ Keep `.env` ignored. Existing Photon settings remain in the example. Configure:
 | `MESSAGING_API_KEY` | A random 32-byte secret shared only with Person 4's server adapter. |
 | `AGENT_API_KEY` | A different random secret for Person 3's optional read-only context tools. |
 | `CORS_ORIGINS` | JSON array of exact dashboard origins, e.g. `["http://localhost:5173","https://your-dashboard.example"]`. |
-| `PERSON3_BASE_URL` | Person 3 HTTP facade base URL, once available. |
+| `CHALK_ROUTER_API_KEY` | Chalk Model Gateway key for the assessment worker, not an upstream provider key. |
+| `CHALK_ENV_ID` | Chalk environment ID for the assessment worker. |
+| `CHALK_MODEL` | Default `groq/qwen/qwen3.8-27b`; use the configured connection prefix. |
+| `ASSESSMENT_TIMEOUT_SECONDS` | Default 30; one request and no automatic retries. |
+| `DUPLICATE_RADIUS_METERS` | Proximity review for real unresolved reports; default 10 metres, 0 disables. Photos are retained. |
+| `PERSON3_BASE_URL` | Optional external Person 3 HTTP facade; leave blank for the built-in decisions. |
 | `PERSON3_API_KEY` | Optional bearer credential for that facade. |
-| `INTEGRATION_FACTORY` | Alternative to HTTP: `package.module:create_provider`. Factory receives `Settings` and returns a `DecisionProvider`. Leave blank when using HTTP. |
+| `INTEGRATION_FACTORY` | Alternative to HTTP: `package.module:create_provider`. Factory receives `Settings` and returns a `DecisionProvider`. Leave blank for HTTP or the default built-in decisions. |
 
 Generate each integration secret independently:
 
@@ -116,7 +121,7 @@ analytics, organizer listings or model context.
    `wastegrid`, with client access revoked and RLS enabled. Keep it out of the
    Supabase exposed API schemas. Migration 0002 creates the private 8 MiB
    JPEG/PNG/WebP bucket. Do not add public Storage policies for this bucket.
-   Existing installations also apply additive migrations 0004–0006 for report
+   Existing installations also apply additive migrations 0004–0011 for report
    identity, event status snapshots and conversation history. Existing references
    are backfilled; unknown addresses/historical statuses stay null. No existing
    migration checksum changes are needed. Apply these before deploying API v0.2.
@@ -153,15 +158,18 @@ analytics, organizer listings or model context.
 ## 3. Connect Persons 3 and 4
 
 Share `contracts.md`, `openapi.json` and the fixture directory first. Configure
-Person 3's HTTP facade or Python factory, then start the worker:
+the Chalk gateway key/environment for photo assessment. The default built-in
+provider also processes triage, plan and followup tasks with those settings alone;
+no separate decision service is required. Explicit facade/factory settings take
+precedence for those decision methods. Then start the worker:
 
 ```bash
 uv run --extra backend python -m api.worker
 ```
 
 The worker can also run a single task with `--once`. Its persisted task leases
-recover after a crash. A task retries up to five times, with bounded backoff;
-organizers inspect `/tasks` and retry failed tasks explicitly. No provider
+recover after a crash. Legacy triage/planning/follow-up tasks retry up to five times, with bounded backoff;
+organizers inspect `/tasks` and retry failed legacy tasks explicitly. Assessment tasks are attempted once and failures require review, with no repair or replay. No provider
 configuration means the worker exits with a configuration message, preserving
 the queue. API imports do not deploy Chalk functions.
 
@@ -189,7 +197,8 @@ API-plus-worker instructions below describe the later provider-integrated setup.
    and its configuration is supplied. Do not activate the whole Blueprint with
    empty provider settings.
 2. Put the variables above in Render environment settings. Give the worker
-   database/Storage/Person 3 settings; give the API database/Storage/integration
+   database/Storage/Chalk settings (and optional external decision settings); give
+   the API database/Storage/integration
    keys/CORS settings. Do not include `.env` in a build.
 3. Apply migrations from your local backend environment **before** the first
    service becomes healthy. Deployments intentionally do not run migrations at

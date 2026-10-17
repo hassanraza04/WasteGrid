@@ -3,8 +3,9 @@
 This is the FastAPI/Postgres backend for the four-person build plan. All new
 integration decisions are **proposed v0.2**, pending coordination with Persons
 1, 3 and 4. Backend code owns authorization, persistence, feasibility validation,
-state transitions and delivery records. Person 3 owns Chalk reasoning and
-OR-Tools; Person 4 owns Photon transport and delivery retries.
+state transitions and delivery records. Person 3 supplies Chalk photo assessment
+and deterministic triage, heuristic planning and follow-up decisions; Person 4
+owns Photon transport and delivery retries.
 
 Start with [setup.md](setup.md), then share [contracts.md](contracts.md).
 [openapi.json](openapi.json), [integration JSON schemas](schemas/) and
@@ -28,7 +29,12 @@ calls and real authentication; a public reference alone grants no access.
   Supabase Auth; protected database role records determine permissions.
 - Creation supports safe retries using a client UUID and a client-generated
   256-bit token. Repeating a command does not duplicate its state transition.
-- Report creation and clarification enqueue durable triage work. The worker
+- New reports enqueue a one-call Chalk assessment, followed by deterministic
+  backend priority calculation; see [assessment.md](assessment.md) for metadata,
+  proximity review policy, configuration and API fields. Eligible results enqueue
+  triage, which creates a job and queues planning. Nearby originals/photos remain
+  separate with private review evidence. Audited organizer approvals can resolve
+  settled review/failed results; pending results remain blocked. The worker
   obtains decisions through the Person 3 boundary and applies backend rules:
   missing location requests information, hazards and uncertain duplicates go
   to review, eligible ordinary reports create/link jobs.
@@ -49,20 +55,27 @@ calls and real authentication; a public reference alone grants no access.
 
 ## Integration status
 
-Supabase is configured: six migrations, private photo Storage, three confirmed
-staff accounts and the illustrative demo dataset. The local API uses this live
-project. Start it and run `python -m scripts.verify_live_backend` with the backend
-extra as described in [setup.md](setup.md#current-local-demo). Latest local live
-evidence is saved in `.data/backend-live-verification.json`; shareable acceptance
-results belong in [verification.md](verification.md). Credentials remain in the
-ignored `.env` and `.env.supabase-demo`, outside the documentation.
+The local API and shared Render API use live Supabase, private photo Storage,
+staff accounts and an illustrative demo dataset. See
+[setup.md](setup.md#current-local-demo) and [verification.md](verification.md) for
+that setup and its acceptance evidence. Credentials remain in ignored local env
+files. Migrations 0001–0011 are applied; the original six checksums are unchanged.
 
 The API-only Render service is live at
 `https://wastegrid-api-dev.onrender.com`; 23 hosted checks passed on
-17 October 2026. Real Person 3/Photon integration remains pending. Provider
-calls in the regression suite use explicit doubles. The worker **does not invent
-triage or planning output**: configure the real provider to drain queued work.
-The test-only provider is in `tests/backend/providers.py`, excluded from Docker.
+17 October 2026, including after the database upgrade. The worker remains inactive.
+
+With Chalk configured, the production worker uses
+`api.decisions.AssessmentDecisionProvider` for triage, planning and follow-up
+without extra model calls. External facades/factories can override it explicitly.
+The route planner is a greedy heuristic over labeled travel estimates, not a
+global optimum or live-road service. The separate legacy test provider remains
+in `tests/backend/providers.py`, excluded from Docker.
+
+A user-run live Grok 4.3 photo check returned validated assessment JSON in 3.253
+seconds; see [assessment.md](assessment.md). Hosted assessment/job processing
+and real Photon delivery still need acceptance testing. The PR #6 API redeploy
+must be verified separately from the completed database upgrade.
 
 The [shared development API runbook](shared-development-api.md) records the
 direct Render Web Service setup and acceptance. [`render.dev.yaml`](../../render.dev.yaml)

@@ -162,6 +162,7 @@ def client(engine, seeded):
     app = create_app(
         Settings(
             _env_file=None,
+            duplicate_radius_meters=0,  # Legacy fixtures intentionally reuse a location.
             supabase_url="https://test.supabase.co",
             supabase_secret_key="fake-key",
             messaging_api_key="message-test-key",

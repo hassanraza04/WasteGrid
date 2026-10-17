@@ -13,6 +13,8 @@
     "job": null,
     "report": {
       "address": "Illustrative park entrance, Gulshan-e-Iqbal, Karachi",
+      "assessment": null,
+      "assessment_status": "pending",
       "clarifications": [],
       "completion_photo_ids": [],
       "created_at": "2026-10-16T22:00:00Z",
@@ -35,9 +37,16 @@
         "latitude": 24.923,
         "longitude": 67.092
       },
+      "needs_review": false,
       "note": "ILLUSTRATIVE: litter near park gate",
       "photo_id": "40000000-0000-4000-8000-000000000001",
+      "priority": null,
+      "priority_reason": null,
       "public_reference": "WG-A1B2C3D4E5F6",
+      "resident_answers": {
+        "fire": null,
+        "sharp_objects": null
+      },
       "state": "received",
       "timeline": [],
       "title": "Illustrative litter near park gate",

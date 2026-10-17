@@ -240,6 +240,28 @@
           ],
           "title": "Address"
         },
+        "assessment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WasteAssessment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "assessment_status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "assessed",
+            "needs_review",
+            "failed"
+          ],
+          "title": "Assessment Status",
+          "type": "string"
+        },
         "clarifications": {
           "items": {
             "$ref": "#/$defs/ClarificationRecord"
@@ -314,6 +336,11 @@
             }
           ]
         },
+        "needs_review": {
+          "default": false,
+          "title": "Needs Review",
+          "type": "boolean"
+        },
         "note": {
           "anyOf": [
             {
@@ -330,10 +357,42 @@
           "title": "Photo Id",
           "type": "string"
         },
+        "priority": {
+          "anyOf": [
+            {
+              "enum": [
+                "high",
+                "medium",
+                "routine"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority"
+        },
+        "priority_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priority Reason"
+        },
         "public_reference": {
           "pattern": "^WG-[0-9A-F]{12}$",
           "title": "Public Reference",
           "type": "string"
+        },
+        "resident_answers": {
+          "$ref": "#/$defs/ResidentAnswers"
         },
         "state": {
           "$ref": "#/$defs/ReportState"
@@ -472,6 +531,37 @@
         "job_status"
       ],
       "title": "ReportUpdate",
+      "type": "object"
+    },
+    "ResidentAnswers": {
+      "additionalProperties": false,
+      "properties": {
+        "fire": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fire"
+        },
+        "sharp_objects": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sharp Objects"
+        }
+      },
+      "title": "ResidentAnswers",
       "type": "object"
     },
     "Snapshot": {
@@ -618,6 +708,145 @@
         "next_action"
       ],
       "title": "TriageRecommendation",
+      "type": "object"
+    },
+    "WasteAssessment": {
+      "additionalProperties": false,
+      "properties": {
+        "comparison_reason": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comparison Reason"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
+        "description": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Description",
+          "type": "string"
+        },
+        "forces_people_into_traffic": {
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ],
+          "title": "Forces People Into Traffic",
+          "type": "string"
+        },
+        "obstruction": {
+          "enum": [
+            "none_visible",
+            "walkway",
+            "road",
+            "drain",
+            "entrance",
+            "unknown"
+          ],
+          "title": "Obstruction",
+          "type": "string"
+        },
+        "obstruction_level": {
+          "enum": [
+            "none",
+            "partial",
+            "complete",
+            "unknown"
+          ],
+          "title": "Obstruction Level",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 400,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Reason",
+          "type": "string"
+        },
+        "resident_context_agreement": {
+          "default": "not_provided",
+          "enum": [
+            "consistent",
+            "conflicting",
+            "unclear",
+            "not_provided"
+          ],
+          "title": "Resident Context Agreement",
+          "type": "string"
+        },
+        "size": {
+          "enum": [
+            "small",
+            "medium",
+            "large",
+            "unknown"
+          ],
+          "title": "Size",
+          "type": "string"
+        },
+        "special_handling": {
+          "enum": [
+            "suspected",
+            "none_identified",
+            "unknown"
+          ],
+          "title": "Special Handling",
+          "type": "string"
+        },
+        "visible_fire": {
+          "default": "unknown",
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ],
+          "title": "Visible Fire",
+          "type": "string"
+        },
+        "visible_sharp_objects": {
+          "default": "unknown",
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ],
+          "title": "Visible Sharp Objects",
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "size",
+        "obstruction",
+        "obstruction_level",
+        "forces_people_into_traffic",
+        "special_handling",
+        "reason"
+      ],
+      "title": "WasteAssessment",
       "type": "object"
     }
   },
