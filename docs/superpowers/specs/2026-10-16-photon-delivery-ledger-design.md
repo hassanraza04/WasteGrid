@@ -88,7 +88,7 @@ an idempotent retry instead of a duplicate logical reply.
 - A successful Photon send changes the row to `sent` and records `sent_at`.
 - Any exception while sending increments `attempt_count`, records a sanitized
   exception type as `last_error`, and schedules the next attempt.
-- Retry delays are 5 seconds, 10 seconds, and 20 seconds.
+- Retry delays are 5 seconds and 10 seconds.
 - The maximum is three send attempts. A row that exhausts its third attempt is
   `failed` and is never sent automatically again.
 - Every retry decision is logged with the message ID, state, and attempt count.
