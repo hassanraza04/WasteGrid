@@ -4,6 +4,7 @@ import { router } from "expo-router";
 
 import { CameraStep } from "@/components/report/camera-step";
 import { ReportForm } from "@/components/report/report-form";
+import { describePhoto } from "@/utils/describe-photo";
 import { getPhotoLocation, type PhotoLocation } from "@/utils/location";
 
 export default function Report() {
@@ -11,6 +12,7 @@ export default function Report() {
   const [location, setLocation] = useState<PhotoLocation | null>(null);
   const [locating, setLocating] = useState(false);
   const [caption, setCaption] = useState("");
+  const [describing, setDescribing] = useState(false);
 
   // keepTyped: the automatic lookup after capture shouldn't overwrite an address the user already typed
   const locate = async (keepTyped: boolean) => {
@@ -26,7 +28,15 @@ export default function Report() {
     locate(true); // resolves while the user writes the caption
   };
 
-  const canSubmit = caption.trim().length > 0 && !!(location?.coords || location?.address.trim());
+  const generateCaption = async () => {
+    if (!photoUri) return;
+    setDescribing(true);
+    const description = await describePhoto(photoUri);
+    setDescribing(false);
+    if (description) setCaption(description);
+  };
+
+  const canSubmit =caption.trim().length > 0 && !!(location?.coords || location?.address.trim());
 
   const onSubmit = () => {
     const report = { photoUri, caption: caption.trim(), location };
@@ -48,6 +58,8 @@ export default function Report() {
       onRelocate={() => locate(false)}
       caption={caption}
       onCaptionChange={setCaption}
+      describing={describing}
+      onGenerateCaption={generateCaption}
       canSubmit={canSubmit}
       onRetake={() => setPhotoUri(null)} // keeps caption + location
       onSubmit={onSubmit}
