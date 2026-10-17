@@ -110,6 +110,13 @@ set priority. Replay of the same command is idempotent.
    gaining a new priority requirement. Ownership edits
    through the legacy job PATCH are rejected in organiser mode; use dispatch.
    This includes `assigned_crew_id`, `status: "unassigned"`, and `held: true`.
+   The narrow exception is resolving a resident recheck: an organiser may PATCH
+   a `recheck_requested` job with `status: "unassigned"`, `expected_version`,
+   `command_id`, and an audit `reason`, without assignment, lock or hold fields.
+   The version check, audit event and release are atomic; exact command retries
+   are idempotent. This removes the stop from its old crew so later stops can
+   proceed and puts the reviewed job back into the next routing calculation.
+   A resident recheck alone does not release ownership or resume the route.
    Availability changes pause a crew but retain its ownership; they do not release
    jobs through the crew PATCH either.
    Editing legacy equipment/shift values does not clear organiser assignments. Completing work

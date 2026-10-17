@@ -4,11 +4,14 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from uuid import uuid4
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.auth import Principal, get_staff
 from api.db import mutation_lock
+from api.main import create_app
 from api.models import Job, Plan, RoutingPreview, Task
 from api.routing import compute_preview, dispatch_preview
 from api.worker import process_one
@@ -111,3 +114,21 @@ def test_postgres_batches_unselected_provenance_reads(engine):
     from tests.test_routing import verify_batched_dispatch_reads
 
     verify_batched_dispatch_reads(engine, 30)
+
+
+def test_postgres_audited_recheck_release_restores_route(engine):
+    from tests.test_routing import verify_recheck_route_resolution
+
+    ids, jobs = seed_routing(engine)
+    actor = uuid4()
+    app = create_app(config())
+    app.state.engine = engine
+
+    def staff(request: Request):
+        if request.headers.get("Authorization") == "Bearer crew":
+            return Principal(uuid4(), "crew", ids[0])
+        return Principal(actor, "organizer", None)
+
+    app.dependency_overrides[get_staff] = staff
+    with TestClient(app) as client:
+        verify_recheck_route_resolution(client, engine, ids, jobs)

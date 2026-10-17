@@ -568,9 +568,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 or body.held is True
             )
         ):
-            raise HTTPException(
-                409, "Use route preview and dispatch to change assignment ownership"
+            # A resident recheck pauses its old route. Only an audited organiser
+            # resolution may release that stop; all other ownership edits still
+            # go through dispatch. Preserve exact command retries after release.
+            recheck_release = (
+                body.status == "unassigned"
+                and not body.model_fields_set & {"assigned_crew_id", "held", "locked"}
+                and (
+                    job.status == "recheck_requested"
+                    or command_seen(db, job.id, body, "job.changed")[0]
+                )
             )
+            if not recheck_release:
+                raise HTTPException(
+                    409, "Use route preview and dispatch to change assignment ownership"
+                )
         apply_job_change(
             db,
             job,

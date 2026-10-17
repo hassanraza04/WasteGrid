@@ -3,7 +3,7 @@
 from datetime import timedelta
 from itertools import permutations, product
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -16,6 +16,7 @@ from api.config import Settings
 from api.main import create_app
 from api.models import (
     Crew,
+    Event,
     Job,
     Photo,
     Plan,
@@ -843,6 +844,113 @@ def test_organizer_patch_cannot_release_route_ownership(
             after.held,
             after.status,
         ) == before
+
+
+def verify_recheck_route_resolution(client, engine, ids, jobs):
+    from api.schemas import Recheck
+    from api.services import apply_recheck
+
+    actor, settings = uuid4(), config()
+    with Session(engine) as db:
+        preview = compute_preview(db, ids[:1], settings, FakeRoads(), str(actor))
+        route = preview.routes[0]
+        first_id, next_id = [stop.job_id for stop in route.stops]
+        dispatch_preview(
+            db, db.get(RoutingPreview, preview.id), uuid4(), actor, settings
+        )
+        first = db.get(Job, first_id)
+        first.status = "completed"
+        first.version += 1
+        db.flush()
+        report = db.scalar(select(Report).where(Report.job_id == first.id))
+        apply_recheck(
+            db,
+            report,
+            Recheck(
+                command_id=uuid4(),
+                expected_version=first.version,
+                reason="Waste remains after cleanup",
+            ),
+        )
+        db.commit()
+        version = first.version
+        before_other = (
+            db.get(Job, jobs[2]).version,
+            db.get(Job, jobs[2]).assigned_crew_id,
+        )
+
+    def patch(job_id, token, body):
+        return client.patch(
+            f"/jobs/{job_id}", headers={"Authorization": f"Bearer {token}"}, json=body
+        )
+
+    start = {"command_id": str(uuid4()), "expected_version": 2, "status": "in_progress"}
+    assert patch(next_id, "crew", start).status_code == 409
+    with Session(engine) as db:
+        assert not compute_preview(
+            db, ids[:1], settings, FakeRoads(), str(actor)
+        ).dispatchable
+    release = {
+        "command_id": str(uuid4()),
+        "expected_version": version,
+        "status": "unassigned",
+        "reason": "Reviewed resident evidence; release for replanning",
+    }
+    assert patch(first_id, "crew", release).status_code == 409
+    stale = {**release, "command_id": str(uuid4()), "expected_version": version - 1}
+    assert patch(first_id, "org", stale).status_code == 409
+    assert (
+        patch(
+            first_id, "org", {k: v for k, v in release.items() if k != "reason"}
+        ).status_code
+        == 422
+    )
+    for extra in ({"held": True}, {"assigned_crew_id": None}, {"locked": False}):
+        assert patch(first_id, "org", {**release, **extra}).status_code == 409
+    response = patch(first_id, "org", release)
+    assert response.status_code == 200, response.text
+    for _ in range(2):
+        assert patch(first_id, "org", release).status_code == 200
+    assert (
+        patch(
+            first_id, "org", {**release, "reason": "Different command content"}
+        ).status_code
+        == 409
+    )
+    assert patch(next_id, "crew", start).status_code == 200
+    with Session(engine) as db:
+        first = db.get(Job, first_id)
+        assert first.status == "unassigned" and first.assigned_crew_id is None
+        assert (
+            first.route_position is None
+            and first.travel_minutes == 0
+            and not first.locked
+        )
+        assert first.version == version + 1
+        records = list(
+            db.scalars(
+                select(Event).where(Event.command_id == UUID(release["command_id"]))
+            )
+        )
+        assert len(records) == 1 and records[0].details["reason"] == release["reason"]
+        assert (
+            db.get(Job, jobs[2]).version,
+            db.get(Job, jobs[2]).assigned_crew_id,
+        ) == before_other
+        preview = compute_preview(db, ids[:1], settings, FakeRoads(), str(actor))
+        assert preview.dispatchable
+        dispatch_preview(
+            db, db.get(RoutingPreview, preview.id), uuid4(), actor, settings
+        )
+        assert db.get(Job, first_id).assigned_crew_id == ids[0]
+
+
+def test_audited_recheck_release_restores_route_and_replanning(
+    routing_api, assessment_db, monkeypatch
+):
+    monkeypatch.setattr("api.routing.mutation_lock", lambda db: None)
+    client, ids, jobs = routing_api
+    verify_recheck_route_resolution(client, assessment_db, ids, jobs)
 
 
 def test_disabled_routing_blocks_new_priority_and_location_writes(

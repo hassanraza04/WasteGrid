@@ -485,7 +485,13 @@ original validated-plan checks until explicitly selected for organiser routing.
 
 When organiser routing is enabled, legacy job PATCH rejects `assigned_crew_id`,
 `status: "unassigned"` and `held: true` rather than clearing ownership outside
-dispatch. Marking a crew unavailable also retains its assignments and pauses
+dispatch. A narrow audited exception lets an organiser resolve a resident recheck
+by changing only a `recheck_requested` job to `unassigned` with the current version,
+command ID and reason. Exact retries are idempotent; assignment, hold and lock
+fields cannot be combined with this resolution. The release removes the old stop
+from the crew's execution order and makes it available for a new preview/dispatch.
+The resident recheck alone keeps ownership and pauses the route pending review.
+Marking a crew unavailable also retains its assignments and pauses
 execution. The new priority and GPS writes are disabled with the routing flag;
 read-only historical previews remain available to authorised organisers.
 
