@@ -25,6 +25,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="report" options={{ presentation: 'fullScreenModal' }} />
         <Stack.Screen name="login" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="account" options={{ presentation: 'modal' }} />
       </Stack>
     </ThemeProvider>
   );

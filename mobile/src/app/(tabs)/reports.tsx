@@ -3,6 +3,7 @@ import { FlatList, StyleSheet } from "react-native";
 import { router } from "expo-router";
 
 import { Button, EmptyState, Screen, ScreenHeader, useScreenPadding } from "@/components/ui";
+import { AccountButton } from "@/components/account/account-button";
 import { ReportCard } from "@/components/reports/report-card";
 import { useSession } from "@/auth/session";
 import { DEMO_REPORTS } from "@/data/demo-reports";
@@ -14,12 +15,14 @@ export default function Reports() {
 
   if (!session) {
     return (
-      <Screen contentStyle={s.center}>
+      <Screen contentStyle={s.signedOut}>
+        <ScreenHeader title="My reports" trailing={<AccountButton />} />
         <EmptyState
           icon="file-text"
           title="Log in to see your reports"
           message="Track the waste you've reported and see when it's cleaned up."
           action={<Button label="Log in" onPress={() => router.push("/login")} />}
+          style={s.signedOutEmpty}
         />
       </Screen>
     );
@@ -37,7 +40,7 @@ export default function Reports() {
         renderItem={({ item }) => <ReportCard report={item} />}
         contentContainerStyle={[padding, s.list]}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={<ScreenHeader title="My reports" subtitle={`${openCount} open · ${session.email}`} style={s.header} />}
+        ListHeaderComponent={<ScreenHeader title="My reports" subtitle={`${openCount} open`} trailing={<AccountButton />} style={s.header} />}
         ListEmptyComponent={<EmptyState icon="inbox" title="No reports yet" message="Reports you submit will show up here." style={s.empty} />}
       />
     </Screen>
@@ -45,7 +48,8 @@ export default function Reports() {
 }
 
 const s = StyleSheet.create({
-  center: { flexGrow: 1, justifyContent: "center" },
+  signedOut: { flexGrow: 1 },
+  signedOutEmpty: { flex: 1, justifyContent: "center" },
   list: { gap: Spacing.md },
   header: { marginBottom: Spacing.sm },
   empty: { marginTop: Spacing.xxxl },

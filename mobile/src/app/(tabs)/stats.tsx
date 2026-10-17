@@ -1,17 +1,20 @@
-// app/(tabs)/stats.tsx — Cleanup statistics by city/area. Everyone sees the stats; admins can also plan crew routes.
+// app/(tabs)/stats.tsx — Report statistics for the user's city, or any city they search for
 import { useState } from "react";
-import { View, ScrollView, StyleSheet } from "react-native";
+import { View, ActivityIndicator, StyleSheet } from "react-native";
 
-import { AppText, Button, Card, Chip, Screen, ScreenHeader, SegmentedControl } from "@/components/ui";
+import { AppText, Card, Screen, ScreenHeader, SegmentedControl } from "@/components/ui";
+import { AccountButton } from "@/components/account/account-button";
+import { CitySearch } from "@/components/city/city-search";
+import { CityHeading } from "@/components/city/city-heading";
+import { NoCity } from "@/components/city/no-city";
 import { StatCard } from "@/components/stats/stat-card";
-import { CleanupRow } from "@/components/stats/cleanup-row";
-import { RoutePlannerOverlay } from "@/components/admin/route-planner-overlay";
-import { useSession } from "@/auth/session";
-import { AREAS } from "@/data/areas";
-import { getAreaStats, type StatsPeriod } from "@/data/stats";
-import { getCrews } from "@/data/crews";
-import { planCrewRoutes } from "@/utils/route-planner";
-import { Layout, Spacing } from "@/theme";
+import { ReportRow } from "@/components/reports/report-row";
+import { useCityPicker } from "@/hooks/use-city-picker";
+import { useCityStats } from "@/hooks/use-city-stats";
+import type { City } from "@/data/cities";
+import type { CityStats, StatsPeriod } from "@/data/stats";
+import { formatDuration } from "@/utils/format";
+import { Colors, Spacing } from "@/theme";
 
 const PERIODS: { value: StatsPeriod; label: string }[] = [
   { value: "7d", label: "7 days" },
@@ -19,67 +22,66 @@ const PERIODS: { value: StatsPeriod; label: string }[] = [
 ];
 
 export default function Stats() {
-  const session = useSession();
-  const isAdmin = session?.role === "admin";
-  const [area, setArea] = useState(AREAS[0]);
+  const { local, city, isLocal, canGoBackToLocal, selectCity, backToLocal } = useCityPicker();
   const [period, setPeriod] = useState<StatsPeriod>("7d");
-  const [plannerOpen, setPlannerOpen] = useState(false);
+  const { stats } = useCityStats(city, period);
 
-  const stats = getAreaStats(area, period);
-  const cleanups = stats.recentCleanups;
+  return (
+    <Screen>
+      <ScreenHeader title="Statistics" trailing={<AccountButton />} />
+      <CitySearch onSelect={selectCity} />
+
+      {city ? (
+        <>
+          <CityHeading city={city} isLocal={isLocal} onBackToLocal={canGoBackToLocal ? backToLocal : undefined} />
+          <SegmentedControl options={PERIODS} value={period} onChange={setPeriod} />
+          {stats ? <CityStatsView city={city} stats={stats} period={period} /> : <ActivityIndicator color={Colors.ink} style={s.loading} />}
+        </>
+      ) : (
+        <NoCity local={local} />
+      )}
+    </Screen>
+  );
+}
+
+function CityStatsView({ city, stats, period }: { city: City; stats: CityStats; period: StatsPeriod }) {
+  const periodLabel = PERIODS.find((p) => p.value === period)?.label;
+  const reports = stats.recentReports;
 
   return (
     <>
-      <Screen>
-        <ScreenHeader title="Statistics" subtitle={area.city} />
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.areas} style={s.areasScroll}>
-          {AREAS.map((a) => (
-            <Chip key={a.id} label={a.name} selected={a.id === area.id} onPress={() => setArea(a)} />
-          ))}
-        </ScrollView>
-
-        <SegmentedControl options={PERIODS} value={period} onChange={setPeriod} />
-
-        {isAdmin && <Button label="Plan crew routes" icon="navigation" onPress={() => setPlannerOpen(true)} />}
-
-        <View style={s.cards}>
-          <StatCard icon="check-circle" label="Reports handled" value={String(stats.reportsHandled)} highlight />
-          <View style={s.cardRow}>
-            <StatCard icon="alert-circle" label="Still open" value={String(stats.reportsOpen)} style={s.flex} />
-            <StatCard icon="clock" label="Avg. time to clean" value={`${stats.avgHoursToClean} h`} style={s.flex} />
-          </View>
+      <View style={s.cards}>
+        <StatCard icon="check-circle" label="Reports resolved" value={String(stats.reportsResolved)} highlight />
+        <View style={s.cardRow}>
+          <StatCard icon="flag" label="Reports made" value={String(stats.reportsMade)} style={s.flex} />
+          <StatCard
+            icon="clock"
+            label="Avg. time to resolve"
+            value={stats.avgHoursToResolve === null ? "–" : formatDuration(stats.avgHoursToResolve)}
+            style={s.flex}
+          />
         </View>
+      </View>
 
-        <AppText variant="title" style={s.sectionTitle}>Recently cleaned</AppText>
-        <Card padding={Spacing.lg} style={s.listCard}>
-          {cleanups.length === 0
-            ? <AppText tone="muted" style={s.empty}>Nothing cleaned in {area.name} yet.</AppText>
-            : cleanups.map((c, i) => <CleanupRow key={c.id} cleanup={c} divider={i < cleanups.length - 1} />)}
-        </Card>
-      </Screen>
-
-      {isAdmin && (
-        <RoutePlannerOverlay
-          key={area.id} // fresh crew selection per area
-          visible={plannerOpen}
-          area={area}
-          crews={getCrews(area)}
-          onClose={() => setPlannerOpen(false)}
-          onCalculate={planCrewRoutes}
-        />
-      )}
+      <View style={s.sectionHeader}>
+        <AppText variant="title">Recent reports</AppText>
+        <AppText variant="caption" tone="muted">Last {periodLabel}</AppText>
+      </View>
+      <Card padding={Spacing.lg} style={s.listCard}>
+        {reports.length === 0
+          ? <AppText tone="muted" style={s.empty}>No reports in {city.name} in the last {periodLabel}.</AppText>
+          : reports.map((r, i) => <ReportRow key={r.id} report={r} divider={i < reports.length - 1} />)}
+      </Card>
     </>
   );
 }
 
 const s = StyleSheet.create({
   flex: { flex: 1 },
-  areasScroll: { marginHorizontal: -Layout.screenPadding }, // chips scroll edge to edge
-  areas: { paddingHorizontal: Layout.screenPadding, gap: Spacing.sm },
   cards: { gap: Spacing.md },
   cardRow: { flexDirection: "row", gap: Spacing.md },
-  sectionTitle: { marginTop: Spacing.sm },
+  sectionHeader: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", marginTop: Spacing.sm },
   listCard: { paddingVertical: Spacing.xs },
   empty: { paddingVertical: Spacing.md },
+  loading: { marginTop: Spacing.xxl },
 });

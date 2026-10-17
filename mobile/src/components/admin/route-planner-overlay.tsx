@@ -5,27 +5,29 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText, Button, Chip, Icon, IconButton } from "@/components/ui";
 import { Colors, Layout, Radius, Spacing } from "@/theme";
-import type { Area } from "@/data/areas";
+import type { City } from "@/data/cities";
 import type { Crew } from "@/data/crews";
 import { DEFAULT_CONSTRAINTS, type CrewRoute, type RouteConstraints, type RouteRequest } from "@/utils/route-planner";
 
 type Props = {
   visible: boolean;
-  area: Area;
+  city: City;
   crews: Crew[];
   onClose: () => void;
   onCalculate: (request: RouteRequest) => Promise<CrewRoute[]>;
+  onAssign: (routes: CrewRoute[]) => Promise<void>; // send the calculated routes to the crews
 };
 
-// Admin-only sheet: pick crews in the area, set constraints, then calculate one route per crew.
-// Give it key={area.id} so the crew selection resets when the area changes.
+// Admin-only sheet: pick crews in the city, set constraints, calculate one route per crew, then assign them.
+// Give it key={city.id} so the crew selection resets when the city changes.
 // Rendered in a Modal so it sits above the floating tab bar.
-export function RoutePlannerOverlay({ visible, area, crews, onClose, onCalculate }: Props) {
+export function RoutePlannerOverlay({ visible, city, crews, onClose, onCalculate, onAssign }: Props) {
   const insets = useSafeAreaInsets();
   const [constraints, setConstraints] = useState(DEFAULT_CONSTRAINTS);
   const [crewIds, setCrewIds] = useState(() => crews.filter((c) => c.onDuty).map((c) => c.id));
   const [routes, setRoutes] = useState<CrewRoute[] | null>(null); // null = not calculated yet
   const [calculating, setCalculating] = useState(false);
+  const [assigning, setAssigning] = useState(false);
 
   const update = (patch: Partial<RouteConstraints>) => {
     setConstraints((prev) => ({ ...prev, ...patch }));
@@ -40,9 +42,21 @@ export function RoutePlannerOverlay({ visible, area, crews, onClose, onCalculate
   const calculate = async () => {
     setCalculating(true);
     try {
-      setRoutes(await onCalculate({ areaId: area.id, crewIds, constraints }));
+      setRoutes(await onCalculate({ cityId: city.id, crewIds, constraints }));
     } finally {
       setCalculating(false);
+    }
+  };
+
+  const assign = async () => {
+    if (!routes?.length) return;
+    setAssigning(true);
+    try {
+      await onAssign(routes);
+      setRoutes(null);
+      onClose();
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -57,7 +71,7 @@ export function RoutePlannerOverlay({ visible, area, crews, onClose, onCalculate
         <View style={s.header}>
           <View style={s.flex}>
             <AppText variant="title">Plan crew routes</AppText>
-            <AppText variant="caption" tone="muted">{area.name} · routes start at each crew&apos;s location</AppText>
+            <AppText variant="caption" tone="muted">{city.name} · routes start at each crew&apos;s location</AppText>
           </View>
           <IconButton icon="x" variant="sunken" size="sm" accessibilityLabel="Close" onPress={onClose} />
         </View>
@@ -65,7 +79,7 @@ export function RoutePlannerOverlay({ visible, area, crews, onClose, onCalculate
         <View style={s.section}>
           <AppText variant="label">Crews</AppText>
           {crews.length === 0 ? (
-            <AppText variant="caption" tone="muted">No crews in this area.</AppText>
+            <AppText variant="caption" tone="muted">No crews in this city.</AppText>
           ) : (
             <View style={s.chips}>
               {crews.map((crew) => (
@@ -128,14 +142,24 @@ export function RoutePlannerOverlay({ visible, area, crews, onClose, onCalculate
           </View>
         )}
 
-        <Button
-          label="Calculate routes"
-          icon="navigation"
-          onPress={calculate}
-          loading={calculating}
-          disabled={crewIds.length === 0}
-          style={s.cta}
-        />
+        {routes?.length ? (
+          <Button
+            label={routes.length === 1 ? "Assign route" : `Assign ${routes.length} routes`}
+            icon="send"
+            onPress={assign}
+            loading={assigning}
+            style={s.cta}
+          />
+        ) : (
+          <Button
+            label="Calculate routes"
+            icon="navigation"
+            onPress={calculate}
+            loading={calculating}
+            disabled={crewIds.length === 0}
+            style={s.cta}
+          />
+        )}
       </Animated.View>
     </Modal>
   );

@@ -2,9 +2,14 @@
 // Swap the internals for real auth later; screens only use useSession / signIn / signOut.
 import { useSyncExternalStore } from "react";
 
-export type Role = "resident" | "admin";
+// user: reports waste. crew: also works an assigned cleanup route. admin: also plans and assigns routes.
+export type Role = "user" | "crew" | "admin";
 
-export type Session = { email: string; role: Role };
+export type Session = {
+  email: string;
+  role: Role;
+  crewId?: string; // set for crew members: which crew's route they see
+};
 
 let current: Session | null = null;
 const listeners = new Set<() => void>();

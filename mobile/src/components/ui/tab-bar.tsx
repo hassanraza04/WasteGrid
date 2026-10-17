@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, type LayoutChangeEvent } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,19 +24,22 @@ export function useTabBarClearance() {
 
 // Floating pill tab bar. Icons and titles come from each Tabs.Screen's `tabBarIcon` and `title` options.
 export function TabBar({ state, descriptors, emitter, navigateToTab, insets }: BottomTabBarProps) {
-  const [itemWidth, setItemWidth] = useState(0);
+  // Store the bar's width, not the tab width: tabs appear and disappear with the signed-in role,
+  // which changes the tab count without changing the bar's size (so onLayout wouldn't fire again).
+  const [barWidth, setBarWidth] = useState(0);
+  const itemWidth = barWidth ? (barWidth - PADDING * 2) / state.routes.length : 0;
   const x = useSharedValue(0);
   const pillStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
+  const placed = useRef(false); // first placement jumps into position instead of sliding
 
   useEffect(() => {
-    if (itemWidth) x.set(withSpring(state.index * itemWidth, SPRING));
+    if (!itemWidth) return;
+    const target = state.index * itemWidth;
+    x.set(placed.current ? withSpring(target, SPRING) : target);
+    placed.current = true;
   }, [state.index, itemWidth, x]);
 
-  const onLayout = (e: LayoutChangeEvent) => {
-    const width = (e.nativeEvent.layout.width - PADDING * 2) / state.routes.length;
-    x.set(state.index * width); // first layout: jump into place, don't slide
-    setItemWidth(width);
-  };
+  const onLayout = (e: LayoutChangeEvent) => setBarWidth(e.nativeEvent.layout.width);
 
   return (
     <View style={[s.bar, { bottom: barBottom(insets.bottom) }]} onLayout={onLayout} accessibilityRole="tablist">

@@ -4,7 +4,7 @@ import { PressableScale } from "@/components/ui/pressable-scale";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Colors, Radius, Shadow, Sizes } from "@/theme";
 
-type Variant = "floating" | "surface" | "sunken" | "scrim" | "plain";
+type Variant = "primary" | "floating" | "surface" | "sunken" | "scrim" | "plain";
 
 type Props = {
   icon: IconName;
@@ -18,6 +18,7 @@ type Props = {
 };
 
 const VARIANTS: Record<Variant, { container: ViewStyle; color: string }> = {
+  primary: { container: { backgroundColor: Colors.primary }, color: Colors.onPrimary }, // the main action in a row
   floating: { container: { backgroundColor: Colors.surface, ...Shadow.floating }, color: Colors.ink }, // over the map
   surface: { container: { backgroundColor: Colors.surface }, color: Colors.ink }, // next to inputs
   sunken: { container: { backgroundColor: Colors.surfaceSunken }, color: Colors.ink }, // inside white cards and sheets

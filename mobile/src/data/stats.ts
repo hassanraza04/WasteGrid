@@ -1,44 +1,114 @@
-// stats.ts — cleanup statistics per area. Demo numbers for now.
-// TODO: replace getAreaStats with a call to the stats API; the screens only depend on the types below.
-import { isInArea, type Area } from "@/data/areas";
+// stats.ts — report statistics per city. Demo data for now.
+// TODO: replace getCityStats with a call to the stats API; the screens only depend on the types below.
+import type { City } from "@/data/cities";
+import type { Report } from "@/data/demo-reports";
 
 export type StatsPeriod = "7d" | "30d";
 
-export type Cleanup = {
-  id: string;
-  areaId: string;
-  caption: string;
-  address: string;
-  cleanedAt: string; // ISO date
+export type CityReport = Pick<Report, "id" | "caption" | "address" | "status" | "createdAt"> & {
+  cityId: string;
+  resolvedAt?: string; // ISO date, set once resolved
 };
 
-export type AreaStats = {
-  reportsHandled: number;
-  reportsOpen: number;
-  avgHoursToClean: number;
-  recentCleanups: Cleanup[];
+export type CityStats = {
+  reportsMade: number; // created in the period
+  reportsResolved: number; // resolved in the period
+  avgHoursToResolve: number | null; // over reports resolved in the period; null if none were
+  recentReports: CityReport[]; // newest first
 };
 
-type Totals = Omit<AreaStats, "recentCleanups">;
+const PERIOD_DAYS: Record<StatsPeriod, number> = { "7d": 7, "30d": 30 };
+const RECENT_LIMIT = 8;
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 
-const DEMO_TOTALS: Record<string, Record<StatsPeriod, Totals>> = {
-  karachi: { "7d": { reportsHandled: 128, reportsOpen: 41, avgHoursToClean: 19 }, "30d": { reportsHandled: 512, reportsOpen: 41, avgHoursToClean: 23 } },
-  dha:     { "7d": { reportsHandled: 47, reportsOpen: 9, avgHoursToClean: 14 },   "30d": { reportsHandled: 186, reportsOpen: 9, avgHoursToClean: 17 } },
-  clifton: { "7d": { reportsHandled: 52, reportsOpen: 14, avgHoursToClean: 18 },  "30d": { reportsHandled: 201, reportsOpen: 14, avgHoursToClean: 21 } },
-  saddar:  { "7d": { reportsHandled: 29, reportsOpen: 18, avgHoursToClean: 31 },  "30d": { reportsHandled: 125, reportsOpen: 18, avgHoursToClean: 34 } },
+export async function getCityStats(city: City, period: StatsPeriod): Promise<CityStats> {
+  const since = Date.now() - PERIOD_DAYS[period] * DAY;
+  const reports = demoReportsFor(city);
+
+  const made = reports.filter((r) => Date.parse(r.createdAt) >= since);
+  const resolved = reports.filter((r) => r.resolvedAt && Date.parse(r.resolvedAt) >= since);
+  const totalHours = resolved.reduce((sum, r) => sum + (Date.parse(r.resolvedAt!) - Date.parse(r.createdAt)) / HOUR, 0);
+
+  return {
+    reportsMade: made.length,
+    reportsResolved: resolved.length,
+    avgHoursToResolve: resolved.length ? totalHours / resolved.length : null,
+    recentReports: [...made].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, RECENT_LIMIT),
+  };
+}
+
+// ─── Demo data ───────────────────────────────────────────────────────────────
+// A month of made-up reports per city, generated once per city with a fixed seed so the numbers stay put
+// between visits. Dates are relative to now so "last 7 days" always has data.
+
+type DemoProfile = { perMonth: number; avgHours: number; neighborhoods: string[] };
+
+const DEMO_PROFILES: Record<string, DemoProfile> = {
+  karachi: { perMonth: 240, avgHours: 20, neighborhoods: ["DHA Phase 6", "Clifton", "Saddar", "Gulshan-e-Iqbal", "North Nazimabad", "PECHS"] },
+  lahore: { perMonth: 190, avgHours: 16, neighborhoods: ["Gulberg", "DHA Phase 5", "Model Town", "Johar Town", "Anarkali", "Iqbal Town"] },
+  islamabad: { perMonth: 80, avgHours: 10, neighborhoods: ["F-7", "G-9", "I-8", "Blue Area", "E-11", "F-10"] },
+  rawalpindi: { perMonth: 110, avgHours: 22, neighborhoods: ["Saddar", "Satellite Town", "Bahria Town", "Chaklala"] },
+  faisalabad: { perMonth: 90, avgHours: 26, neighborhoods: ["D Ground", "Peoples Colony", "Madina Town", "Susan Road"] },
+  multan: { perMonth: 60, avgHours: 28, neighborhoods: ["Cantt", "Gulgasht", "Shah Rukn-e-Alam", "Bosan Road"] },
+  peshawar: { perMonth: 85, avgHours: 30, neighborhoods: ["University Town", "Hayatabad", "Saddar", "Gulbahar"] },
+  hyderabad: { perMonth: 55, avgHours: 34, neighborhoods: ["Latifabad", "Qasimabad", "Saddar", "Auto Bhan Road"] },
+  quetta: { perMonth: 40, avgHours: 40, neighborhoods: ["Jinnah Road", "Satellite Town", "Cantt", "Brewery Road"] },
 };
 
-const DEMO_CLEANUPS: Cleanup[] = [
-  { id: "WG-1036", areaId: "dha", caption: "Overflowing bin next to the bus stop", address: "Khayaban-e-Ittehad, DHA Phase 6", cleanedAt: "2026-10-17T07:20:00.000Z" },
-  { id: "WG-1029", areaId: "clifton", caption: "Construction rubble on the footpath", address: "Zamzama Boulevard, Clifton", cleanedAt: "2026-10-16T15:05:00.000Z" },
-  { id: "WG-1024", areaId: "saddar", caption: "Dumped bags behind the market", address: "Empress Market, Saddar", cleanedAt: "2026-10-16T10:45:00.000Z" },
-  { id: "WG-1019", areaId: "dha", caption: "Litter along the park fence", address: "Beach Avenue Park, DHA Phase 8", cleanedAt: "2026-10-15T12:30:00.000Z" },
-  { id: "WG-1011", areaId: "clifton", caption: "Overflowing bins at the seafront", address: "Sea View, Clifton", cleanedAt: "2026-10-14T18:10:00.000Z" },
+const CAPTIONS = [
+  "Overflowing bin next to the bus stop",
+  "Dumped bags behind the market",
+  "Construction rubble blocking the footpath",
+  "Litter along the park fence",
+  "Plastic waste in the storm drain",
+  "Trash pile burning on an empty plot",
+  "Broken furniture left on the street",
+  "Food waste outside the restaurants",
+  "Debris left after the weekend bazaar",
 ];
 
-export function getAreaStats(area: Area, period: StatsPeriod): AreaStats {
-  return {
-    ...(DEMO_TOTALS[area.id]?.[period] ?? { reportsHandled: 0, reportsOpen: 0, avgHoursToClean: 0 }),
-    recentCleanups: DEMO_CLEANUPS.filter((c) => isInArea(c.areaId, area)),
+const SPOTS = ["Main Boulevard", "Commercial Area", "Service Road", "Park entrance", "Masjid Road", "School Road", "Food Street"];
+
+const RESOLVE_RATE = 0.85;
+
+const cache = new Map<string, CityReport[]>();
+
+function demoReportsFor(city: City): CityReport[] {
+  const cached = cache.get(city.id);
+  if (cached) return cached;
+
+  const profile = DEMO_PROFILES[city.id] ?? { perMonth: 0, avgHours: 24, neighborhoods: [] };
+  const rand = seededRandom(city.id);
+  const pick = <T,>(items: T[]) => items[Math.floor(rand() * items.length)];
+  const now = Date.now();
+
+  const reports = Array.from({ length: profile.perMonth }, (_, i): CityReport => {
+    const createdAt = now - rand() * 30 * DAY;
+    const resolveAt = createdAt + profile.avgHours * (0.4 + rand() * 1.2) * HOUR;
+    const resolved = rand() < RESOLVE_RATE && resolveAt < now;
+    return {
+      id: `${city.id}-${i}`,
+      cityId: city.id,
+      caption: pick(CAPTIONS),
+      address: `${pick(SPOTS)}, ${pick(profile.neighborhoods)}`,
+      status: resolved ? "resolved" : rand() < 0.5 ? "in-progress" : "submitted",
+      createdAt: new Date(createdAt).toISOString(),
+      resolvedAt: resolved ? new Date(resolveAt).toISOString() : undefined,
+    };
+  });
+
+  cache.set(city.id, reports);
+  return reports;
+}
+
+// Small deterministic PRNG (mulberry32) seeded from a string
+function seededRandom(seed: string): () => number {
+  let a = [...seed].reduce((h, ch) => Math.imul(h ^ ch.charCodeAt(0), 2654435761), 1779033703);
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }

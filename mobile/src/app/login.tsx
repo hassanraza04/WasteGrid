@@ -3,35 +3,34 @@ import { useRef, useState } from "react";
 import { View, StyleSheet, type TextInputInstance } from "react-native";
 import { router } from "expo-router";
 
-import { AppText, Button, IconButton, Screen, ScreenHeader, SegmentedControl, TextField } from "@/components/ui";
+import { AppText, Button, Chip, IconButton, Screen, ScreenHeader, SegmentedControl, TextField } from "@/components/ui";
+import { ROLES } from "@/components/account/roles";
 import { signIn, type Role } from "@/auth/session";
+import { getAllCrews } from "@/data/crews";
 import { Layout, Spacing } from "@/theme";
 
-const ROLES: { value: Role; label: string }[] = [
-  { value: "resident", label: "Resident" },
-  { value: "admin", label: "Admin" },
-];
-
 export default function Login() {
-  const [role, setRole] = useState<Role>("resident");
+  const [role, setRole] = useState<Role>("user");
+  const [crewId, setCrewId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const passwordRef = useRef<TextInputInstance>(null);
 
-  const canLogIn = email.trim().length > 0 && password.length > 0;
+  const canLogIn = email.trim().length > 0 && password.length > 0 && (role !== "crew" || !!crewId);
 
   // Credentials belong to one role, so switching roles starts the form over
   const switchRole = (next: Role) => {
     if (next === role) return;
     setRole(next);
+    setCrewId(null);
     setEmail("");
     setPassword("");
   };
 
   const logIn = () => {
     if (!canLogIn) return;
-    // TODO: real authentication; the role will come from the account, not this toggle
-    signIn({ email: email.trim(), role });
+    // TODO: real authentication; the role and crew will come from the account, not these pickers
+    signIn({ email: email.trim(), role, crewId: role === "crew" ? crewId! : undefined });
     router.back(); // back to wherever Log in was opened from
   };
 
@@ -45,9 +44,20 @@ export default function Login() {
           <IconButton icon="x" variant="sunken" size="sm" accessibilityLabel="Close" onPress={() => router.back()} />
         </View>
       }>
-      <ScreenHeader title="Log in" subtitle="Track cleanups in your city. Admins can plan crew routes." />
+      <ScreenHeader title="Log in" subtitle="Report waste and track cleanups. Crews see their routes; admins plan them." />
 
       <SegmentedControl options={ROLES} value={role} onChange={switchRole} />
+
+      {role === "crew" && (
+        <View style={s.crewPicker}>
+          <AppText variant="label" style={s.crewLabel}>Your crew</AppText>
+          <View style={s.crews}>
+            {getAllCrews().map((crew) => (
+              <Chip key={crew.id} label={crew.name} selected={crew.id === crewId} onPress={() => setCrewId(crew.id)} />
+            ))}
+          </View>
+        </View>
+      )}
 
       <TextField
         label="Email"
@@ -84,4 +94,7 @@ export default function Login() {
 const s = StyleSheet.create({
   header: { flexDirection: "row", paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.md },
   submit: { marginTop: Spacing.sm },
+  crewPicker: { gap: Spacing.sm },
+  crewLabel: { paddingHorizontal: Spacing.xs },
+  crews: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm },
 });

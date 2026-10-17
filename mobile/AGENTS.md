@@ -34,14 +34,20 @@ Run lint and typecheck before declaring any task done.
 Three layers; each only uses the ones above it:
 
 1. **`src/theme/`** (import from `@/theme`): the only place colors, fonts, type scale, spacing, radii, shadows and fixed sizes are defined. `mapStyle.json` (Google map style) lives here too.
-2. **`src/components/ui/`** (import from `@/components/ui`): generic building blocks: `Screen`, `ScreenHeader`, `AppText`, `Icon`, `Button`, `IconButton`, `Card`, `ListRow`, `TextField`, `Badge`, `Chip`, `SegmentedControl`, `Avatar`, `EmptyState`, `TabBar`. All visual styling lives here. Inside this folder, import siblings by path, not via the index.
+2. **`src/components/ui/`** (import from `@/components/ui`): generic building blocks: `Screen`, `ScreenHeader`, `AppText`, `Icon`, `IconCircle`, `Button`, `IconButton`, `Card`, `ListRow`, `TextField`, `SearchField`, `Badge`, `Chip`, `SegmentedControl`, `Avatar`, `EmptyState`, `ProgressBar`, `TabBar`. All visual styling lives here. Inside this folder, import siblings by path, not via the index.
 3. **Feature components** (`src/components/<feature>/`) and **screens** (`src/app/`): compose the blocks. Screens hold layout only (order, gaps, padding from `Spacing`/`Layout`).
 
 Rules:
 - Outside `theme/` and `components/ui/`, never hardcode a color, `fontSize`/`fontFamily`/`fontWeight`, or a shadow. Use `<AppText variant tone>` for text and `<Icon>` for icons (don't use React Native's `Text` or `@expo/vector-icons` directly).
 - Need a new look? Add a token or a variant to an existing block first; add a new block to `components/ui/` only if it'll be reused.
 - Tab screens use `<Screen>` (or `useScreenPadding()` on a FlatList) so content clears the floating tab bar. Overlays that must cover the tab bar go in a `Modal`.
-- Tabs are configured in `src/components/app-tabs.tsx` (title + icon per route).
+- Tabs are configured in `src/components/app-tabs.tsx` (title, icon, and which roles see each tab).
+
+## Data and roles
+
+- `src/data/` is the backend seam. Each module exposes async functions shaped like API calls (endpoint noted in comments) over demo data; screens and hooks only call those functions, never the demo arrays/stores. Connecting the backend = replacing function bodies, not touching screens.
+- Live data (e.g. `assignments.ts`) also exposes an `on…Changed(listener)` subscription; hooks in `src/hooks/` refetch on it. With a backend, fire it from a push channel or polling.
+- Roles (`src/auth/session.ts`): `user` reports waste; `crew` also gets the **My route** tab (session carries `crewId`); `admin` also gets **Dispatch** to plan and assign routes. Account/login lives behind the avatar (`AccountButton`) in each tab's header, not in a tab.
 
 ## Building with EAS
 

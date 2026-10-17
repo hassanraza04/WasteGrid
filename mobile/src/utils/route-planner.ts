@@ -1,4 +1,4 @@
-// route-planner.ts — turns open reports in an area into one pickup route per crew.
+// route-planner.ts — turns open reports in a city into one pickup route per crew.
 // The UI is wired to planCrewRoutes; only its body needs writing.
 import type { Coords } from "@/utils/location";
 
@@ -9,7 +9,7 @@ export type RouteConstraints = {
 };
 
 export type RouteRequest = {
-  areaId: string;
+  cityId: string;
   crewIds: string[];       // routes start from these crews' locations
   constraints: RouteConstraints;
 };
@@ -25,7 +25,7 @@ export type CrewRoute = {
 
 export const DEFAULT_CONSTRAINTS: RouteConstraints = { hours: 2, maxStopsPerCrew: 10, returnToStart: true };
 
-// TODO: fetch open reports for request.areaId, split them between the crews, and order each crew's stops
+// TODO: fetch open reports for request.cityId, split them between the crews, and order each crew's stops
 export async function planCrewRoutes(request: RouteRequest): Promise<CrewRoute[]> {
   console.log("planCrewRoutes not implemented yet", request);
   return [];

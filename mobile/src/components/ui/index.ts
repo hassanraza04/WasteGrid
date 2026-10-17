@@ -4,16 +4,19 @@
  */
 export { AppText, type TextTone } from "./text";
 export { Icon, type IconName } from "./icon";
+export { IconCircle } from "./icon-circle";
 export { Button } from "./button";
 export { IconButton } from "./icon-button";
 export { Card } from "./card";
 export { ListRow } from "./list-row";
 export { TextField } from "./text-field";
+export { SearchField } from "./search-field";
 export { Badge } from "./badge";
 export { Avatar } from "./avatar";
 export { Chip } from "./chip";
 export { SegmentedControl } from "./segmented-control";
 export { EmptyState } from "./empty-state";
+export { ProgressBar } from "./progress-bar";
 export { Screen, useScreenPadding } from "./screen";
 export { ScreenHeader } from "./screen-header";
 export { TabBar, useTabBarClearance } from "./tab-bar";

@@ -2,19 +2,14 @@ import { View, StyleSheet } from "react-native";
 import { Image } from "expo-image";
 
 import { AppText, Badge, Card, Icon, ListRow } from "@/components/ui";
-import { Colors, Radius, Spacing, type Tone } from "@/theme";
-import type { Report, ReportStatus } from "@/data/demo-reports";
-
-const STATUS: Record<ReportStatus, { label: string; tone: Tone }> = {
-  submitted: { label: "Submitted", tone: "warning" },
-  "in-progress": { label: "In progress", tone: "info" },
-  resolved: { label: "Resolved", tone: "success" },
-};
+import { REPORT_STATUS } from "@/components/reports/status";
+import { Colors, Radius, Spacing } from "@/theme";
+import { formatShortDate } from "@/utils/format";
+import type { Report } from "@/data/demo-reports";
 
 // One report in the list: photo, caption, address, status and date
 export function ReportCard({ report }: { report: Report }) {
-  const status = STATUS[report.status];
-  const date = new Date(report.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const status = REPORT_STATUS[report.status];
 
   return (
     <Card padding={Spacing.md}>
@@ -29,7 +24,7 @@ export function ReportCard({ report }: { report: Report }) {
         footer={
           <View style={s.meta}>
             <Badge label={status.label} tone={status.tone} />
-            <AppText variant="caption" tone="muted">{date} · {report.id}</AppText>
+            <AppText variant="caption" tone="muted">{formatShortDate(report.createdAt)} · {report.id}</AppText>
           </View>
         }
       />

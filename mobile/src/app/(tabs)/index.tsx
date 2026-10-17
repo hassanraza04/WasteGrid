@@ -7,6 +7,7 @@ import { router } from "expo-router";
 import mapStyle from "@/theme/mapStyle.json";
 
 import { AppText, Button, Card, IconButton, useTabBarClearance } from "@/components/ui";
+import { AccountButton } from "@/components/account/account-button";
 import { useStartRegion } from "@/hooks/use-start-region";
 import { getCurrentCoords } from "@/utils/location";
 import { regionAround } from "@/utils/map";
@@ -56,6 +57,10 @@ export default function MapPage() {
       )}
 
       {/* Layer 2: overlays. box-none lets touches pass through to the map */}
+      <SafeAreaView edges={["top"]} pointerEvents="box-none" style={s.account}>
+        <AccountButton floating />
+      </SafeAreaView>
+
       <SafeAreaView edges={["top"]} pointerEvents="box-none" style={s.controls}>
         <IconButton icon="layers" accessibilityLabel="Map layers" onPress={() => {}} /* TODO: layer picker */ />
         <IconButton icon="crosshair" accessibilityLabel="Center on my location" onPress={recenter} loading={locating} />
@@ -72,6 +77,7 @@ export default function MapPage() {
 
 const s = StyleSheet.create({
   placeholder: { ...StyleSheet.absoluteFill, backgroundColor: Colors.background, alignItems: "center", justifyContent: "center" },
+  account: { position: "absolute", top: Spacing.sm, left: Layout.screenPadding },
   controls: { position: "absolute", top: Spacing.sm, right: Layout.screenPadding, gap: Spacing.md },
   card: { position: "absolute", left: Layout.screenPadding, right: Layout.screenPadding, gap: Spacing.xs },
   cardText: { marginBottom: Spacing.md },
