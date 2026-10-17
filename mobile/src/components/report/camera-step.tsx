@@ -1,9 +1,11 @@
 import { useRef, useState, useEffect } from "react";
-import { View, Text, Pressable, StyleSheet, Linking } from "react-native";
+import { View, Text, StyleSheet, Linking } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { playSfx, preloadSounds } from '@/utils/sounds';
+import { AppColors } from '@/constants/theme';
+import { PressableScale } from '@/components/ui/pressable-scale';
 
 type Props = {
   onCapture: (uri: string) => void;
@@ -24,12 +26,13 @@ export function CameraStep({ onCapture, onClose }: Props) {
     return (
       <SafeAreaView style={[s.container, s.center]}>
         <Text style={s.message}>WasteGrid needs your camera to photograph waste reports.</Text>
-        <Pressable
+        <PressableScale
+          haptic="medium"
           style={s.permissionBtn}
           onPress={() => (permission.canAskAgain ? requestPermission() : Linking.openSettings())}>
           <Text style={s.permissionText}>{permission.canAskAgain ? "Allow camera" : "Open Settings"}</Text>
-        </Pressable>
-        <Pressable onPress={onClose} hitSlop={8}><Text style={s.cancel}>Cancel</Text></Pressable>
+        </PressableScale>
+        <PressableScale onPress={onClose} hitSlop={12}><Text style={s.cancel}>Cancel</Text></PressableScale>
       </SafeAreaView>
     );
   }
@@ -51,28 +54,28 @@ export function CameraStep({ onCapture, onClose }: Props) {
       <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" onCameraReady={() => setReady(true)} />
 
       <SafeAreaView edges={["top", "bottom"]} pointerEvents="box-none" style={s.overlay}>
-        <Pressable style={s.close} onPress={onClose} hitSlop={8}>
-          <Feather name="x" size={26} color="#fff" />
-        </Pressable>
-        <Pressable style={[s.shutter, (!ready || busy) && s.disabled]} onPress={takePhoto} disabled={!ready || busy}>
+        <PressableScale style={s.close} onPress={onClose} hitSlop={12}>
+          <Feather name="x" size={26} color={AppColors.onDark} />
+        </PressableScale>
+        <PressableScale haptic="heavy" style={[s.shutter, (!ready || busy) && s.disabled]} onPress={takePhoto} disabled={!ready || busy}>
           <View style={s.shutterInner} />
-        </Pressable>
+        </PressableScale>
       </SafeAreaView>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
+  container: { flex: 1, backgroundColor: AppColors.cameraBackground },
   center: { alignItems: "center", justifyContent: "center", padding: 32, gap: 16 },
-  message: { color: "#fff", fontSize: 16, textAlign: "center" },
-  permissionBtn: { backgroundColor: "#18a545", paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
-  permissionText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  cancel: { color: "#bbb", fontSize: 15 },
+  message: { color: AppColors.onDark, fontSize: 16, textAlign: "center" },
+  permissionBtn: { backgroundColor: AppColors.primary, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
+  permissionText: { color: AppColors.onPrimary, fontSize: 16, fontWeight: "600" },
+  cancel: { color: AppColors.onDarkMuted, fontSize: 15 },
   overlay: { ...StyleSheet.absoluteFill, justifyContent: "space-between" },
   close: { alignSelf: "flex-start", margin: 16 },
-  shutter: { alignSelf: "center", marginBottom: 32, width: 76, height: 76, borderRadius: 38, borderWidth: 4, borderColor: "#fff",
+  shutter: { alignSelf: "center", marginBottom: 32, width: 76, height: 76, borderRadius: 38, borderWidth: 4, borderColor: AppColors.onDark,
              alignItems: "center", justifyContent: "center" },
-  shutterInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: "#fff" },
+  shutterInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: AppColors.onDark },
   disabled: { opacity: 0.5 },
 });
