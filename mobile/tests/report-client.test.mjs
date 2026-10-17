@@ -112,3 +112,28 @@ test('recovering an accepted report clears an older rejection without deleting c
  assert.equal(saved.ownerId, 'owner');
  assert.equal(saved.rejection, undefined);
 });
+
+test('history pagination and private photo signing use the resident token only on API requests', async () => {
+ const { readReportUpdates, readPhotoAccess } = await import('../src/services/report-client.ts');
+ const saved = { id: 'report-1', apiUrl: 'https://api.example' };
+ const page = await readReportUpdates(saved, 'resident-token', 50, async (url, init) => {
+  assert.equal(url, 'https://api.example/reports/report-1/updates?limit=50&offset=50');
+  assert.equal(init.headers.Authorization, 'Bearer resident-token');
+  return Response.json({ items: [], limit: 50, offset: 50, total: 50 });
+ });
+ assert.equal(page.offset, 50);
+ const before = Date.now();
+ const access = await readPhotoAccess(saved, 'resident-token', 'photo-1', async (url, init) => {
+  assert.equal(url, 'https://api.example/photos/photo-1/access');
+  assert.equal(init.headers.Authorization, 'Bearer resident-token');
+  return Response.json({ url: 'https://storage.example/private?signature=test', expires_in: 123 });
+ });
+ assert.ok(access.expiresAt >= before + 123000); assert.ok(access.expiresAt <= Date.now() + 123000);
+ for (const status of [401, 403, 404, 503]) {
+  const denied = async () => new Response(null, { status });
+  await assert.rejects(readReportUpdates(saved, 'token', 0, denied));
+  await assert.rejects(readPhotoAccess(saved, 'token', 'photo-1', denied));
+ }
+ await assert.rejects(readPhotoAccess(saved, 'token', 'photo', async () => Response.json({ url: 'http://unsafe.example', expires_in: 300 })));
+ await assert.rejects(readReportUpdates(saved, 'token', -1, async () => { throw Error('should not request'); }), /Invalid history/);
+});

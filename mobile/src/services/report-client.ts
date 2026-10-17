@@ -16,6 +16,8 @@ export interface SavedReport {
   title: string;
   display_status: string;
   assessment_status: string;
+  photo_id?: string;
+  completion_photo_ids?: string[];
 }
 
 export type Transport = (url: string, init?: RequestInit) => Promise<Response>;
@@ -120,4 +122,38 @@ export async function discardRejectedDraft(
   const existing = await readReport(draft, token, request);
   if (existing) throw new Error("WasteGrid has accepted this report. Refresh its status instead of discarding it.");
   await remove();
+}
+
+export interface ReportUpdate {
+  id: string;
+  created_at: string;
+  message: string;
+  status: string | null;
+}
+export interface UpdatePage { items: ReportUpdate[]; limit: number; offset: number; total: number }
+export interface PhotoAccess { url: string; expiresAt: number }
+
+export async function readReportUpdates(draft: ReportDraft, token: string, offset: number, request: Transport): Promise<UpdatePage> {
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Invalid history page.");
+  const response = await request(`${draft.apiUrl}/reports/${draft.id}/updates?limit=50&offset=${offset}`, {
+    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(60_000), redirect: "error",
+  });
+  if (!response.ok) failed(response);
+  const page: UpdatePage = await response.json();
+  if (!Array.isArray(page.items) || page.offset !== offset || page.limit !== 50 || !Number.isSafeInteger(page.total) || page.total < 0) {
+    throw new Error("Unable to read report history. Please refresh.");
+  }
+  return page;
+}
+
+export async function readPhotoAccess(draft: ReportDraft, token: string, photoId: string, request: Transport): Promise<PhotoAccess> {
+  const requestedAt = Date.now();
+  const response = await request(`${draft.apiUrl}/photos/${encodeURIComponent(photoId)}/access`, {
+    headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(60_000), redirect: "error",
+  });
+  if (!response.ok) failed(response);
+  const access = await response.json();
+  if (typeof access.url !== "string" || !access.url.startsWith("https://") ||
+      !Number.isFinite(access.expires_in) || access.expires_in <= 0) throw new Error("Unable to load this private photo.");
+  return { url: access.url, expiresAt: requestedAt + access.expires_in * 1000 };
 }

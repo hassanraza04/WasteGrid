@@ -16,7 +16,7 @@ export default function Account() {
   const confirmSignOut = () =>
     Alert.alert("Log out?", session ? `You're signed in as ${session.email}.` : undefined, [
       { text: "Cancel", style: "cancel" },
-      { text: "Log out", style: "destructive", onPress: () => { signOut(); close(); } },
+      { text: "Log out", style: "destructive", onPress: () => { void signOut().then(close).catch(() => Alert.alert("Unable to finish signing out", "Please retry signing out.")); } },
     ]);
 
   const role = session && roleInfo(session.role);

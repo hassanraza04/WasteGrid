@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, StyleSheet } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 
 import { AppText, Button, Card, EmptyState, Screen, ScreenHeader } from "@/components/ui";
+import { ReportDetails } from "@/components/reports/report-details";
 import { AccountButton } from "@/components/account/account-button";
 import { getSession, useSession } from "@/auth/session";
 import { claimDeviceDrafts, countUnclaimedDrafts, discardDraft, listDrafts, refreshReport, sendDraft } from "@/services/reports";
@@ -79,6 +80,7 @@ export default function Reports() {
       <AppText variant="headline">{draft.fields.title}</AppText>
       <AppText selectable>{visible.reports[draft.id]?.public_reference ?? draft.reference ?? "Saved on device — upload not confirmed"}</AppText>
       {visible.reports[draft.id] && <AppText>Status: {visible.reports[draft.id].display_status} · Assessment: {visible.reports[draft.id].assessment_status}</AppText>}
+      {visible.reports[draft.id] && <ReportDetails draft={draft} report={visible.reports[draft.id]} />}
       {draft.rejection && <AppText accessibilityRole="alert">{draft.rejection}</AppText>}
       <Button disabled={busy} label={draft.reference || draft.rejection ? "Check status" : "Retry saved upload"} variant="outline" onPress={() => void run(() => draft.reference || draft.rejection ? refreshReport(draft) : sendDraft(draft))} />
       {draft.rejection && !draft.reference && <Button disabled={busy} label="Discard rejected upload" variant="outline" onPress={() => discard(draft)} />}

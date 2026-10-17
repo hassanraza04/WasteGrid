@@ -3,7 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import { Directory, File, Paths } from "expo-file-system";
 import { fetch } from "expo/fetch";
 import { Platform } from "react-native";
-import { discardRejectedDraft, readReport, residentToken, sendSavedDraft, type ReportDraft, type Transport } from "./report-client";
+import { discardRejectedDraft, readReportUpdates, readPhotoAccess, readReport, residentToken, sendSavedDraft, type ReportDraft, type Transport } from "./report-client";
 
 import { getSession } from "@/auth/session";
 
@@ -161,4 +161,11 @@ export async function refreshReport(draft: ReportDraft) {
     await saveDraft({ ...saved, reference: report.public_reference });
   }
   return report;
+}
+
+export async function reportUpdates(draft: ReportDraft, offset = 0) {
+  return readReportUpdates(draft, await credential(draft), offset, request);
+}
+export async function reportPhoto(draft: ReportDraft, photoId: string) {
+  return readPhotoAccess(draft, await credential(draft), photoId, request);
 }

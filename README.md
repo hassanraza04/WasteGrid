@@ -42,7 +42,10 @@ The native mobile app uploads photos, a caption and either GPS coordinates or a
 manual address to FastAPI. The form omits fire/sharp-object questions; missing
 answers remain unknown to the backend. It saves the report UUID, private token
 and an immutable upload draft before submission. **My reports** recovers interrupted uploads and reads status
-with that report's token. Definitively rejected uploads can be edited in the form
+with that report's token. Checking status also displays paginated update history
+and authorised report/cleanup photos. Temporary photo URLs stay in memory, refresh
+on expiry and are never given backend authorization headers or stored in the image
+disk cache. Definitively rejected uploads can be edited in the form
 or discarded from My reports after checking that the server has not accepted them. Timeouts
 and other uncertain outcomes retain their original identity and bytes.
 Retaking a photo clears its location and requires a fresh lookup or a new manual
@@ -55,8 +58,10 @@ report submission is not supported by this storage adapter.
 
 The mobile app includes the new map, report, account, crew, dispatch and statistics
 screens. Mobile sign-in uses Supabase Auth; staff roles and crew IDs come from
-`/auth/me`, and verified accounts without a staff role are residents. Sessions stay
-in memory. Report history requires login and is filtered by account on this device;
+`/auth/me`, and verified accounts without a staff role are residents. Native sessions
+use SecureStore, restore after restart with backend role verification, and refresh
+while the app is in the foreground. Web sessions remain in memory. Report history
+intentionally requires login and is filtered by account on this device;
 it is not yet synced across devices. Anonymous reports remain supported, and a
 signed-in user can explicitly import earlier anonymous drafts from their device.
 New accounts must already be provisioned in Supabase; this milestone does not add
@@ -80,8 +85,8 @@ npm ci
 npm run dev -- --host 127.0.0.1
 ```
 
-Open **http://localhost:5173/admin**. The shared backend allows that browser
-origin; `http://127.0.0.1:5173` is a different origin. Sign in with a provisioned
+Open **http://127.0.0.1:5173/admin** to match the command above. The shared backend
+currently permits that origin (verified by a CORS preflight). Sign in with a provisioned
 organiser account. **Refresh reports** reads the newest persisted records.
 
 ```bash

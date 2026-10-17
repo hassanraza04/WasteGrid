@@ -82,6 +82,8 @@ test('a stale anonymous draft object cannot bypass ownership after import', asyn
  signIn('owner-b');
  await assert.rejects(service.refreshReport(anonymous), /account that saved/);
  await assert.rejects(service.sendDraft(anonymous), /account that saved/);
+ await assert.rejects(service.reportUpdates(anonymous), /account that saved/);
+ await assert.rejects(service.reportPhoto(anonymous, 'private-photo'), /account that saved/);
 });
 
 
