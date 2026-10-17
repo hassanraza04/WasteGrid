@@ -35,6 +35,9 @@ the existing Photon settings and contains:
 - `WASTEGRID_BACKEND_URL`, an absolute HTTP(S) URL without query, fragment, or
   credentials.
 - `WASTEGRID_MESSAGING_API_KEY`, a non-empty bearer credential.
+- `PHOTON_AGENT_SENDER_ID`, the stable Photon sender used for every claimed
+  outgoing iMessage. The backend stores the conversation `space_id`, but does
+  not store this transport-specific sender identity.
 - An optional positive timeout with a conservative default.
 
 The production runner uses a backend-aware coordinator instead of
@@ -59,14 +62,16 @@ unlinked sender is skipped with a message-ID-only warning. Other backend
 failures leave the inbound item unacknowledged by the backend so its idempotency
 rules remain authoritative on a later poll.
 
-Only claimed outgoing messages whose conversation channel is `imessage` and
-whose external ID matches the Photon inbound route are eligible for sending.
-The adapter acknowledges only after Photon succeeds. If Photon sending fails,
-it does not acknowledge; the backend lease expiry controls the retry.
+Only claimed outgoing messages whose conversation channel is `imessage` are
+eligible for sending. The conversation external ID becomes the Photon `spaceId`;
+the required configured sender ID becomes Photon `senderId`. The adapter
+acknowledges only after Photon succeeds. If Photon sending fails, it does not
+acknowledge; the backend lease expiry controls the retry.
 
 ## Error handling
 
-- Missing or invalid backend configuration fails startup before any Photon read.
+- Missing or invalid backend configuration, including `PHOTON_AGENT_SENDER_ID`,
+  fails startup before any Photon read.
 - Non-2xx responses and malformed JSON raise a generic backend client error
   that includes status or operation context but never remote body text.
 - A 404 conversation resolution is treated as a non-fatal unlinked sender.
@@ -78,6 +83,8 @@ it does not acknowledge; the backend lease expiry controls the retry.
 Tests use a recording fake HTTP transport and Photon sender double. They prove:
 
 - backend configuration is mandatory and valid;
+- the configured Photon sender ID is used for claimed outbound messages after a
+  process restart;
 - each backend request has the bearer header and expected payload;
 - inbound messages retain their Photon IDs for backend idempotency;
 - unlinked senders do not enqueue follow-ups;
