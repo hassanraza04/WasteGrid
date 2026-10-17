@@ -1115,3 +1115,203 @@ def test_postgres_assessment_gates_legacy_jobs(client, png, engine, hazard):
         db.commit()
         assert (row.job_id is None) is hazard
         assert (db.scalar(select(Job)) is None) is hazard
+
+
+@pytest.mark.parametrize("action", ["create_job", "link_job"])
+@pytest.mark.parametrize("status", ["needs_review", "failed"])
+def test_organizer_override_is_authorized_audited_and_idempotent(
+    client, png, engine, action, status
+):
+    from tests.test_assessment import assessment, ordinary_proposal
+
+    first = report(client, png)
+    drain(client, engine)
+    second = report(client, png, latitude=25.0)
+    rid = UUID(second["report"]["id"])
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        row.assessment_status = status
+        row.needs_review = True
+        row.assessment = (
+            assessment(visible_fire="yes", special_handling="suspected").model_dump()
+            if status == "needs_review"
+            else None
+        )
+        row.state = "needs_review"
+        proposal = ordinary_proposal(row, next_action=action)
+        proposal.decision_summary = (
+            "Organizer checked evidence and approved appropriate cleanup equipment."
+        )
+        if action == "link_job":
+            proposal.duplicate_candidate_id = UUID(first["report"]["id"])
+            proposal.duplicate_confirmed = True
+            proposal.evidence_report_ids.append(proposal.duplicate_candidate_id)
+        db.commit()
+    path = f"/organizer/reports/{rid}/decision"
+    body = proposal.model_dump(mode="json")
+    assert (
+        client.post(path, headers=auth(second["access_token"]), json=body).status_code
+        == 401
+    )
+    assert client.post(path, headers=auth("a"), json=body).status_code == 403
+    response = client.post(path, headers=auth("org"), json=body)
+    assert response.status_code == 200, response.text
+    assert response.json()["job_id"] is not None
+    assert not response.json()["needs_review"]
+    assert (
+        response.json()["assessment_status"] == status
+    )  # Preserve the original model outcome.
+    assert client.post(path, headers=auth("org"), json=body).json() == response.json()
+    with Session(engine) as db:
+        records = list(
+            db.scalars(
+                select(Event).where(
+                    Event.report_id == rid, Event.kind == "report.triaged"
+                )
+            )
+        )
+        assert len(records) == 1
+        record = records[0]
+        assert record.actor != "agent" and record.details["organizer_override"]
+        assert record.details["reason"] == proposal.decision_summary
+        assert record.details["previous_review"]["needs_review"]
+    # Audit detail and other reports' identifiers stay out of resident responses.
+    resident = client.get(f"/reports/{rid}", headers=auth(second["access_token"]))
+    assert "Organizer checked evidence" not in resident.text
+    assert "previous_review" not in resident.text
+
+
+def test_organizer_cannot_override_pending_assessment(client, png, engine):
+    from tests.test_assessment import ordinary_proposal
+
+    created = report(client, png)
+    rid = UUID(created["report"]["id"])
+    with Session(engine) as db:
+        body = ordinary_proposal(db.get(Report, rid)).model_dump(mode="json")
+    assert (
+        client.post(
+            f"/organizer/reports/{rid}/decision", headers=auth("org"), json=body
+        ).status_code
+        == 409
+    )
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ["default", "locked", "ongoing", "held", "recheck", "unavailable", "short_shift"],
+)
+def test_builtin_planner_outputs_pass_existing_backend_validator(
+    engine, client, scenario
+):
+    from api.decisions import AssessmentDecisionProvider
+    from api.models import Crew, Job
+    from scripts.seed_demo import seed
+
+    seed(engine, client.app.state.cloud)
+    with Session(engine) as db:
+        job = db.scalar(select(Job).where(Job.status == "assigned").order_by(Job.id))
+        if scenario == "locked":
+            job.locked = True
+        elif scenario == "ongoing":
+            job.status = "in_progress"
+        elif scenario == "held":
+            job.held = True
+        elif scenario == "recheck":
+            job.status = "recheck_requested"
+        elif scenario in ("unavailable", "short_shift"):
+            for crew in db.scalars(select(Crew)):
+                if scenario == "unavailable":
+                    crew.available = False
+                else:
+                    crew.shift_minutes = 1
+        db.flush()
+        request = build_planning_input(db)
+        proposal = AssessmentDecisionProvider().generate_plan(request)
+        plan = apply_plan(db, proposal)
+        assert plan is not None
+        assert len(
+            {s.job_id for s in proposal.assignments}
+            | {s.job_id for s in proposal.unassigned}
+        ) == len(request.jobs)
+        assert len({s.job_id for s in proposal.assignments}) == len(
+            proposal.assignments
+        )
+        db.commit()
+
+
+def test_rerun_seed_refreshes_old_pending_illustrative_assessments(engine, client):
+    from scripts.seed_demo import seed
+
+    seed(engine, client.app.state.cloud)
+    with Session(engine) as db:
+        for row in db.scalars(select(Report)):
+            row.assessment = None
+            row.assessment_status = "pending"
+            row.priority = None
+        db.commit()
+    refreshed = seed(engine, client.app.state.cloud)
+    assert (
+        refreshed["status"] == "refreshed" and refreshed["assessments_refreshed"] == 10
+    )
+    with Session(engine) as db:
+        rows = list(db.scalars(select(Report)))
+        assert all(r.assessment_status != "pending" for r in rows)
+        assert all(
+            r.assessment_status == "assessed" and not r.needs_review
+            for r in rows
+            if r.job_id
+        )
+    assert seed(engine, client.app.state.cloud)["status"] == "already_seeded"
+
+
+def test_chalk_configuration_processes_real_bind_followup_claim_loop(
+    client, png, engine
+):
+    from types import SimpleNamespace
+
+    from api.config import Settings
+    from api.decisions import AssessmentDecisionProvider
+    from api.integrations import load_provider
+    from tests.test_assessment import assessment
+
+    provider = load_provider(
+        Settings(
+            _env_file=None, chalk_router_api_key="test-key", chalk_env_id="test-env"
+        )
+    )
+    assert isinstance(provider, AssessmentDecisionProvider)
+    created = report(client, png)
+    conversation = bind(client, created)
+    calls = []
+    model = SimpleNamespace(assess=lambda *args: calls.append(args) or assessment())
+    for _ in range(10):
+        if not process_one(engine, provider, client.app.state.cloud, model):
+            break
+    current = client.get(
+        f"/reports/{created['report']['id']}", headers=auth(created["access_token"])
+    ).json()
+    assert current["job_id"] and current["display_status"] == "assigned"
+    accepted = client.post(
+        f"/internal/conversations/{conversation['id']}/followup",
+        headers=INTERNAL,
+        json={"message_id": "builtin-status", "text": "status?"},
+    )
+    assert accepted.status_code == 202
+    assert process_one(engine, provider, client.app.state.cloud, model)
+    outgoing = client.post(
+        "/internal/outgoing-messages/claim", headers=INTERNAL, json={"limit": 100}
+    ).json()
+    reply = next(
+        row for row in outgoing if "assigned" in row["payload"].get("reply_text", "")
+    )
+    assert reply["conversation"]["id"] == conversation["id"]
+    delivered = client.post(
+        f"/internal/outgoing-messages/{reply['id']}/delivered",
+        headers=INTERNAL,
+        json={
+            "lease_id": reply["lease_id"],
+            "sent_text": reply["payload"]["reply_text"],
+        },
+    )
+    assert delivered.status_code == 200, delivered.text
+    assert len(calls) == 1

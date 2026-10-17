@@ -15,7 +15,7 @@ from api.assessment import calculate_priority
 from api.config import Settings
 from api.db import make_engine, mutation_lock
 from api.integrations import ChalkAssessmentClient, load_provider
-from api.models import Conversation, OutgoingMessage, Photo, Report, Task, now
+from api.models import Conversation, Event, OutgoingMessage, Photo, Report, Task, now
 from api.schemas import (
     ConversationView,
     Equipment,
@@ -27,7 +27,7 @@ from api.schemas import (
     TriageRecommendation,
     WasteAssessment,
 )
-from api.services import apply_clarification, apply_recheck, event, snapshot
+from api.services import apply_clarification, apply_recheck, enqueue, event, snapshot
 from api.storage import SupabaseCloud
 from api.workflows import apply_plan, apply_triage, build_planning_input, distance_km
 
@@ -69,6 +69,10 @@ def fail_assessment(report):
 
 
 def process_one(engine, provider, cloud, assessment_client=None) -> bool:
+    if provider is None and assessment_client is not None:
+        from api.decisions import AssessmentDecisionProvider
+
+        provider = AssessmentDecisionProvider()
     with Session(engine) as db:
         mutation_lock(db)
         task = db.scalar(
@@ -181,6 +185,15 @@ def process_one(engine, provider, cloud, assessment_client=None) -> bool:
                 )
                 report.assessment = output.model_dump(mode="json")
                 report.priority = decision.priority
+                duplicate = db.scalar(
+                    select(Event.id).where(
+                        Event.report_id == report.id,
+                        Event.kind == "report.possible_duplicate",
+                    )
+                )
+                if duplicate:
+                    decision.needs_review = True
+                    decision.priority_reason += " Nearby report is a possible duplicate; organizer review required."
                 report.needs_review = decision.needs_review
                 report.priority_reason = decision.priority_reason
                 report.assessment_status = (
@@ -190,6 +203,13 @@ def process_one(engine, provider, cloud, assessment_client=None) -> bool:
                     report.state = "needs_review"
                 report.version += 1
                 event(db, "report.assessed", report_id=report.id)
+                if not decision.needs_review and decision.priority is not None:
+                    enqueue(
+                        db,
+                        "triage",
+                        f"triage:{report.id}:{report.version}",
+                        {"report_id": str(report.id)},
+                    )
                 result = {"report_id": str(report.id), **decision.model_dump()}
             elif kind == "triage":
                 report = (

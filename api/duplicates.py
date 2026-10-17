@@ -21,8 +21,12 @@ def nearby_open_report(
         select(Report)
         .outerjoin(Job, Report.job_id == Job.id)
         .where(
+            Report.illustrative.is_(False),
             latitude.between(location.latitude - band, location.latitude + band),
-            or_(Report.job_id.is_(None), Job.status != "completed"),
+            or_(
+                Report.job_id.is_(None),
+                Job.status.not_in(("completed", "recheck_requested")),
+            ),
         )
         .order_by(Report.created_at, Report.id)
     )

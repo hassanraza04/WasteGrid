@@ -219,7 +219,8 @@ def test_worker_retains_report_and_exposes_result(assessment_db, failure):
     cloud = SimpleNamespace(signed_url=lambda path: "https://photo.invalid/image")
     client = SimpleNamespace(assess=assess)
     assert process_one(engine, None, cloud, client)
-    assert not process_one(engine, None, cloud, client)
+    if failure:
+        assert not process_one(engine, None, cloud, client)
     assert len(calls) == 1
     with Session(engine) as db:
         report = db.get(Report, rid)
@@ -230,7 +231,7 @@ def test_worker_retains_report_and_exposes_result(assessment_db, failure):
         assert view["needs_review"] is bool(failure)
         assert bool(view["assessment"]) is (failure is None)
         assert "secret" not in json.dumps(view)
-        task = db.scalar(select(Task))
+        task = db.scalar(select(Task).where(Task.kind == "assessment"))
         assert task.status == ("failed" if failure else "succeeded")
         assert task.attempts == 1
 
@@ -397,21 +398,49 @@ def submit(client, image, **data):
     )
 
 
-def test_nearby_duplicate_rejects_photo_and_task(report_api, assessment_db):
+def test_nearby_duplicate_retains_both_photos_and_review_evidence(
+    report_api, assessment_db
+):
+    from uuid import UUID
+
     from sqlalchemy import func
+
+    from api.models import Event
 
     client, image, uploads = report_api
     first = submit(client, image)
     assert first.status_code == 201
-    # About one metre north: similar coordinates, rather than exact equality.
     duplicate = submit(client, image, latitude=24.92001)
-    assert duplicate.status_code == 409
-    assert duplicate.json() == {"detail": "Trash already reported at this location."}
-    assert duplicate.headers["X-WasteGrid-Error"] == "trash_already_reported"
-    assert len(uploads) == 1
+    assert duplicate.status_code == 201
+    second = duplicate.json()["report"]
+    assert second["needs_review"] and second["state"] == "needs_review"
+    assert first.json()["report"]["id"] not in duplicate.text
+    assert len(uploads) == 2
     with Session(assessment_db) as db:
         for model in (Report, Photo, Task):
-            assert db.scalar(select(func.count()).select_from(model)) == 1
+            assert db.scalar(select(func.count()).select_from(model)) == 2
+        record = db.scalar(
+            select(Event).where(Event.kind == "report.possible_duplicate")
+        )
+        assert record.report_id == UUID(second["id"])
+        assert record.details["candidate_report_id"] == first.json()["report"]["id"]
+    model = SimpleNamespace(assess=lambda *args: assessment())
+    # Both photos are assessed; the nearby report remains in review afterwards.
+    assert process_one(assessment_db, None, client.app.state.cloud, model)
+    assert process_one(assessment_db, None, client.app.state.cloud, model)
+    with Session(assessment_db) as db:
+        row = db.get(Report, UUID(second["id"]))
+        assert row.assessment_status == "needs_review" and row.needs_review
+        assert row.assessment is not None and row.job_id is None
+        assert (
+            db.scalar(
+                select(Task).where(
+                    Task.kind == "triage",
+                    Task.payload["report_id"].as_string() == second["id"],
+                )
+            )
+            is None
+        )
 
 
 def test_different_location_is_not_rejected(report_api):
@@ -641,3 +670,96 @@ def test_pending_triage_race_cannot_leave_hazard_linked(report_api, assessment_d
         assert row.needs_review
         assert row.job_id is None
         assert db.scalar(select(Job)) is None
+
+
+def test_chalk_only_worker_completes_assessment_triage_plan_and_followup(
+    report_api, assessment_db
+):
+    from uuid import UUID
+
+    from api.models import Conversation, Crew, Job, OutgoingMessage, Plan
+
+    client, image, _ = report_api
+    created = submit(client, image).json()
+    rid = UUID(created["report"]["id"])
+    cid, conversation_id = uuid4(), uuid4()
+    with Session(assessment_db) as db:
+        db.add(
+            Crew(
+                id=cid,
+                name="Crew A",
+                equipment=["gloves", "trash_bags"],
+                shift_minutes=120,
+                start_location={"latitude": 24.92, "longitude": 67.09},
+            )
+        )
+        db.add(
+            Conversation(
+                id=conversation_id,
+                report_id=rid,
+                channel="whatsapp",
+                external_id="test",
+            )
+        )
+        db.commit()
+    calls = []
+    model = SimpleNamespace(assess=lambda *args: calls.append(args) or assessment())
+    for _ in range(3):
+        assert process_one(assessment_db, None, client.app.state.cloud, model)
+    with Session(assessment_db) as db:
+        row = db.get(Report, rid)
+        job = db.get(Job, row.job_id)
+        assert job is not None and job.status == "assigned"
+        assert job.assigned_crew_id == cid
+        assert db.scalar(select(Plan)) is not None
+        enqueue(
+            db,
+            "followup",
+            "followup:test",
+            {"conversation_id": str(conversation_id), "text": "status?"},
+        )
+        db.commit()
+    assert process_one(assessment_db, None, client.app.state.cloud, model)
+    assert not process_one(assessment_db, None, client.app.state.cloud, model)
+    with Session(assessment_db) as db:
+        task = db.scalar(select(Task).where(Task.kind == "followup"))
+        assert task.status == "succeeded"
+        reply = db.scalar(
+            select(OutgoingMessage).where(
+                OutgoingMessage.payload["reply_text"].as_string().is_not(None)
+            )
+        )
+        assert "assigned" in reply.payload["reply_text"]
+        assert all(t.status == "succeeded" for t in db.scalars(select(Task)))
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("existing", ["seed", "recheck_requested"])
+def test_demo_and_recheck_locations_do_not_flag_new_reports(
+    report_api, assessment_db, existing
+):
+    from uuid import UUID
+
+    from api.models import Job
+
+    client, image, _ = report_api
+    first = submit(client, image).json()
+    with Session(assessment_db) as db:
+        row = db.get(Report, UUID(first["report"]["id"]))
+        if existing == "seed":
+            row.illustrative = True
+        else:
+            job = Job(
+                status="recheck_requested",
+                location=row.location,
+                category="mixed",
+                required_equipment=["gloves"],
+                estimated_service_minutes=10,
+            )
+            db.add(job)
+            db.flush()
+            row.job_id = job.id
+        db.commit()
+    second = submit(client, image)
+    assert second.status_code == 201
+    assert not second.json()["report"]["needs_review"]

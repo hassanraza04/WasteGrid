@@ -82,6 +82,27 @@ SCENARIOS = [
 ]
 
 
+def set_fixture_assessment(row, label, kind):
+    """Refresh only explicitly illustrative fixtures, never claim a live AI result."""
+    assessment = WasteAssessment(
+        description="Illustrative: " + label,
+        size="medium",
+        obstruction="none_visible",
+        obstruction_level="none",
+        forces_people_into_traffic="no",
+        special_handling=("suspected" if kind == "hazard" else "none_identified"),
+        visible_fire="no",
+        visible_sharp_objects="no",
+        reason="Illustrative fixture; not an actual model result.",
+    )
+    priority = calculate_priority(assessment)
+    row.assessment = assessment.model_dump(mode="json")
+    row.assessment_status = "needs_review" if priority.needs_review else "assessed"
+    row.priority = priority.priority
+    row.needs_review = priority.needs_review
+    row.priority_reason = priority.priority_reason
+
+
 def seed(engine, cloud, reset=False):
     uploaded, removed = [], []
     committed = False
@@ -97,7 +118,26 @@ def seed(engine, cloud, reset=False):
                     "Seed/reset requires a demo-only database; real reports/jobs are present"
                 )
             if reports and not reset:
-                return {"status": "already_seeded", "reports": len(reports)}
+                fixtures = {
+                    demo_id(f"report-{i}"): (label, kind)
+                    for i, (label, kind, _, _) in enumerate(SCENARIOS)
+                }
+                refreshed = 0
+                for row in reports:
+                    if (
+                        row.id in fixtures
+                        and row.assessment_status == "pending"
+                        and row.assessment is None
+                    ):
+                        label, kind = fixtures[row.id]
+                        set_fixture_assessment(row, label, kind)
+                        refreshed += 1
+                db.commit()
+                return {
+                    "status": "refreshed" if refreshed else "already_seeded",
+                    "reports": len(reports),
+                    "assessments_refreshed": refreshed,
+                }
             if reset:
                 removed = list(db.scalars(select(Photo.object_path)))
                 for model in (
@@ -166,28 +206,7 @@ def seed(engine, cloud, reset=False):
                     note="ILLUSTRATIVE: " + label,
                     illustrative=True,
                 )
-                # Explicit synthetic evidence, never represented as a live AI result.
-                assessment = WasteAssessment(
-                    description="Illustrative: " + label,
-                    size="medium",
-                    obstruction="none_visible",
-                    obstruction_level="none",
-                    forces_people_into_traffic="no",
-                    special_handling=(
-                        "suspected" if kind == "hazard" else "none_identified"
-                    ),
-                    visible_fire="no",
-                    visible_sharp_objects="no",
-                    reason="Illustrative fixture; not an actual model result.",
-                )
-                priority = calculate_priority(assessment)
-                row.assessment = assessment.model_dump(mode="json")
-                row.assessment_status = (
-                    "needs_review" if priority.needs_review else "assessed"
-                )
-                row.priority = priority.priority
-                row.needs_review = priority.needs_review
-                row.priority_reason = priority.priority_reason
+                set_fixture_assessment(row, label, kind)
                 db.add(row)
                 db.flush()
                 content = fixture_photo(label)

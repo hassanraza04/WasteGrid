@@ -1,29 +1,27 @@
-# Minimal waste assessment
+# Waste assessment and Person 3 decisions
 
-New reports are saved with `assessment_status: pending` and enqueue one
-`assessment` task in the existing database worker. Submission returns the existing
-201 report response immediately; the latest result is available from the existing
-resident and organizer report endpoints. No extra model service, queue, dashboard,
-follow-up flow or planner is required.
+## Processing flow
 
-The backend branch had an HTTP decision-provider interface but no implemented
-image model client. `ChalkAssessmentClient` therefore uses the already installed
-httpx dependency to call the configured Chalk Model Gateway once with the signed
-photo URL, coordinates, optional note, and resident hazard answers. No provider credentials belong in the mobile/web app.
-The legacy decision-provider interface remains available for existing workflows.
+`POST /reports` retains the photo, location, optional note and resident yes/no
+answers, returns 201 with `assessment_status: pending`, and queues one assessment
+task. The existing worker makes one Qwen-through-Groq request via Chalk Model
+Gateway. It validates the result, calculates priority in Python, and persists it.
+An eligible assessment queues the existing triage task in the same transaction.
+Triage creates a job; existing plan invalidation queues planning. Review and failed
+reports remain visible without an automatically assigned ordinary cleanup job.
 
-## Setup
+A Chalk-only worker now loads `AssessmentDecisionProvider` and processes
+assessment, triage, plan and followup tasks. Explicit `INTEGRATION_FACTORY` or
+`PERSON3_BASE_URL` settings still take precedence for the decision methods.
+No additional queue, tool loop, frontend, or provider service is needed.
 
-Apply the new migration using the existing migration command:
+## Setup and seed refresh
 
-```sh
-uv run --extra backend python -m scripts.migrate
-```
-
-Configure server environment variables:
+Configure these server-side variables alongside the existing database/Supabase
+credentials; never put gateway or provider credentials in the frontend:
 
 ```text
-CHALK_ROUTER_API_KEY=<gateway key, not the Groq provider key>
+CHALK_ROUTER_API_KEY=<Chalk gateway key>
 CHALK_ENV_ID=<Chalk environment ID>
 CHALK_MODEL=groq/qwen/qwen3.8-27b
 CHALK_ROUTER_BASE_URL=https://api.chalk.ai/v1/router
@@ -31,18 +29,30 @@ ASSESSMENT_TIMEOUT_SECONDS=30
 DUPLICATE_RADIUS_METERS=10
 ```
 
-Run the existing worker alongside FastAPI:
+Apply migrations 0007–0009, then start the existing worker alongside FastAPI:
 
 ```sh
+uv run --extra backend python -m scripts.migrate
+uv run --extra backend python -m scripts.seed_demo
 uv run --extra backend python -m api.worker
 ```
 
-With only Chalk configured, the worker processes assessment tasks. Configure the
-existing Person 3 decision provider separately to process legacy planning or
-follow-up tasks. New submissions no longer enqueue the legacy triage/job-creation
-pipeline. Assessment itself does not create cleanup jobs.
+`seed_demo` is for an isolated demo database and refuses databases containing real
+reports/jobs. Rerunning it refreshes known illustrative rows that have pending,
+missing assessments from older seeds, without resetting their jobs or photos.
+The stored assessments are explicitly synthetic, not live AI outputs. An optional
+`--reset-demo` rebuilds the demo fixtures; it is unnecessary for assessment refresh.
+This code does not migrate or reseed a hosted database automatically.
 
-## Added report fields (example fragment)
+## Capture contract and returned assessment
+
+`POST /reports` is multipart: `photo`, `latitude`, `longitude`, optional `note`,
+`resident_fire`, and `resident_sharp_objects`. Boolean answers use true/false;
+omitted answers mean unknown. The current backend still permits legacy reports
+without GPS and can request location information; mandatory capture/GPS enforcement
+is a separate app/API contract change. No frontend code changed here.
+
+Report endpoints expose these additive fields:
 
 ```json
 {
@@ -50,9 +60,10 @@ pipeline. Assessment itself does not create cleanup jobs.
   "priority": "routine",
   "needs_review": false,
   "priority_reason": "No visible obstruction or identified special handling concern.",
+  "resident_answers": {"fire": false, "sharp_objects": false},
   "assessment": {
     "description": "Mixed bags and rubble",
-    "size": "large",
+    "size": "medium",
     "obstruction": "none_visible",
     "obstruction_level": "none",
     "forces_people_into_traffic": "no",
@@ -61,105 +72,87 @@ pipeline. Assessment itself does not create cleanup jobs.
     "visible_fire": "no",
     "visible_sharp_objects": "no",
     "confidence": 0.8,
-    "resident_context_agreement": "not_provided",
-    "comparison_reason": "No resident claims were provided."
+    "resident_context_agreement": "consistent",
+    "comparison_reason": "Resident answers agree with visible conditions."
   }
 }
 ```
 
-These are hackathon demo rules, not an official municipal risk standard. Backend
-rules generate `priority_reason`; the model does not choose priority. Size is
-stored only as an approximate workload signal. Unknown size alone does not raise
-priority. Routine requires affirmative, consistent no-obstruction evidence, no
-traffic displacement, and `none_identified` special handling. Unknown special
-handling requires review even when a high/medium obstruction priority is supported.
-Suspected special handling keeps any supported high/medium priority and prohibits
-ordinary job creation through the legacy automatic triage boundary.
+The prompt makes the photo primary evidence and resident context an unverified
+reference. Negative answers cannot clear visible hazards. Positive hazard claims
+unsupported by the photo, contradictions, unclear special handling and insufficient
+evidence require review. Confidence is self-reported, not calibrated accuracy or a
+priority input. One context-bearing call does not prove independence from context.
+Coordinates do not establish nearby buildings, weather or hidden hazards.
 
-Creating or linking an ordinary job requires a completed `assessed` result, a
-supported priority and no review flag. The backend revalidates stored evidence
-and resident answers before permitting either action; pending, failed, missing
-or unsafe assessments cannot bypass this gate through legacy triage. Duplicate
-linking also requires an eligible assessment on the existing report. Review and
-information requests remain possible while assessment is pending. Demo seeds and
-legacy planning tests explicitly supply labeled synthetic assessments.
+High means complete entrance obstruction or access obstruction forcing people into
+traffic. Medium covers other partial/complete access or drain obstructions. Routine
+requires usable no-obstruction evidence with no identified special handling concern.
+Otherwise priority is null. Supported high/medium priority is retained when review
+is also required. Size never raises priority. These are demo rules, not an official
+municipal risk standard.
 
-Timeout, provider error, missing credentials at processing time or invalid JSON
-sets `assessment_status: failed`, `priority: null`, `needs_review: true`. The report
-and photo remain available. There is no output repair or automatic retry. Expired
-assessment leases fail without replaying the request, and the generic task retry
-endpoint rejects assessment replays. A worker process crash can leave pending
-status visible until the lease expires and the worker next runs.
+Timeout, provider error or malformed output retains the report/photo with failed
+status, null priority and review required. No model repair or automatic assessment
+retry is performed. Expired assessment leases fail without replay; the generic
+retry endpoint still refuses assessment tasks. Organizers can resolve those reports
+through an audited decision rather than rerunning the model.
 
-Verification: `pytest -q tests/test_assessment.py` checks the rule cases, one-call
-HTTP boundary, real local SQLite transaction persistence, expired leases and
-POST/GET report API flow with a fake provider. Existing backend integration tests
-require a disposable local PostgreSQL server; those retain explicit legacy triage
-fixture setup for their planning/messaging checks. No live Chalk/Groq request or
-Supabase migration was executed in this workspace.
+## Proximity review and organizer decisions
 
-## Clarified capture and metadata flow
+Reports within the configured radius (default 10 metres) are possible duplicates,
+not proven duplicates. Both original reports/photos are retained and assessed. The
+new report is marked for review with a private `report.possible_duplicate` event
+containing the candidate and evidence report IDs. The worker preserves that review
+after assessment and does not enqueue ordinary triage for it. Resident APIs expose
+no other report's identifier or private audit details. Retry-safe replay of the same
+submission still returns its original report without another photo/task.
 
-`POST /reports` remains multipart. In addition to `photo`, `latitude`, `longitude`
-and optional `note`, it now accepts optional `resident_fire` and
-`resident_sharp_objects` boolean form fields (`true` / `false`). Omitted answers
-are unknown, not false. They are stored separately as `resident_answers` and
-exposed by report APIs. A valid report can still be retained without GPS, for
-example after permission denial; no location deduplication is possible then.
-The frontend owner controls camera capture and location permission prompts;
-no frontend files changed in this PR.
+Completed jobs, recheck-requested jobs and illustrative seed reports do not trigger
+proximity review. `DUPLICATE_RADIUS_METERS=0` disables it for a demo. No reports are
+rejected or merged based only on proximity.
 
-Before creating a report row or storing its photo, the backend checks unresolved
-reports within `DUPLICATE_RADIUS_METERS` (default 10; 0 disables the policy).
-It uses a database latitude-band filter and exact haversine distance. The
-existing PostgreSQL transaction lock serializes check-and-create with other
-mutations. Completed jobs are excluded, while reports without jobs, pending
-reports and review cases are unresolved. There is no time cutoff. This is a
-proximity rule, not proof of identical waste: different piles within the radius
-or noisy GPS can be rejected, and a new hazard at an existing report's location
-will also be rejected. The policy does not merge new evidence into older reports.
+Automatic creation/linking requires a completed eligible assessment, with evidence
+and resident answers revalidated in Python. An authenticated organizer can use the
+existing `POST /organizer/reports/{id}/decision` to approve a settled review/failed
+report for `create_job` or `link_job`. The decision must still supply sufficient
+evidence, location, equipment/time for creation, or a confirmed open candidate with
+its ID in `evidence_report_ids` for linking. `hazard: true` and `next_action: review`
+still explicitly request review; approving ordinary cleanup requires clearing those
+recommendations and explaining the decision in `decision_summary`.
 
-A nearby match returns HTTP 409 before photo Storage upload, new report/task
-creation or a new model call:
+Only this authorized endpoint enables the exception. Agents/residents cannot clear
+review by setting fields. Successful approval clears `needs_review` and records the
+organizer actor, reason, prior assessment status/review and resulting job ID in the
+existing `report.triaged` audit. Raw model evidence and assessment status remain as
+the historical model outcome. Pending assessments cannot be overridden. Command
+idempotency and version checks still apply. Approved linked reports can serve as
+future duplicate targets based on that organizer audit.
 
-```json
-{"detail": "Trash already reported at this location."}
-```
+## Built-in decision methods
 
-It also sets `X-WasteGrid-Error: trash_already_reported`. No existing report ID,
-resident access token, exact existing coordinates or private photo is disclosed.
-The frontend can use the response to display a popup later. The backend still
-receives the request's photo bytes; it prevents durable storage, not transfer
-from the phone. Retry-safe replay of the same report ID/token is checked first
-and returns the original report rather than a false duplicate error.
+- `triage_report`: reuses the validated saved assessment, never calls a model again,
+  and sends uncertain nearby reports to review. General waste gets gloves/bags;
+  large size also requests a pickup truck. Size sets illustrative service estimates
+  of 10/20/40/30 minutes for small/medium/large/unknown, never risk priority.
+- `generate_plan`: greedily chooses the shortest next travel leg across eligible
+  crews. It uses the supplied matrix, equipment, availability and shift budget,
+  preserves fixed/ongoing work and completed time, and covers each job once. Existing
+  backend validators approve or reject every proposal. This is a heuristic, not a
+  globally optimal or live-road route; the matrix label remains explicit.
+- `handle_followup`: replies from stored report/job status. Explicit `/clarify ...`
+  adds information before job linking, and `/recheck ...` requests a recheck after
+  completion. Free text otherwise returns status/help without changing state. These
+  are deterministic commands, not unrestricted natural-language reasoning. Existing
+  bind, followup, outgoing claim and acknowledgement APIs remain unchanged.
 
-For accepted reports the one Chalk request contains the signed photo URL and a
-JSON context with `location`, `resident_note`, and `resident_answers`. The model
-is instructed to assess the image first, keep resident claims separate, and then
-return `visible_fire`, `visible_sharp_objects`, `confidence` (0-1),
-`resident_context_agreement` and `comparison_reason` alongside the original
-assessment fields. New gateway responses require all these fields. Older stored
-assessments remain readable with unknown/null defaults. Coordinates alone do
-not establish surrounding risks; the model performs no geocoding or DB lookup.
+## Verification
 
-Confidence is self-reported, not calibrated accuracy or a safety probability.
-It is stored for inspection and is never used to calculate priority or approve
-assignment. A single call with resident context cannot guarantee mathematical
-independence from that context; the system prompt establishes the evidence
-policy rather than proving independence. Model quality on this policy still
-needs evaluation with real representative images.
-
-A visible fire or sharp-object flag requires review even if the model incorrectly
-returns `special_handling: none_identified`. A resident's negative answer cannot
-clear an observed hazard. A positive resident hazard claim unsupported by the
-photo remains an unverified claim and requires review; it is not copied into
-visual observations. Explicit model-reported contradictions also require review.
-Supported high/medium priority is preserved; routine becomes null when there is
-an unresolved contradiction/positive hazard claim. Other priority rules remain
-ordinary Python.
-
-Deploy migrations 0007–0009 (including the assessment task-kind constraint) before these API/worker changes. The Render worker
-blueprint now lists Chalk credentials, model, base URL and timeout. Secrets must
-still be configured in the target environment. PR integration is not live service
-verification: this branch is still draft/unmerged and no live credentials or
-Supabase migration were exercised here.
+Focused tests exercise the real gateway HTTP boundary with MockTransport, priority
+rules, failure retention, duplicate evidence, and a Chalk-only worker advancing
+assessment → triage → job → plan → followup without a second model call.
+PostgreSQL tests additionally verify migrations, organizer authorization/overrides,
+planning constraints, seed refresh and the real bind → followup → outgoing claim
+loop with fake external services. Live Chalk/Groq requests, hosted Supabase changes,
+and actual Photon delivery require deployment credentials and are not inferred
+from CI success.

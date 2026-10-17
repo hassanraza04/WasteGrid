@@ -324,14 +324,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return ReportCreated(
                     report=report_view(db, previous), access_token=x_report_token
                 )
-        # get_db holds the existing PostgreSQL mutation lock through creation,
-        # so concurrent submissions cannot both pass this check and then persist.
-        if nearby_open_report(db, location, settings.duplicate_radius_meters):
-            raise HTTPException(
-                409,
-                "Trash already reported at this location.",
-                headers={"X-WasteGrid-Error": "trash_already_reported"},
-            )
+        # Nearby coordinates are evidence for review, not proof of incident identity.
+        nearby = nearby_open_report(db, location, settings.duplicate_radius_meters)
         report_id, photo_id = client_report_id or uuid4(), uuid4()
         token = x_report_token or "wg_r_" + token_urlsafe(32)
         path = f"reports/{report_id}/{photo_id}"
@@ -358,6 +352,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         )
         event(db, "report.received", report_id=report_id)
+        if nearby:
+            report.needs_review = True
+            report.state = "needs_review"
+            event(
+                db,
+                "report.possible_duplicate",
+                report_id=report_id,
+                details={
+                    "candidate_report_id": str(nearby.id),
+                    "evidence_report_ids": [str(report_id), str(nearby.id)],
+                    "reason": "Coordinates within the configured radius; identity is unverified.",
+                },
+            )
         enqueue(
             db, "assessment", f"assessment:{report_id}", {"report_id": str(report_id)}
         )
@@ -714,7 +721,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ):
         if body.report_id != report_id:
             raise HTTPException(422, "Report ID does not match request path")
-        report = apply_triage(db, body, actor=str(staff.user_id))
+        report = apply_triage(
+            db, body, actor=str(staff.user_id), organizer_override=True
+        )
         db.commit()
         return organizer_report_view(db, report)
 

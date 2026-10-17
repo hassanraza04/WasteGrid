@@ -106,7 +106,30 @@ def assessment_allows_job(report: Report) -> bool:
     return not result.needs_review and result.priority is not None
 
 
-def apply_triage(db: Session, proposal: TriageRecommendation, actor="agent") -> Report:
+def job_assessment_approved(db: Session, report: Report) -> bool:
+    if assessment_allows_job(report):
+        return True
+    if report.needs_review or report.job_id is None:
+        return False
+    # Only backend-generated organizer audit details can grant this exception.
+    return any(
+        record.details.get("organizer_override") is True
+        and record.details.get("job_id") == str(report.job_id)
+        for record in db.scalars(
+            select(Event).where(
+                Event.report_id == report.id, Event.kind == "report.triaged"
+            )
+        )
+    )
+
+
+def apply_triage(
+    db: Session,
+    proposal: TriageRecommendation,
+    actor="agent",
+    *,
+    organizer_override=False,
+) -> Report:
     report = db.get(Report, proposal.report_id)
     if report is None:
         raise HTTPException(404, "Report not found")
@@ -121,14 +144,33 @@ def apply_triage(db: Session, proposal: TriageRecommendation, actor="agent") -> 
     )
     if evidence != set(proposal.evidence_report_ids):
         raise HTTPException(422, "Evidence references an unknown report")
+    override = organizer_override and proposal.next_action in ("create_job", "link_job")
+    if override and not proposal.decision_summary.strip():
+        raise HTTPException(
+            422, "An organizer approval requires a nonblank decision reason"
+        )
+    if override and report.assessment_status == "pending":
+        raise HTTPException(
+            409, "Wait for the pending assessment before an organizer override"
+        )
+    previous_review = {
+        "needs_review": report.needs_review,
+        "assessment_status": report.assessment_status,
+        "priority_reason": report.priority_reason,
+    }
     report.triage = proposal.model_dump(mode="json")
     if (
         proposal.hazard
         or proposal.next_action == "review"
-        or report.needs_review
-        or (report.assessment or {}).get("special_handling") == "suspected"
-        or (report.assessment or {}).get("visible_fire") == "yes"
-        or (report.assessment or {}).get("visible_sharp_objects") == "yes"
+        or (
+            not override
+            and (
+                report.needs_review
+                or (report.assessment or {}).get("special_handling") == "suspected"
+                or (report.assessment or {}).get("visible_fire") == "yes"
+                or (report.assessment or {}).get("visible_sharp_objects") == "yes"
+            )
+        )
     ):
         report.state = "needs_review"
     elif (
@@ -139,10 +181,15 @@ def apply_triage(db: Session, proposal: TriageRecommendation, actor="agent") -> 
         report.state = "needs_info"
     elif not proposal.evidence_sufficient:
         report.state = "needs_review"
-    elif proposal.next_action in (
-        "create_job",
-        "link_job",
-    ) and not assessment_allows_job(report):
+    elif (
+        proposal.next_action
+        in (
+            "create_job",
+            "link_job",
+        )
+        and not override
+        and not assessment_allows_job(report)
+    ):
         raise HTTPException(
             409,
             "A completed eligible assessment is required before creating or linking a job",
@@ -157,7 +204,7 @@ def apply_triage(db: Session, proposal: TriageRecommendation, actor="agent") -> 
         if (
             not proposal.duplicate_confirmed
             or not job
-            or not assessment_allows_job(candidate)
+            or (not override and not job_assessment_approved(db, candidate))
             or candidate.id == report.id
             or job.status in ("completed", "recheck_requested")
             or candidate.id not in evidence
@@ -188,6 +235,8 @@ def apply_triage(db: Session, proposal: TriageRecommendation, actor="agent") -> 
             report.job_id = job.id
             report.state = "linked_to_job"
             event(db, "job.created", job_id=job.id, actor=actor)
+    if override and report.job_id:
+        report.needs_review = False
     report.version += 1
     event(
         db,
@@ -199,6 +248,16 @@ def apply_triage(db: Session, proposal: TriageRecommendation, actor="agent") -> 
         details={
             "decision": proposal.model_dump(mode="json"),
             "applied_state": report.state,
+            **(
+                {
+                    "organizer_override": True,
+                    "previous_review": previous_review,
+                    "reason": proposal.decision_summary,
+                    "job_id": str(report.job_id),
+                }
+                if override and report.job_id
+                else {}
+            ),
         },
     )
     if report.job_id:

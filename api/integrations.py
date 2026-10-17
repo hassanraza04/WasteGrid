@@ -67,6 +67,10 @@ def load_provider(settings: Settings) -> DecisionProvider | None:
         return getattr(import_module(module), name)(settings)
     if settings.person3_base_url:
         return HTTPDecisionProvider(settings)
+    if settings.chalk_router_api_key and settings.chalk_env_id:
+        from api.decisions import AssessmentDecisionProvider
+
+        return AssessmentDecisionProvider(settings.duplicate_radius_meters)
     return None
 
 
