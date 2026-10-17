@@ -56,6 +56,9 @@ export class StaffClient {
     const jobs: Job[] = [];
     for (let offset = 0; offset < 10000; offset += 100) {
       const page = await this.request<Job[]>(`/jobs?active_only=true&limit=100&offset=${offset}`);
+      if (page.some(job => job.status === "completed") || (page.length && page.every(job => jobs.some(previous => previous.id === job.id)))) {
+        throw new Error("The API did not apply active-job filtering or pagination. Deploy the updated backend and refresh.");
+      }
       jobs.push(...page);
       if (page.length < 100) return [...new Map(jobs.map(job => [job.id, job])).values()];
     }

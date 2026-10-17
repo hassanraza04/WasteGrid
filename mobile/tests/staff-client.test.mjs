@@ -22,6 +22,12 @@ test('logout while a response is decoded prevents private data being returned', 
  const pending=api.crews();await started.promise;logout();body.resolve([{id:'private'}]);
  await assert.rejects(pending,/account changed/);
 });
+test('an older deployed API cannot silently ignore filtering or loop the same job page',async()=>{
+ const old=setup(()=>Response.json([{id:'old',status:'completed'}]));
+ await assert.rejects(old.api.jobs(),/Deploy the updated backend/);assert.equal(old.calls.length,1);
+ const repeated=setup(()=>Response.json(Array.from({length:100},(_,i)=>({id:String(i),status:'assigned'}))));
+ await assert.rejects(repeated.api.jobs(),/pagination/);assert.equal(repeated.calls.length,2);
+});
 test('compute accepts only crew IDs; denied, stale and disabled responses are controlled', async () => {
  const {api,calls} = setup(() => Response.json({id:'preview'}));
  await api.compute(['a','b']);assert.deepEqual(JSON.parse(calls[0][1].body),{crew_ids:['a','b']});
