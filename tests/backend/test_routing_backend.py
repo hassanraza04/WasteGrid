@@ -224,6 +224,7 @@ def test_routed_job_completion_exposes_resident_evidence_once(
         resident["display_status"] == "completed"
         and len(resident["completion_photo_ids"]) == 1
     )
+    assert all("command_id" not in event for event in resident["timeline"])
     photo = resident["completion_photo_ids"][0]
     assert (
         client.get(

@@ -49,6 +49,9 @@ API environment. Temporary-file publication protects saved metadata from
 interrupted writes. Definitive validation/conflict responses retain a rejected
 action for recovery or explicit discard after a server audit check.
 
+The staff-only GET /jobs/{id} audit events now include nullable command_id for this
+correlation. Public resident timelines remain redacted and expose no command IDs.
+
 Confirmed completion refreshes remaining stops and progress. Residents refresh
 their existing report to see completion, status history and authorised cleanup
 photos. All linked reports reflect the job state. No public report-map endpoint,

@@ -909,6 +909,12 @@ def verify_recheck_route_resolution(client, engine, ids, jobs):
         assert patch(first_id, "org", {**release, **extra}).status_code == 409
     response = patch(first_id, "org", release)
     assert response.status_code == 200, response.text
+    audit = client.get(f"/jobs/{first_id}", headers={"Authorization": "Bearer org"})
+    assert audit.status_code == 200
+    assert any(
+        record.get("command_id") == release["command_id"]
+        for record in audit.json()["events"]
+    )
     for _ in range(2):
         assert patch(first_id, "org", release).status_code == 200
     assert (

@@ -976,12 +976,62 @@
         "title": "IncomingFollowup",
         "type": "object"
       },
+      "JobAuditEvent": {
+        "additionalProperties": false,
+        "description": "Staff-only command correlation; public report timelines stay redacted.",
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "command_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "created_at",
+          "actor",
+          "details"
+        ],
+        "title": "JobAuditEvent",
+        "type": "object"
+      },
       "JobDetails": {
         "additionalProperties": false,
         "properties": {
           "events": {
             "items": {
-              "$ref": "#/components/schemas/AuditEvent"
+              "$ref": "#/components/schemas/JobAuditEvent"
             },
             "title": "Events",
             "type": "array"
