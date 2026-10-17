@@ -34,9 +34,11 @@ synthetic examples, not evidence of real cleanup or AI execution. Preserve this
 dataset during read-only exploration. Arrange disposable test data with Omer
 before testing submission, completion or other state-changing actions.
 
-Backend acceptance recorded on 17 October: 107 Python tests passed with zero skips,
+Backend acceptance recorded on 17 October after PR review: 116 Python tests passed with zero skips,
 contract/lint/format checks passed, Docker build and 11 HTTP smoke checks passed,
-and 20 live Supabase checks passed without changing the demo records. These are
+and 23 live Supabase checks passed, including effective Storage access checks for
+both crews. Before/after application rows and Storage metadata matched; photo
+bytes were not compared. These are
 backend results; mobile end-to-end acceptance is still to be completed.
 
 ## 2. Connection settings and access

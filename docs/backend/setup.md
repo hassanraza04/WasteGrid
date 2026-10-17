@@ -36,9 +36,21 @@ followed. Run this against a trusted local instance of this repository.
 
 Its database transactions are read-only. It checks migration hashes, RLS,
 privileges, the unexposed schema, bucket limits, three staff sessions, organizer
-reads, crew job/evidence isolation, and private photo downloads. It fingerprints
+reads (including crews and the seeded current plan), crew job/evidence isolation,
+and private photo downloads. It also evaluates effective `storage.objects` SELECT
+policies for both crew identities: a read-only transaction uses the claims from
+each verified JWT and switches to the `authenticated` role, requires RLS to be
+active, and requires zero visible objects in `report-photos`. This is database
+policy evaluation, not a direct Storage HTTP request; no privileged Storage key
+is used to judge crew visibility. It evaluates empty, download, list/list-v2,
+sign/sign-many, metadata and authenticated-image operation contexts, because
+[Storage policies can distinguish operations](https://supabase.com/docs/guides/storage/schema/helper-functions).
+Role/claim/operation changes roll back after each check.
+It fingerprints
 application rows, Auth account identities and Storage object metadata before
-and after the run. Sign-ins create normal Auth sessions; read access timestamps
+and after the run. **Image bytes are not compared**, so the preservation assertion
+is limited to those rows and metadata, not byte-for-byte photo preservation.
+Sign-ins create normal Auth sessions; read access timestamps
 are not treated as object changes. The verifier does not seed, reset, create
 accounts, submit reports, or execute workflow commands. Run it while no one is
 editing the demo data. Expected fixture counts and assignments are intentional;

@@ -1,6 +1,7 @@
 """Failure, privacy, and read-only checks for the developer live verifier."""
 
 import argparse
+import base64
 import json
 from contextlib import ExitStack
 from uuid import UUID
@@ -56,6 +57,19 @@ def mock_verifier(stack, report, failure=None):
                 httpx.Response(200, json=[{"illustrative": True}] * 10)
                 if label == "ORGANIZER"
                 else httpx.Response(403)
+            )
+        if path == "/crews":
+            return httpx.Response(200, json=[{"id": uid(12)}, {"id": uid(13)}])
+        if path == "/plans/current":
+            return httpx.Response(
+                200,
+                json={
+                    "plan": (
+                        None
+                        if failure == "missing_plan"
+                        else {"stale": failure == "stale_plan", "assignments": [{}] * 5}
+                    )
+                },
             )
         if path == "/jobs":
             start, count = (20, 3) if label == "CREW_A" else (30, 2)
@@ -159,6 +173,8 @@ def mock_verifier(stack, report, failure=None):
         "failed_login",
         "unexpected_authorization",
         "public_photo",
+        "missing_plan",
+        "stale_plan",
     ],
 )
 def test_cli_results_and_diagnostics_are_secret_free(
@@ -184,6 +200,7 @@ def test_cli_results_and_diagnostics_are_secret_free(
         failure
     )
     assert result["started_at_utc"] <= result["finished_at_utc"]
+    assert "photo bytes are not compared" in result["preservation_scope"]
 
 
 @pytest.mark.parametrize(
@@ -234,7 +251,7 @@ def test_database_reads_and_fingerprints(engine, seeded):
             "alter table auth.users add column email text, add column email_confirmed_at timestamptz"
         )
         connection.exec_driver_sql(
-            "create table storage.objects(id uuid, bucket_id text, name text, metadata json, created_at timestamptz, updated_at timestamptz)"
+            "create table if not exists storage.objects(id uuid, bucket_id text, name text, metadata json, created_at timestamptz, updated_at timestamptz)"
         )
     with ExitStack() as stack:
         verifier = mock_verifier(stack, {"checks": []})
@@ -251,3 +268,102 @@ def test_database_reads_and_fingerprints(engine, seeded):
             text("update wastegrid.crews set name='changed for fingerprint check'")
         )
     assert live.snapshot(engine, "report-photos") != before
+
+
+@pytest.mark.parametrize(
+    "exposure",
+    [None, "crew_a", "crew_b", "public", "rls_disabled", "list_only", "download_only"],
+)
+def test_effective_storage_policies_reject_crew_visibility(engine, exposure):
+    """Real PostgreSQL policies, including JWT-specific and PUBLIC leakage."""
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "create table if not exists storage.objects(id uuid, bucket_id text, name text, metadata json, created_at timestamptz, updated_at timestamptz)"
+        )
+        connection.exec_driver_sql(
+            "alter table storage.objects enable row level security"
+        )
+        connection.exec_driver_sql("grant usage on schema storage to authenticated")
+        connection.exec_driver_sql("grant select on storage.objects to authenticated")
+        connection.execute(
+            text(
+                "insert into storage.objects(id,bucket_id,name) values (:id,'report-photos','private-object')"
+            ),
+            {"id": uid(900)},
+        )
+        if exposure in ("crew_a", "crew_b"):
+            subject = uid(2 if exposure == "crew_a" else 3)
+            connection.exec_driver_sql(
+                "create policy verifier_exposure on storage.objects for select to authenticated "
+                "using ((current_setting('request.jwt.claims', true)::jsonb ->> 'sub') = '"
+                + subject
+                + "')"
+            )
+        elif exposure == "public":
+            connection.exec_driver_sql(
+                "create policy verifier_exposure on storage.objects for select to public using (true)"
+            )
+        elif exposure == "rls_disabled":
+            connection.exec_driver_sql(
+                "alter table storage.objects disable row level security"
+            )
+        elif exposure in ("list_only", "download_only"):
+            operation = (
+                "storage.object.list"
+                if exposure == "list_only"
+                else "storage.object.get_authenticated"
+            )
+            connection.exec_driver_sql(
+                "create policy verifier_exposure on storage.objects for select to authenticated "
+                "using (current_setting('storage.operation', true) = '"
+                + operation
+                + "')"
+            )
+    try:
+        report = {"checks": []}
+        with ExitStack() as stack:
+            verifier = mock_verifier(stack, report)
+            for label in ("CREW_A", "CREW_B"):
+                claims = {
+                    "sub": verifier.credentials["DEMO_" + label + "_USER_ID"],
+                    "role": "authenticated",
+                    "aud": "authenticated",
+                }
+                encoded = (
+                    base64.urlsafe_b64encode(json.dumps(claims).encode())
+                    .decode()
+                    .rstrip("=")
+                )
+                verifier.tokens[label] = "test." + encoded + ".private-signature"
+            if exposure:
+                with pytest.raises(live.VerificationFailure):
+                    verifier.storage_policy_checks(engine)
+                failed = next(
+                    check["name"]
+                    for check in report["checks"]
+                    if check["status"] == "failed"
+                )
+                assert failed.endswith("crew_b" if exposure == "crew_b" else "crew_a")
+            else:
+                verifier.storage_policy_checks(engine)
+                assert len(report["checks"]) == 2
+                assert all(check["status"] == "passed" for check in report["checks"])
+        with engine.connect() as connection:
+            assert connection.scalar(text("select current_user")) != "authenticated"
+            assert not connection.scalar(
+                text("select current_setting('request.jwt.claims', true)")
+            )
+            assert not connection.scalar(
+                text("select current_setting('storage.operation', true)")
+            )
+    finally:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "drop policy if exists verifier_exposure on storage.objects"
+            )
+            connection.exec_driver_sql(
+                "alter table storage.objects enable row level security"
+            )
+            connection.execute(
+                text("delete from storage.objects where id=:id"), {"id": uid(900)}
+            )

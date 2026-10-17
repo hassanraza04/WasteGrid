@@ -9,10 +9,38 @@ are configured. The backend runs locally at `http://127.0.0.1:8000` after the
 `localhost` on a teammate's computer refers to their own computer.
 
 Run `uv run --extra backend python -m scripts.verify_live_backend` for live
-authentication/read/privacy checks. It preserves the ten reports, six jobs,
-two crews, ten photos and five assignments, and saves secret-free evidence
+authentication/read/privacy checks. It checks the ten reports, six jobs,
+two crews, ten photo records and five assignments, compares application rows and
+Storage metadata before/after (not image bytes), and saves secret-free evidence
 under `.data/`. Full write workflows are tested against disposable local
 PostgreSQL. Synthetic images and decisions remain illustrative fixtures.
+
+## Hassan's local connection handoff: 2026-10-17
+
+- The ignored, owner-only `.env.hassan-handoff` file contains the existing
+  `MESSAGING_API_KEY`, organizer email/password, a fresh organizer access JWT and
+  its expiry, plus public connection settings. Share that file only through the
+  private channel; it is not part of this PR. The JWT expires, while email/password
+  can obtain a new session. A browser Supabase login client additionally needs the
+  project's publishable key; the short-lived JWT can be used directly meanwhile.
+- The messaging adapter sends `X-Integration-Key` to the documented messaging
+  `/internal/...` routes. Agent context routes instead use `X-Agent-Key`.
+  Never bundle the messaging key or a hardcoded organizer password into a browser
+  build. The organizer JWT is sent as `Authorization: Bearer <JWT>`.
+- Organizer access to `/organizer/reports`, `/crews` and `/plans/current` was
+  verified. The existing six migrations and Gulshan fixture plan are present;
+  the plan is not stale. No reseed/reset was needed or performed.
+- Per the supplied dashboard origin, local `CORS_ORIGINS` now includes
+  `http://127.0.0.1:8000` and retains `http://localhost:5173`. The API was restarted;
+  authenticated-request preflights passed for both and an unconfigured origin was
+  denied. `localhost` and `127.0.0.1` are different origins. Configure any later
+  actual deployment origin explicitly.
+- The configured messaging key passed authentication on a read-only lookup;
+  missing/wrong keys were rejected. This does not demonstrate Photon delivery.
+- The API still binds only to this machine's loopback address. Hassan needs his
+  own configured backend or a shared reachable deployment. CORS does not expose
+  this machine's server, and the confirmed port does not establish which process
+  serves Hassan's dashboard on his machine.
 
 ## Owner checklist
 

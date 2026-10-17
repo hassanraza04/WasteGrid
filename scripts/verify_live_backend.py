@@ -5,6 +5,7 @@ Never print response bodies, credentials, tokens, signed URLs, or exception text
 """
 
 import argparse
+import base64
 import ipaddress
 import json
 from contextlib import contextmanager
@@ -26,6 +27,19 @@ ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / ".data" / "backend-live-verification.json"
 LABELS = ("ORGANIZER", "CREW_A", "CREW_B")
 COUNTS = {"reports": 10, "jobs": 6, "crews": 2, "photos": 10, "assignments": 5}
+# SELECT policies can distinguish actions through storage.operation().
+# https://supabase.com/docs/guides/storage/schema/helper-functions
+STORAGE_READ_OPERATIONS = (
+    "",
+    "storage.object.get_authenticated",
+    "storage.object.list",
+    "storage.object.list_v2",
+    "storage.object.sign",
+    "storage.object.sign_many",
+    "object.get_authenticated_info",
+    "object.head_authenticated_info",
+    "storage.render.image_authenticated",
+)
 
 
 class VerificationFailure(Exception):
@@ -144,6 +158,16 @@ class Verifier:
             ).json()
             require(len(reports) == COUNTS["reports"])
             require(all(row["illustrative"] for row in reports))
+        with self.check("organizer_crews_and_seeded_plan"):
+            crews = self.request(
+                self.api, "GET", "/crews", headers=self.headers("ORGANIZER")
+            ).json()
+            require(len(crews) == COUNTS["crews"])
+            current = self.request(
+                self.api, "GET", "/plans/current", headers=self.headers("ORGANIZER")
+            ).json()["plan"]
+            require(current is not None and current["stale"] is False)
+            require(len(current["assignments"]) == COUNTS["assignments"])
         for label, count in (("CREW_A", 3), ("CREW_B", 2)):
             with self.check("assigned_jobs_" + label.lower()):
                 jobs = self.request(
@@ -270,6 +294,56 @@ class Verifier:
                         )
                     )
 
+    def storage_policy_checks(self, engine):
+        """Evaluate effective SELECT policies with each verified crew's JWT claims.
+
+        This exercises PostgreSQL RLS, not the Storage HTTP gateway. Never use
+        the privileged database role to judge what a crew can read. The role
+        and claims changes are transaction-local and rolled back on exit.
+        """
+        for label in ("CREW_A", "CREW_B"):
+            with self.check("storage_rls_denies_direct_reads_" + label.lower()):
+                # api_checks already verified these sessions through /auth/me.
+                payload = self.tokens[label].split(".")[1]
+                claims = json.loads(
+                    base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4))
+                )
+                require(claims["sub"] == self.credentials["DEMO_" + label + "_USER_ID"])
+                require(claims["role"] == "authenticated")
+                with read_connection(engine) as connection:
+                    connection.execute(
+                        text("select set_config('request.jwt.claims', :claims, true)"),
+                        {"claims": json.dumps(claims)},
+                    )
+                    connection.exec_driver_sql("SET LOCAL ROLE authenticated")
+                    require(
+                        connection.scalar(text("select current_user"))
+                        == "authenticated"
+                    )
+                    require(
+                        connection.scalar(
+                            text("select row_security_active('storage.objects')")
+                        )
+                    )
+                    # Deny every object in this private bucket, including the
+                    # other crew's photos. Permissive PUBLIC/member-role policies
+                    # participate in the real RLS evaluation automatically.
+                    for operation in STORAGE_READ_OPERATIONS:
+                        connection.execute(
+                            text(
+                                "select set_config('storage.operation', :operation, true)"
+                            ),
+                            {"operation": operation},
+                        )
+                        require(
+                            not connection.scalar(
+                                text(
+                                    "select exists(select 1 from storage.objects where bucket_id=:bucket)"
+                                ),
+                                {"bucket": self.settings.supabase_photo_bucket},
+                            )
+                        )
+
 
 def snapshot(engine, bucket):
     """Fingerprint application rows and object metadata, excluding Auth sessions."""
@@ -357,8 +431,9 @@ def run(base_url, report):
                 verifier.database_checks(engine)
                 verifier.cloud_checks()
                 verifier.api_checks()
+                verifier.storage_policy_checks(engine)
             finally:
-                with verifier.check("dataset_preserved"):
+                with verifier.check("application_rows_and_storage_metadata_preserved"):
                     require(before == snapshot(engine, settings.supabase_photo_bucket))
     finally:
         engine.dispose()
@@ -375,6 +450,7 @@ def main(argv=None):
         "base_url": args.base_url,
         "status": "failed",
         "checks": [],
+        "preservation_scope": "application rows, Auth account identities, Storage bucket and object metadata; photo bytes are not compared",
     }
     try:
         run(args.base_url, report)
