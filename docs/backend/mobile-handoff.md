@@ -26,7 +26,7 @@ trying requests; Swagger is not a mobile framework or a product requirement.
 | Organizer/crew authorization | Implemented; demo accounts provisioned |
 | AI triage and route planning | Integration pending; worker inactive, new work stays queued |
 | Messaging transport | Photon integration pending; no live delivery claimed |
-| Public hosting | Pending; separate deployment milestone |
+| Public hosting | API-only Render preparation available; deployment and URL pending |
 
 The configured demo has **10 illustrative reports, 6 jobs, 2 crews, 10 photos and
 5 assignments** (Crew A: 3; Crew B: 2). Images and decisions in that dataset are
@@ -42,6 +42,10 @@ bytes were not compared. These are
 backend results; mobile end-to-end acceptance is still to be completed.
 
 ## 2. Connection settings and access
+
+The backend owner follows the [shared API deployment runbook](shared-development-api.md).
+Use the verified HTTPS URL supplied after its acceptance checks; the deployment
+configuration alone does not make a service available.
 
 Proposed mobile configuration, for example in `mobile/.env.local`:
 
