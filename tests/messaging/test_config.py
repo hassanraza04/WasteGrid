@@ -1,4 +1,5 @@
 from pathlib import Path
+import traceback
 
 import pytest
 
@@ -78,6 +79,19 @@ def test_load_photon_config_rejects_backend_url_with_path_whitespace() -> None:
         )
 
 
+def test_load_photon_config_rejects_backend_url_with_unicode_control_character() -> None:
+    with pytest.raises(ConfigurationError, match="WASTEGRID_BACKEND_URL"):
+        load_photon_config(
+            {
+                "PHOTON_PROJECT_ID": "pho_prj_test",
+                "PHOTON_API_KEY": "pho_sk_test",
+                "WASTEGRID_BACKEND_URL": "https://backend.example.test/api\u0080path",
+                "WASTEGRID_MESSAGING_API_KEY": "backend-key",
+                "PHOTON_AGENT_SENDER_ID": "pho_usr_agent",
+            }
+        )
+
+
 @pytest.mark.parametrize("control_character", ["\n", "\t"])
 def test_load_photon_config_rejects_backend_url_with_control_character(
     control_character: str,
@@ -137,6 +151,26 @@ def test_load_photon_config_rejects_non_finite_timeout(timeout: str) -> None:
                 "WASTEGRID_TIMEOUT_SECONDS": timeout,
             }
         )
+
+
+def test_load_photon_config_does_not_chain_invalid_timeout_value() -> None:
+    secret_timeout = "timeout-secret-value"
+    with pytest.raises(ConfigurationError, match="WASTEGRID_TIMEOUT_SECONDS") as error:
+        load_photon_config(
+            {
+                "PHOTON_PROJECT_ID": "pho_prj_test",
+                "PHOTON_API_KEY": "pho_sk_test",
+                "WASTEGRID_BACKEND_URL": "https://backend.example.test/api",
+                "WASTEGRID_MESSAGING_API_KEY": "backend-key",
+                "PHOTON_AGENT_SENDER_ID": "pho_usr_agent",
+                "WASTEGRID_TIMEOUT_SECONDS": secret_timeout,
+            }
+        )
+
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
+    assert not error.value.__suppress_context__
+    assert secret_timeout not in "".join(traceback.format_exception(error.value))
 
 
 @pytest.mark.parametrize(

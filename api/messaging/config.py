@@ -6,6 +6,7 @@ from math import isfinite
 from pathlib import Path
 import re
 from typing import Mapping
+import unicodedata
 from urllib.parse import urlsplit
 
 
@@ -68,10 +69,11 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
         raise ConfigurationError("PHOTON_API_KEY must be set")
 
     raw_backend_url = environ.get("WASTEGRID_BACKEND_URL", "")
-    if any(character.isspace() for character in raw_backend_url):
-        raise ConfigurationError("WASTEGRID_BACKEND_URL must be a safe HTTP(S) URL")
     backend_url = raw_backend_url.strip()
-    if any(ord(character) < 32 or ord(character) == 127 for character in backend_url):
+    if any(
+        character.isspace() or unicodedata.category(character).startswith("C")
+        for character in raw_backend_url
+    ):
         raise ConfigurationError("WASTEGRID_BACKEND_URL must be a safe HTTP(S) URL")
     try:
         parsed_backend_url = urlsplit(backend_url)
@@ -101,10 +103,13 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
         raise ConfigurationError("PHOTON_AGENT_SENDER_ID must be set")
 
     timeout_text = environ.get("WASTEGRID_TIMEOUT_SECONDS", "10")
+    invalid_timeout = False
     try:
         timeout_seconds = float(timeout_text)
-    except ValueError as error:
-        raise ConfigurationError("WASTEGRID_TIMEOUT_SECONDS must be a number") from error
+    except ValueError:
+        invalid_timeout = True
+    if invalid_timeout:
+        raise ConfigurationError("WASTEGRID_TIMEOUT_SECONDS must be a number")
     if not isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ConfigurationError(
             "WASTEGRID_TIMEOUT_SECONDS must be greater than zero"
