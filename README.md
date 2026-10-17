@@ -54,3 +54,6 @@ npm run test
 npm run typecheck
 npm run build
 ```
+
+Contributor quality checks and the remaining administrator safeguards are in
+[repository safety](docs/repository-safety.md).

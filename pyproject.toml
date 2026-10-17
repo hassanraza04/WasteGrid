@@ -11,20 +11,24 @@ dependencies = [
   "photonhq-api>=0.5.0",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
   "pytest>=7.0",
   "pytest-cov>=4.0",
   "black>=23.0",
   "isort>=5.0",
-  "flake8>=6.0",
   "ipython>=8.37.0",
   "jupyter>=1.1.1",
   "ipykernel>=6.29.5",
+  "mypy>=1.13,<2",
+  "pip-audit>=2.9,<3",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.isort]
+profile = "black"
 
 [tool.pyright]
 ignore = ["."]
