@@ -110,6 +110,7 @@ def snapshot(db, crew_ids, settings, at):
                     )
                 },
                 "location": job.location,
+                "eligibility_reason": reason,
                 "reports": [
                     (
                         str(r.id),
@@ -188,6 +189,9 @@ def snapshot(db, crew_ids, settings, at):
         gamma=settings.routing_travel_weight,
         improvement_budget=settings.routing_improvement_budget,
         solver_seconds=settings.routing_solver_timeout_seconds,
+        location_max_age_seconds=settings.routing_location_max_age_seconds,
+        preview_max_age_seconds=settings.routing_preview_max_age_seconds,
+        max_displacement_meters=settings.routing_max_displacement_meters,
     )
     locations = {
         cid: dict(

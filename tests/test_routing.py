@@ -279,7 +279,9 @@ def test_preview_dispatch_preserves_unselected_and_ignores_equipment_shift(
         assert repeat == result and roads.calls == 1
 
 
-@pytest.mark.parametrize("change", ["version", "scope", "location", "stale", "partial"])
+@pytest.mark.parametrize(
+    "change", ["version", "scope", "location", "stale", "partial", "settings"]
+)
 def test_dispatch_rejects_changed_or_partial_preview(
     assessment_db, monkeypatch, change
 ):
@@ -298,6 +300,8 @@ def test_dispatch_rejects_changed_or_partial_preview(
             db.get(Crew, ids[0]).start_location = dict(latitude=25.5, longitude=67.09)
         elif change == "stale":
             db.get(Crew, ids[0]).location_recorded_at = now() - timedelta(minutes=10)
+        elif change == "settings":
+            settings.routing_location_max_age_seconds = 300
         db.commit()
         with pytest.raises(HTTPException) as exc:
             dispatch_preview(
