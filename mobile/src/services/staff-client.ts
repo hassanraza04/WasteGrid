@@ -20,6 +20,10 @@ export type Preview = {
   exclusions: { job_id: string; reason: string }[]; unassigned: { job_id: string; reason: string }[];
   reassignments: { job_id: string; previous_crew_id: string | null; proposed_crew_id: string; previous_position: number | null; proposed_position: number }[];
 };
+export type CurrentPlan = { plan: null | {
+  id: string; stale: boolean; created_at: string; travel_estimates_label: string;
+  assignments: { job_id: string; crew_id: string; position: number; travel_minutes: number; service_minutes: number }[];
+} };
 export type JobDetails = { job: Job; events: { command_id?: string | null; kind: string; details?: Record<string, unknown> }[] };
 export class StaffApiError extends Error {
   constructor(public status: number) {
@@ -51,6 +55,7 @@ export class StaffClient {
   json<T>(path: string, body: unknown, method = "POST") {
     return this.request<T>(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   }
+  currentPlan() { return this.request<CurrentPlan>("/plans/current"); }
   crews() { return this.request<Crew[]>("/crews"); }
   async jobs() {
     const jobs: Job[] = [];

@@ -74,3 +74,24 @@ test('a mutation refresh queued behind an old read fetches the new server state'
   await act(async()=>requests[1].resolve('after mutation'));assert.equal(result.data,'after mutation');assert.equal(result.loading,false);
  }finally{await view.close();}
 });
+
+test('timed-out native GPS remains guarded through manual, foreground and scheduled refreshes',async()=>{
+ const owner={role:'crew'};let result,onState,timeout,scheduled;const observations=[],posts=[];
+ const originalTimeout=globalThis.setTimeout,originalInterval=globalThis.setInterval;
+ globalThis.setTimeout=(fn,ms,...args)=>ms===15000?(timeout=fn,undefined):originalTimeout(fn,ms,...args);
+ globalThis.setInterval=(fn,ms,...args)=>ms===30000?(scheduled=fn,undefined):originalInterval(fn,ms,...args);
+ const {useCrewLocation}=load('hooks/use-crew-location.ts',{
+  'react-native':{AppState:{currentState:'active',addEventListener:(_event,fn)=>{onState=fn;return{remove(){}}}}},
+  'expo-router':{useFocusEffect:callback=>React.useEffect(callback,[callback])},
+  'expo-location':{Accuracy:{High:4},requestForegroundPermissionsAsync:async()=>({status:'granted'}),getCurrentPositionAsync:()=>{const pending=deferred();observations.push(pending);return pending.promise;}},
+  '@/auth/session':{getSession:()=>owner,useSession:()=>owner},'@/services/staff':{staffApi:{location:async(...args)=>posts.push(args)}},
+ });function Probe(){result=useCrewLocation();return null;}
+ const view=mount(Probe,{});const fix={timestamp:1700000000000,coords:{latitude:24,longitude:67}};
+ try{
+  await view.render();await act(async()=>timeout());assert.match(result.message,/GPS timed out/);
+  await act(async()=>{void result.refresh();onState('active');scheduled();});assert.equal(observations.length,1);
+  await act(async()=>observations[0].resolve(fix));assert.equal(posts.length,0);
+  await act(async()=>{void result.refresh();});assert.equal(observations.length,2);
+  await act(async()=>observations[1].resolve(fix));assert.equal(posts.length,1);
+ }finally{observations.forEach(item=>item.resolve(fix));await view.close();globalThis.setTimeout=originalTimeout;globalThis.setInterval=originalInterval;}
+});

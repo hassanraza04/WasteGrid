@@ -70,3 +70,10 @@ test('dispatch retries use one command and recover an applied preview without re
  await assert.rejects(recoverOrSend(dispatch,api),/lost/);
  assert.deepEqual(await recoverOrSend(dispatch,api),{plan_id:'plan'});assert.equal(posts,1);assert.equal(calls.length,3);
 });
+
+test('current plan uses the authenticated authoritative endpoint and supports an empty plan',async()=>{
+ const snapshot={plan:{id:'saved',assignments:[{job_id:'fixed',crew_id:'other',position:0,travel_minutes:2,service_minutes:3}]}};
+ const {api,calls}=setup(()=>Response.json(snapshot));
+ assert.deepEqual(await api.currentPlan(),snapshot);assert.equal(calls[0][0],'https://api.example/plans/current');assert.equal(calls[0][1].headers.Authorization,'Bearer jwt');
+ assert.deepEqual(await setup(()=>Response.json({plan:null})).api.currentPlan(),{plan:null});
+});

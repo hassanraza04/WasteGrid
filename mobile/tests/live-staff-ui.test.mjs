@@ -4,24 +4,26 @@ import React from 'react';
 import {act,button,load,mount,native,theme,ui,wrap,deferred} from './helpers/render.mjs';
 const blocks={...ui,Screen:wrap,Card:wrap,ScreenHeader:props=>React.createElement('h1',null,props.title),TextField:wrap};
 const job={id:'job',version:2,status:'assigned',category:'mixed_waste',location:{latitude:24,longitude:67},assigned_crew_id:'A',route_position:0};
-function preview(patch={}){return{id:'preview',expires_at:new Date(Date.now()+120000).toISOString(),dispatchable:true,plan_id:null,termination_reason:'complete',travel_label:'Driving times',routes:[{crew_id:'A',duration_minutes:6,travel_minutes:1,stops:[{job_id:'job',position:0,priority:'routine',completion_minutes:6}]}],unassigned:[],exclusions:[],reassignments:[],...patch};}
+function preview(patch={}){return{id:'preview',expires_at:new Date(Date.now()+120000).toISOString(),dispatchable:true,plan_id:null,termination_reason:'complete',travel_label:'Driving times',routes:[{crew_id:'A',duration_minutes:6,travel_minutes:1,stops:[{job_id:'job',position:0,priority:'routine',travel_minutes:1,service_minutes:5,completion_minutes:6}]}],unassigned:[],exclusions:[],reassignments:[],...patch};}
 function dispatchSetup(calculate=async()=>preview(),submit=async()=>{}){
- const state={data:{crews:[{id:'A',name:'Crew A',available:true,location_recorded_at:null},{id:'B',name:'Crew B',available:true,location_recorded_at:null}],jobs:[job],pending:[]},loading:false,error:'',refresh:async()=>{}};
- const requests=[],prepared=[];
+ const state={data:{crews:[{id:'A',name:'Crew A',available:true,location_recorded_at:null},{id:'B',name:'Crew B',available:true,location_recorded_at:null}],jobs:[job],pending:[],currentPlan:{plan:null}},loading:false,error:'',refresh:async()=>{}};
+ const requests=[],prepared=[];let read,planReads=0;
+ const api={crews:async()=>state.data.crews,jobs:async()=>state.data.jobs,currentPlan:async()=>{planReads++;return state.data.currentPlan;},compute:ids=>{requests.push(ids);return calculate();}};
+ state.refresh=async()=>{state.data=await read();};
  const {LiveDispatch}=load('components/admin/live-dispatch.tsx',{
   'react-native':native,'@/components/ui':blocks,'@/components/account/account-button':{AccountButton:wrap},'@/theme':theme,
-  '@/hooks/use-staff-data':{useStaffData:()=>state},'@/services/staff':{staffApi:{compute:ids=>{requests.push(ids);return calculate();}}},
+  '@/hooks/use-staff-data':{useStaffData:callback=>{read=callback;return state;}},'@/services/staff':{staffApi:api},
   '@/services/pending-staff':{pendingStaff:async()=>[],prepareStaff:async(kind,id)=>{prepared.push({kind,id});return{command_id:'stable'};},submitStaff:submit},
   '@/components/route/pending-actions':{PendingActions:wrap},'@/components/route/route-map':{RouteMap:wrap},
  });
- return{state,requests,prepared,view:mount(LiveDispatch,{})};
+ return{state,requests,prepared,planReads:()=>planReads,view:mount(LiveDispatch,{})};
 }
 test('compute is read-only; selection changes invalidate the preview and only approval dispatches',async()=>{
  const app=dispatchSetup();const {view}=app;
  try{
   await view.render();assert.equal(button(view.container,'Compute routes').disabled,true);
   await act(()=>button(view.container,'Crew A').click());await act(async()=>button(view.container,'Compute routes').click());
-  assert.deepEqual(app.requests,[['A']]);assert.equal(app.prepared.length,0);assert.match(view.container.textContent,/6 min total/);
+  assert.deepEqual(app.requests,[['A']]);assert.equal(app.prepared.length,0);assert.match(view.container.textContent,/6 min total/);assert.match(view.container.textContent,/1 min travel · 5 min service/);
   assert.equal(view.container.textContent.includes('Return to start'),false);assert.equal(view.container.textContent.includes('Max stops'),false);
   await act(()=>button(view.container,'Crew B').click());assert.equal(view.container.textContent.includes('Route preview'),false);
   await act(async()=>button(view.container,'Compute routes').click());await act(async()=>button(view.container,'Approve and dispatch').click());
@@ -70,5 +72,17 @@ test('crew starts in server order, captures evidence, and removes a stop only af
   await act(async()=>button(view.container,'Submit cleanup photo').click());
   assert.deepEqual(prepared[1],{kind:'completion',version:3,uri:'file:///cleanup.jpg'});assert.equal(mapped.at(-1).length,1);assert.match(view.container.textContent,/Cleanup confirmed/);
   assert.equal(view.container.textContent.includes('Mark not cleaned'),false);assert.equal(button(view.container,'Start stop').disabled,false);
+ }finally{await view.close();}
+});
+
+test('dispatch refreshes the authoritative plan including preserved fixed work',async()=>{
+ const app=dispatchSetup(undefined,async()=>{
+  app.state.data.currentPlan={plan:{id:'saved-plan',stale:false,travel_estimates_label:'Frozen road times',assignments:[{job_id:'fixed-job',crew_id:'B',position:0,travel_minutes:2,service_minutes:3}]}};
+  app.state.data.jobs.push({...job,id:'fixed-job',assigned_crew_id:'B',status:'in_progress',locked:true});
+ });const {view}=app;
+ try{
+  await view.render();await act(async()=>button(view.container,'Refresh fleet and current plan').click());assert.equal(app.planReads(),1);assert.match(view.container.textContent,/No dispatched plan yet/);
+  await act(()=>button(view.container,'Crew A').click());await act(async()=>button(view.container,'Compute routes').click());await act(async()=>button(view.container,'Approve and dispatch').click());
+  assert.equal(app.planReads(),2);assert.match(view.container.textContent,/saved-plan/);assert.match(view.container.textContent,/Crew B · stop 1/);assert.match(view.container.textContent,/2 min travel · 3 min service · in progress · fixed/);
  }finally{await view.close();}
 });

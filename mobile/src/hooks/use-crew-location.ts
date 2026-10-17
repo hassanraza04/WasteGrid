@@ -16,21 +16,29 @@ export function useCrewLocation() {
       if (!active || inFlight.current || session?.role !== "crew" || AppState.currentState !== "active") return;
       inFlight.current = true;
       const show = (message: string) => { if (active && getSession() === session) setResult({ owner: session, message }); };
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let observationRequest: Promise<Location.LocationObject> | undefined;
       try {
         const permission = await Location.requestForegroundPermissionsAsync();
         if (permission.status !== "granted") { show("Allow foreground location so your crew can be routed."); return; }
         if (!active || AppState.currentState !== "active" || getSession() !== session) return;
+        observationRequest = Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         const observation = await Promise.race([
-          Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+          observationRequest,
           new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("GPS timed out. Try outdoors and refresh.")), 15000); }),
         ]);
         if (!active || AppState.currentState !== "active" || getSession() !== session) return;
         await staffApi.location({ latitude: observation.coords.latitude, longitude: observation.coords.longitude }, new Date(observation.timestamp).toISOString());
         show(`Location shared at ${new Date(observation.timestamp).toLocaleTimeString()}`);
       } catch (error) { show(error instanceof Error ? error.message : "Unable to share location."); }
-      finally { clearTimeout(timer); inFlight.current = false; }
+      finally {
+        clearTimeout(timer);
+        // Native GPS is not cancelled by Promise.race. Keep ownership until it
+        // settles; a timed-out fix is never published or replaced concurrently.
+        if (observationRequest) await observationRequest.catch(() => {});
+        inFlight.current = false;
+      }
     };
-    let timer: ReturnType<typeof setTimeout> | undefined;
     refresh.current = publish;
     void publish();
     const interval = setInterval(() => { void publish(); }, 30000);

@@ -87,3 +87,9 @@ organiser preview/dispatch -> assigned crew start -> cleanup photo -> resident
 completion evidence. Exercise an interrupted upload, a lost dispatch response,
 logout/account switching, denied GPS and recheck release. Coordinate new test
 records and preserve the shared illustrative fixture.
+
+### Review follow-up
+
+Dispatch reads `/plans/current` with each fleet refresh, including after approval or pending-action recovery. The saved plan lists all assignments, including preserved work for unselected crews; current active job statuses identify ongoing and locked stops. Preview stops show individual travel and service durations alongside cumulative completion time.
+
+A GPS timeout reports failure without releasing ownership of the native location request. Manual, scheduled and foreground refreshes remain guarded until that request settles; a late timed-out observation is discarded.

@@ -12,8 +12,8 @@ import { Spacing } from "@/theme";
 
 export function LiveDispatch() {
   const read = useCallback(async () => {
-    const [crews, jobs, pending] = await Promise.all([staffApi.crews(), staffApi.jobs(), pendingStaff()]);
-    return { crews, jobs, pending };
+    const [crews, jobs, pending, currentPlan] = await Promise.all([staffApi.crews(), staffApi.jobs(), pendingStaff(), staffApi.currentPlan()]);
+    return { crews, jobs, pending, currentPlan };
   }, []);
   const state = useStaffData(read);
   const [selected, setSelected] = useState<string[]>([]);
@@ -57,9 +57,20 @@ export function LiveDispatch() {
   const crewName = (id: string | null) => state.data?.crews.find(crew => crew.id === id)?.name ?? id ?? "Unassigned";
   return <Screen>
     <ScreenHeader title="Dispatch" subtitle="All eligible jobs · road travel time and priority" trailing={<AccountButton />} />
-    <Button label="Refresh crews and jobs" variant="outline" disabled={busy || state.loading} onPress={() => { void state.refresh(); }} />
+    <Button label="Refresh fleet and current plan" variant="outline" disabled={busy || state.loading} onPress={() => { void state.refresh(); }} />
     {state.loading && <AppText tone="muted">Refreshing fleet…</AppText>}
     {state.error ? <AppText accessibilityRole="alert">{state.error}</AppText> : null}
+    {state.data && <Card>
+      <AppText variant="title">Current dispatched plan</AppText>
+      {state.data.currentPlan.plan ? <>
+        <AppText selectable>{state.data.currentPlan.plan.id}</AppText>
+        <AppText>{state.data.currentPlan.plan.stale ? "Plan changed; review current job statuses before replanning." : "Saved dispatch"} · {state.data.currentPlan.plan.travel_estimates_label}</AppText>
+        {[...state.data.currentPlan.plan.assignments].sort((a, b) => a.crew_id.localeCompare(b.crew_id) || a.position - b.position).map(stop => {
+          const job = state.data!.jobs.find(job => job.id === stop.job_id);
+          return <AppText key={stop.job_id}>{crewName(stop.crew_id)} · stop {stop.position + 1} · {job?.category ?? stop.job_id} · {stop.travel_minutes} min travel · {stop.service_minutes} min service{job ? ` · ${job.status.replaceAll("_", " ")}${job.locked || job.status === "in_progress" ? " · fixed" : ""}` : " · historical stop"}</AppText>;
+        })}
+      </> : <AppText>No dispatched plan yet.</AppText>}
+    </Card>}
     <AppText>Select up to five crews. Their current locations are the route origins. Up to 25 eligible jobs can be routed per calculation. Fixed work and unselected crews are preserved.</AppText>
     {state.data?.crews.map(crew => <Card key={crew.id}>
       <Chip label={crew.name} selected={selected.includes(crew.id)} disabled={busy || (!crew.available && !selected.includes(crew.id)) || (selected.length >= 5 && !selected.includes(crew.id))} onPress={() => {
@@ -84,7 +95,7 @@ export function LiveDispatch() {
           const job = result.jobs.find(job => job.id === stop.job_id);
           return job ? [{ reportId: job.id, address: job.location.landmark ?? job.category, coords: job.location }] : [];
         })} />
-        {route.stops.map(stop => <AppText key={stop.job_id}>{stop.position + 1}. {result.jobs.find(job => job.id === stop.job_id)?.category ?? stop.job_id} · {stop.priority === "routine" ? "low" : stop.priority} · finish in {Math.round(stop.completion_minutes)} min{stop.fixed ? " · fixed" : ""}</AppText>)}
+        {route.stops.map(stop => <AppText key={stop.job_id}>{stop.position + 1}. {result.jobs.find(job => job.id === stop.job_id)?.category ?? stop.job_id} · {stop.priority === "routine" ? "low" : stop.priority} · {stop.travel_minutes} min travel · {stop.service_minutes} min service · finish in {Math.round(stop.completion_minutes)} min{stop.fixed ? " · fixed" : ""}</AppText>)}
       </Card>)}
       {[...preview!.exclusions, ...preview!.unassigned].map((issue, index) => <AppText key={`${issue.job_id}:${index}`}>Excluded/unassigned {issue.job_id}: {issue.reason.replaceAll("_", " ")}</AppText>)}
       {preview!.reassignments.map(change => <AppText key={change.job_id}>Assignment change {change.job_id}: {crewName(change.previous_crew_id)} → {crewName(change.proposed_crew_id)} · stop {change.proposed_position + 1}</AppText>)}
