@@ -4,6 +4,13 @@ import type { ReportRepository } from "./reportRepository";
 const reportsKey = "wastegrid.demo.reports";
 const rememberedReferenceKey = "wastegrid.demo.last-report";
 
+export class ReportStorageError extends Error {
+  public constructor() {
+    super("Report storage is unavailable");
+    this.name = "ReportStorageError";
+  }
+}
+
 const seededReport: Report = {
   reference: "WG-DEMO",
   title: "Overflowing bin",
@@ -42,31 +49,10 @@ export class BrowserReportRepository implements ReportRepository {
   }
 
   public create(input: CreateReportInput): Report {
-    const title = input.title.trim();
-    const address = input.address.trim();
-    if (!title) {
-      throw new Error("Report title is required");
-    }
-    if (!address) {
-      throw new Error("Report address is required");
-    }
-
+    const title = requireValue(input.title, "Report title is required");
+    const address = requireValue(input.address, "Report address is required");
     const createdAt = new Date().toISOString();
-    const update = {
-      createdAt,
-      status: "submitted" as const,
-      message: "Your report has been received.",
-    };
-    const report: Report = {
-      reference: this.createReference(),
-      title,
-      status: "submitted",
-      location: { latitude: 0, longitude: 0, address },
-      createdAt,
-      latestUpdate: update,
-      updates: [update],
-      conversation: [],
-    };
+    const report = createReport(this.createReference(), title, address, createdAt);
 
     this.writeReports([...this.readReports(), report]);
     return report;
@@ -74,12 +60,12 @@ export class BrowserReportRepository implements ReportRepository {
 
   public remember(reference: string): void {
     if (this.getByReference(reference)) {
-      this.storage.setItem(rememberedReferenceKey, reference.trim().toUpperCase());
+      this.writeStorage(rememberedReferenceKey, reference.trim().toUpperCase());
     }
   }
 
   public getRememberedReference(): string | undefined {
-    return this.storage.getItem(rememberedReferenceKey) ?? undefined;
+    return this.readStorage(rememberedReferenceKey) ?? undefined;
   }
 
   private createReference(): string {
@@ -90,7 +76,7 @@ export class BrowserReportRepository implements ReportRepository {
   }
 
   private readReports(): Report[] {
-    const serializedReports = this.storage.getItem(reportsKey);
+    const serializedReports = this.readStorage(reportsKey);
     if (!serializedReports) {
       this.writeReports([seededReport]);
       return [seededReport];
@@ -98,13 +84,60 @@ export class BrowserReportRepository implements ReportRepository {
 
     try {
       const parsedReports: unknown = JSON.parse(serializedReports);
-      return Array.isArray(parsedReports) ? (parsedReports as Report[]) : [seededReport];
+      return Array.isArray(parsedReports) ? (parsedReports as Report[]) : this.resetReports();
     } catch {
-      return [seededReport];
+      return this.resetReports();
     }
   }
 
   private writeReports(reports: Report[]): void {
-    this.storage.setItem(reportsKey, JSON.stringify(reports));
+    this.writeStorage(reportsKey, JSON.stringify(reports));
   }
+
+  private resetReports(): Report[] {
+    this.writeReports([seededReport]);
+    return [seededReport];
+  }
+
+  private readStorage(key: string): string | null {
+    try {
+      return this.storage.getItem(key);
+    } catch {
+      throw new ReportStorageError();
+    }
+  }
+
+  private writeStorage(key: string, value: string): void {
+    try {
+      this.storage.setItem(key, value);
+    } catch {
+      throw new ReportStorageError();
+    }
+  }
+}
+
+function requireValue(value: string, errorMessage: string): string {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    throw new Error(errorMessage);
+  }
+  return trimmedValue;
+}
+
+function createReport(reference: string, title: string, address: string, createdAt: string): Report {
+  const update = {
+    createdAt,
+    status: "submitted" as const,
+    message: "Your report has been received.",
+  };
+  return {
+    reference,
+    title,
+    status: "submitted",
+    location: { latitude: 0, longitude: 0, address },
+    createdAt,
+    latestUpdate: update,
+    updates: [update],
+    conversation: [],
+  };
 }

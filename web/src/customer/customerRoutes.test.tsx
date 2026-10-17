@@ -5,12 +5,13 @@ import { beforeEach, expect, test } from "vitest";
 
 import { App } from "../app/App";
 import { BrowserReportRepository } from "../data/browserReportRepository";
+import type { ReportRepository } from "../data/reportRepository";
 
 beforeEach(() => {
   window.localStorage.clear();
 });
 
-function renderAppAt(path: string, repository: BrowserReportRepository): void {
+function renderAppAt(path: string, repository: ReportRepository): void {
   render(
     <MemoryRouter initialEntries={[path]}>
       <App repository={repository} />
@@ -57,4 +58,22 @@ test("shows a clear not-found state for an unknown report", () => {
   renderAppAt("/report/UNKNOWN", repository);
 
   expect(screen.getByRole("heading", { name: "Report not found" })).toBeInTheDocument();
+});
+
+test("renders a fallback error when report creation throws a non-Error value", async () => {
+  const repository: ReportRepository = {
+    list: () => [],
+    getByReference: () => undefined,
+    create: () => {
+      throw "unexpected failure";
+    },
+    remember: () => undefined,
+    getRememberedReference: () => undefined,
+  };
+  const user = userEvent.setup();
+  renderAppAt("/report/new", repository);
+
+  await user.click(screen.getByRole("button", { name: "Create report" }));
+
+  expect(screen.getByRole("alert")).toHaveTextContent("Unable to create report");
 });
