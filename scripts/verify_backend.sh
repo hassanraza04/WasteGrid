@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 : "${TEST_DATABASE_URL:?Set TEST_DATABASE_URL to the disposable localhost PostgreSQL server}"
-uv sync --frozen --extra backend
+uv sync --locked --extra backend --group dev
 verification_dir="${VERIFICATION_DIR:-/tmp/wastegrid-backend-verification}"
 mkdir -p "$verification_dir"
 uv run --extra backend pytest -q --junitxml="$verification_dir/pytest.xml"

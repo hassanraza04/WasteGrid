@@ -1,38 +1,37 @@
 # PR #4 review handoff
 
-The backend branch `omer/backend-foundation` has an open PR. Hassan requested
-three changes: synchronize the exported contract, keep triage out of resident
-report responses, and use constant-time comparison for completion-photo access.
-The separate automated review found that blocked jobs could not resume. The
-working tree implements all four responses; [verification.md](verification.md)
-records the checks. No review changes have been committed or pushed by the agent.
+The backend branch `omer/backend-foundation` now incorporates main revision
+`60687a73453827efe7f8a54a02ba5f78ae246f66` through merge commit `b625a91`.
+The review fixes are preserved in checkpoint commit `fd2603e`. Published
+history was preserved, with no rebase or force push.
 
-Latest inspected `origin/main`: `430a0172323c938e6ea927681f5372fd7e4eac74`.
-It adds the mobile source and a CI workflow. PR #4 currently conflicts with
-`main`; the user must update the branch before merge. A disposable combined
-snapshot passed 82 Python tests and contract export checks.
+## Resolved integration
 
-## User-run steps
+- The ignore rules retain `.env` exclusions, the `.env.example` exception,
+  `.data/`, coverage output, and upstream IDE rules. `.github` is no longer ignored.
+- Backend optional dependencies coexist with upstream's dev dependency group,
+  including flake8, mypy, pip-audit, and the shared isort configuration.
+  The combined lockfile was regenerated from upstream without unrelated upgrades.
+- Both README additions and upstream mobile, web, and messaging source are
+  preserved. Mobile is a tracked directory rather than an empty gitlink.
+- Python CI installs the backend extra, starts a disposable PostgreSQL 17
+  service, and checks generated contracts. Existing web checks and audit
+  exceptions remain intact.
 
-1. Review `git diff`, especially the public/organizer schema split,
-   blocked-assignment rules, generated OpenAPI, and test cases. Run
-   `git diff --check` and `scripts/verify_backend.sh` with a disposable
-   localhost `TEST_DATABASE_URL` as described in [setup.md](setup.md).
-2. Commit the reviewed working changes yourself. Suggested message:
-   `fix(api): protect triage data and preserve blocked assignments`.
-3. Run `git fetch origin`, then update the branch with `git merge origin/main`.
-   This retains published branch history and avoids a force push. Resolve any
-   overlap deliberately: keep the backend optional dependencies alongside
-   main's dev dependency group, preserve the private environment-file and
-   `.data/` ignore rules, retain main's mobile files and CI workflow, and
-   regenerate `uv.lock` with `uv lock` after resolving `pyproject.toml`.
-4. Update main's Python CI job to install `--extra backend` and provide a
-   disposable PostgreSQL service plus `TEST_DATABASE_URL`. Without those, it
-   either cannot import `psycopg` or skips backend database tests. Do this as
-   part of the user-managed branch update; do not replace teammate CI wholesale.
-5. Rerun the full verification and generated-contract check on the updated
-   branch, inspect GitHub CI/review, then push the branch yourself. Share the
-   updated PR with Hassan for review.
+## Verification and review
 
-Live Supabase, Render, Person 3, Photon, dashboard, and mobile acceptance remain
-separate deployment/integration checks.
+The integrated branch passed 85 Python tests on both Python 3.12 and 3.13,
+with no skipped tests, plus migration checks, contract exports, static checks,
+and the Docker build with 11 HTTP smoke checks. Web passed 24 tests, its audit,
+coverage, and production build. Mobile typecheck, lint, and its configured audit
+passed. The existing mobile audit exceptions still apply.
+
+[Verification evidence](verification.md) records the exact revisions and results.
+[PR #4](https://github.com/hassanraza04/WasteGrid/pull/4) is the source of truth
+for hosted CI and Hassan's review. Review fixes include private triage data,
+constant-time resident token comparison, retained blocked-job assignments with
+current resource validation, and a Python-version-independent 413 description.
+
+PR approval and merge into `main` remain maintainer actions. Live Supabase,
+Render, Person 3, Photon, dashboard, and mobile acceptance remain separate
+deployment/integration checks.
