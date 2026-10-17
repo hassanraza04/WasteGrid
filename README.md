@@ -1,5 +1,12 @@
 # WasteGrid
 
+## Person 2 backend
+
+The FastAPI backend, Supabase migrations, worker, proposed contracts, and setup
+instructions are in [docs/backend](docs/backend/README.md). Start with
+[setup](docs/backend/setup.md) and share the [contracts](docs/backend/contracts.md)
+with the frontend, Chalk and Photon owners.
+
 ## Photon iMessage smoke agent
 
 The first messaging slice uses the Photon Beta API to reply to fresh iMessages.
