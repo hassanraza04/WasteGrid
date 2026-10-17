@@ -1,4 +1,4 @@
-# Dashboard and messaging handoff — proposed v0.2
+# Dashboard and messaging handoff: proposed v0.2
 
 The backend now supports the requested report identity, authorized tracking,
 organizer reads, update history and conversation history. The routes below are

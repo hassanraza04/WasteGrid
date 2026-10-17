@@ -1,6 +1,32 @@
-# Dashboard contract completion — verification evidence
+# Dashboard contract completion: verification evidence
 
-## PR review follow-up — 2026-10-17
+## Second PR review follow-up: 2026-10-17
+
+Fixed blocked assignments now require current crew availability and equipment
+when a plan is applied. A blocked crew route must also fit its current shift;
+ongoing work retains the previous shortened-shift exception. Three regression
+cases reject plans after availability, equipment, or shift capacity changes,
+while the existing blocked-job resume and ongoing-work tests still pass.
+
+The 413 OpenAPI description is now explicitly `Content Too Large`, so generated
+contracts do not depend on the Python HTTP status phrase. The regenerated
+`openapi.json` differs only in that description. `uv sync --locked --extra
+backend` and the contract export check passed. The full
+`scripts/verify_backend.sh` run passed **85 Python tests**, contract checks,
+flake8, Black, isort, six disposable PostgreSQL migrations, Docker build, and
+11 HTTP smoke checks. No tests were skipped. The four documentation headings
+with em dashes were updated to plain punctuation.
+
+The latest fetched `origin/main` is `430a0172323c938e6ea927681f5372fd7e4eac74`.
+An isolated copy of that revision with the current backend files and a resolved
+combined lockfile passed the contract check and **85 Python tests** against the
+disposable PostgreSQL server. This compatibility copy did not change branch
+history.
+PR #4 still reports a conflict and requested changes. Shared changed paths since
+the merge base are `.gitignore`, `README.md`, `pyproject.toml`, and `uv.lock`.
+Updating branch history and the PR remains a user-run step.
+
+## First PR review follow-up: 2026-10-17
 
 Hassan's requested privacy and credential-comparison fixes are implemented in
 the working tree. Public report creation/lookup responses now omit `triage`;
@@ -23,8 +49,8 @@ branch: its `uv sync --locked --group dev` omits the optional `backend` extra,
 and its Python job provides no `TEST_DATABASE_URL`. Replaying its commands in
 the disposable combined copy failed during collection with missing `psycopg`.
 Install the backend extra and provision disposable PostgreSQL for CI to test the
-backend rather than skipping it. The review changes are uncommitted; PR #4 is
-currently conflicting with the advanced `main` until the user updates it.
+backend rather than skipping it. At that checkpoint, the review changes were
+uncommitted and PR #4 conflicted with the advanced `main`.
 
 ## Earlier dashboard-contract evidence
 
@@ -91,10 +117,12 @@ ignore file preserved both sets of rules. The working `.gitignore` also retains
 `.data/` and environment exclusions. An actual Git update may still need conflict
 resolution; the user-run instructions are in [merge.md](merge.md).
 
-Working branch HEAD remains `a20a5a6c3ba030b523da0645be8124110d23893a` on
-`omer/backend-foundation`; index is empty. No commits, pushes, rebases or merges
-were performed. Teammate frontend/mobile/messaging implementation files were
-not changed. Frontend/mobile builds were not run.
+At this earlier checkpoint, working branch HEAD was
+`a20a5a6c3ba030b523da0645be8124110d23893a` on
+`omer/backend-foundation`, and the index was empty. No commits, pushes, rebases
+or merges were performed during that verification. Teammate frontend, mobile,
+and messaging implementation files were not changed. Frontend and mobile builds
+were not run.
 
 ## Evidence and remaining acceptance
 

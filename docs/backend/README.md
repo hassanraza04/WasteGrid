@@ -1,4 +1,4 @@
-# WasteGrid backend — Person 2 handoff
+# WasteGrid backend: Person 2 handoff
 
 This is the FastAPI/Postgres backend for the four-person build plan. All new
 integration decisions are **proposed v0.2**, pending coordination with Persons

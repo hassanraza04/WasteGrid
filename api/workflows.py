@@ -215,9 +215,12 @@ def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
         previous = f"crew:{cid}"
         for stop in stops:
             job = jobs[stop.job_id]
-            # Ongoing and blocked work retain their crew; resuming still checks
-            # current availability and capacity.
-            if (job.status == "blocked" and job.id not in fixed) or (
+            # Ongoing work remains fixed. Blocked work can only retain a
+            # currently eligible crew so its validated plan permits resumption.
+            if (
+                job.status == "blocked"
+                and (job.id not in fixed or not eligible(job, crews[cid]) or job.held)
+            ) or (
                 job.status not in ("in_progress", "blocked")
                 and (
                     not eligible(job, crews[cid])
@@ -237,13 +240,18 @@ def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
             used[str(cid)] += stop.travel_minutes + stop.service_minutes
             previous = f"job:{job.id}"
         tails[cid] = previous
-        # If existing completed/ongoing/blocked work exceeds a shortened shift,
-        # preserve it but admit no further work to that crew.
+        # Ongoing work cannot be undone when a shift shrinks. Blocked work
+        # must still fit so the crew can resume from this validated plan.
         protected = current.completed_minutes[str(cid)] + sum(
             s.travel_minutes + s.service_minutes
             for s in stops
             if jobs[s.job_id].status in ("in_progress", "blocked")
         )
+        if any(jobs[s.job_id].status == "blocked" for s in stops):
+            if used[str(cid)] > crews[cid].shift_minutes + 0.001:
+                raise HTTPException(
+                    422, "Blocked assignment exceeds crew shift capacity"
+                )
         if used[str(cid)] > max(crews[cid].shift_minutes, protected) + 0.001:
             raise HTTPException(422, "Plan exceeds crew shift capacity")
     for jid, item in unassigned.items():

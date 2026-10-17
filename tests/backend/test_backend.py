@@ -443,6 +443,56 @@ def test_planner_cannot_assign_an_unassigned_blocked_job(client, png, engine, se
             apply_plan(db, proposal)
 
 
+@pytest.mark.parametrize(
+    ("crew_change", "error"),
+    [
+        ({"available": False}, "job eligibility"),
+        ({"equipment": []}, "job eligibility"),
+        ({"shift_minutes": 1}, "shift capacity"),
+    ],
+)
+def test_blocked_assignment_replan_requires_current_crew_resources(
+    client, png, engine, seeded, crew_change, error
+):
+    report(client, png)
+    drain(client, engine)
+    job = client.get("/jobs", headers=auth("org")).json()[0]
+    crew_id = job["assigned_crew_id"]
+    owner = "a" if crew_id == str(seeded["crew_a"]) else "b"
+    blocked = client.patch(
+        "/jobs/" + job["id"],
+        headers=auth(owner),
+        json={
+            "command_id": str(uuid4()),
+            "expected_version": job["version"],
+            "status": "blocked",
+        },
+    )
+    assert blocked.status_code == 200, blocked.text
+    crew = next(
+        c
+        for c in client.get("/crews", headers=auth("org")).json()
+        if c["id"] == crew_id
+    )
+    changed = client.patch(
+        "/crews/" + crew_id,
+        headers=auth("org"),
+        json={
+            "command_id": str(uuid4()),
+            "expected_version": crew["version"],
+            **crew_change,
+        },
+    )
+    assert changed.status_code == 200, changed.text
+    with Session(engine) as db:
+        proposal = TestProvider().generate_plan(build_planning_input(db))
+        assert any(stop.job_id == UUID(job["id"]) for stop in proposal.assignments)
+        count = db.scalar(select(func.count()).select_from(Plan))
+        with pytest.raises(HTTPException, match=error):
+            apply_plan(db, proposal)
+        assert db.scalar(select(func.count()).select_from(Plan)) == count
+
+
 def test_missing_information_and_hazard_do_not_create_jobs(client, png, engine):
     report(client, png, note="Suspected hazard")
     missing = client.post("/reports", files={"photo": ("a.png", png, "image/png")})
@@ -771,8 +821,15 @@ def test_contract_exports_match_source():
 
     from scripts.export_contracts import DEST, artifacts
 
-    for relative, value in artifacts().items():
+    generated = artifacts()
+    for relative, value in generated.items():
         assert json.loads((DEST / relative).read_text()) == value, relative
+    assert (
+        generated["openapi.json"]["paths"]["/reports"]["post"]["responses"]["413"][
+            "description"
+        ]
+        == "Content Too Large"
+    )
 
 
 def test_commit_acknowledgement_loss_preserves_committed_photo(
