@@ -90,3 +90,25 @@ def test_send_reply_targets_the_same_space_from_the_agent_identity() -> None:
         projects.send_input.body.content.text
         == "Photon Spectrum is connected. You said: hello"
     )
+
+
+def test_send_to_space_preserves_route_ids_text_and_idempotency_key() -> None:
+    projects = FakeProjects(messages=[])
+    text = "  Keep this text exactly as sent.\n"
+    idempotency_key = "client supplied/key: 42"
+
+    gateway(FakeClient(projects)).send_to_space(
+        space_id="pho_spc_route",
+        sender_id="pho_usr_route",
+        text=text,
+        idempotency_key=idempotency_key,
+    )
+
+    assert projects.send_input is not None
+    assert projects.send_input.path.id == "pho_prj_test"
+    assert projects.send_input.headers.idempotency_key == idempotency_key
+    assert projects.send_input.body.senderId == "pho_usr_route"
+    assert projects.send_input.body.spaceId == "pho_spc_route"
+    assert projects.send_input.body.content.type == "text"
+    assert projects.send_input.body.content.format == "plain"
+    assert projects.send_input.body.content.text == text

@@ -44,6 +44,22 @@ class PhotonGateway:
 
     def send_reply(self, message: InboundMessage, text: str) -> None:
         """Request one plain-text iMessage reply with a stable idempotency key."""
+        self.send_to_space(
+            space_id=message.space_id,
+            sender_id=message.agent_sender_id,
+            text=text,
+            idempotency_key=f"wastegrid-reply-{message.id}",
+        )
+
+    def send_to_space(
+        self,
+        *,
+        space_id: str,
+        sender_id: str,
+        text: str,
+        idempotency_key: str,
+    ) -> None:
+        """Send plain text to a Photon space from the given sender."""
         self._client.projects.send_message(
             SendMessageInput(
                 body=models.SendMessageRequest(
@@ -52,12 +68,12 @@ class PhotonGateway:
                         format="plain",
                         text=text,
                     ),
-                    senderId=message.agent_sender_id,
-                    spaceId=message.space_id,
+                    senderId=sender_id,
+                    spaceId=space_id,
                 ),
                 path=SendMessagePath(id=self._config.project_id),
                 headers=SendMessageHeader(
-                    idempotency_key=f"wastegrid-reply-{message.id}"
+                    idempotency_key=idempotency_key
                 ),
             )
         )
