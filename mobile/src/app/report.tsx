@@ -1,7 +1,8 @@
-// app/report.tsx — New report: take a photo, then add location + caption
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { router } from "expo-router";
 
+import { createDraft, discardDraft, sendDraft } from "@/services/reports";
+import { reportFields, ReportRejectedError, type ReportDraft } from "@/services/report-client";
 import { CameraStep } from "@/components/report/camera-step";
 import { ReportForm } from "@/components/report/report-form";
 import { describePhoto } from "@/utils/describe-photo";
@@ -13,57 +14,82 @@ export default function Report() {
   const [locating, setLocating] = useState(false);
   const [caption, setCaption] = useState("");
   const [describing, setDescribing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [draft, setDraft] = useState<ReportDraft | null>(null);
+  const submitting = useRef(false);
+  const locationRequest = useRef(0);
+  const photoRevision = useRef(0);
 
-  // keepTyped: the automatic lookup after capture shouldn't overwrite an address the user already typed
   const locate = async (keepTyped: boolean) => {
+    const revision = ++locationRequest.current;
     setLocating(true);
     const result = await getPhotoLocation();
+    if (revision !== locationRequest.current) return;
     setLocating(false);
-    if (!result) return; // denied/unavailable → user types the address
-    setLocation((prev) => (keepTyped && prev?.address ? { ...result, address: prev.address } : result));
+    if (result) setLocation(prev => keepTyped && prev?.address ? { ...result, address: prev.address } : result);
   };
 
   const onCapture = (uri: string) => {
+    photoRevision.current++;
     setPhotoUri(uri);
-    locate(true); // resolves while the user writes the caption
+    void locate(true);
   };
 
   const generateCaption = async () => {
     if (!photoUri) return;
+    const revision = photoRevision.current;
     setDescribing(true);
-    const description = await describePhoto(photoUri);
-    setDescribing(false);
-    if (description) setCaption(description);
+    try {
+      const description = await describePhoto(photoUri);
+      if (revision === photoRevision.current) {
+        if (description) setCaption(description);
+        else setError("Photo descriptions are not connected yet. Please enter a caption.");
+      }
+    } catch { setError("Unable to describe this photo. Please enter a caption."); }
+    finally { setDescribing(false); }
   };
 
-  const canSubmit =caption.trim().length > 0 && !!(location?.coords || location?.address.trim());
+  let fields: Record<string, string> | undefined;
+  try { fields = reportFields(caption, location); } catch { /* Form is incomplete. */ }
+  const canSubmit = !busy && !describing && !draft?.rejection && (!!draft || !!fields);
 
-  const onSubmit = () => {
-    const report = { photoUri, caption: caption.trim(), location };
-    // TODO: upload once the report API exists (see web/src/domain/reports.ts for the shared shape)
-    console.log("New report", report);
-    router.back();
+  const onSubmit = async () => {
+    if (submitting.current || !photoUri || !canSubmit) return;
+    submitting.current = true; setBusy(true); setError("");
+    // A GPS response must not change the visible form after its immutable draft is saved.
+    locationRequest.current++; setLocating(false);
+    try {
+      const saved = draft ?? await createDraft(photoUri, fields!);
+      setDraft(saved);
+      await sendDraft(saved);
+      router.replace("/(tabs)/reports");
+    } catch (error) {
+      if (error instanceof ReportRejectedError) setDraft(value => value ? { ...value, rejection: error.message } : value);
+      setError(error instanceof Error ? error.message : "Unable to confirm this upload. Keep the saved draft and retry.");
+    } finally { submitting.current = false; setBusy(false); }
   };
 
-  if (!photoUri) {
-    return <CameraStep onCapture={onCapture} onClose={() => router.back()} />;
-  }
+  const editRejected = async () => {
+    if (!draft?.rejection || submitting.current) return;
+    submitting.current = true; setBusy(true); setError("");
+    try {
+      await discardDraft(draft);
+      setDraft(null); // The next submission gets a fresh identity; photo/caption remain editable.
+    } catch (error) { setError(error instanceof Error ? error.message : "Unable to discard this rejected upload."); }
+    finally { submitting.current = false; setBusy(false); }
+  };
 
-  return (
-    <ReportForm
-      photoUri={photoUri}
-      location={location}
-      locating={locating}
-      onAddressChange={(address) => setLocation((prev) => ({ coords: prev?.coords ?? null, address }))}
-      onRelocate={() => locate(false)}
-      caption={caption}
-      onCaptionChange={setCaption}
-      describing={describing}
-      onGenerateCaption={generateCaption}
-      canSubmit={canSubmit}
-      onRetake={() => setPhotoUri(null)} // keeps caption + location
-      onSubmit={onSubmit}
-      onClose={() => router.back()}
-    />
-  );
+  if (!photoUri) return <CameraStep onCapture={onCapture} onClose={() => router.back()} />;
+
+  return <ReportForm
+    photoUri={photoUri} location={location} locating={locating}
+    onAddressChange={address => setLocation(prev => ({ coords: prev?.coords ?? null, address }))}
+    onRelocate={() => void locate(false)} caption={caption} onCaptionChange={setCaption}
+    describing={describing} onGenerateCaption={generateCaption}
+    canSubmit={canSubmit} busy={busy} frozen={busy || !!draft} error={error}
+    onEditRejected={draft?.rejection ? editRejected : undefined}
+    onRetake={() => { photoRevision.current++; locationRequest.current++; setPhotoUri(null); setLocation(null); setLocating(false); setError(""); }}
+    onSubmit={onSubmit} onClose={() => router.back()}
+  />;
 }

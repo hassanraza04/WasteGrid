@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { View, Pressable, Switch, Modal, StyleSheet } from "react-native";
 import Animated, { SlideInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +29,8 @@ export function RoutePlannerOverlay({ visible, city, crews, onClose, onCalculate
   const [routes, setRoutes] = useState<CrewRoute[] | null>(null); // null = not calculated yet
   const calculation = useLatestRequest();
   const [assigning, setAssigning] = useState(false);
+  const [error, setError] = useState("");
+  const inFlight = useRef(false);
   const busy = calculation.pending || assigning; // inputs are locked while a request uses them
 
   // The result no longer matches the inputs: clear it and ignore any calculation still in flight
@@ -47,16 +49,27 @@ export function RoutePlannerOverlay({ visible, city, crews, onClose, onCalculate
     resetRoutes();
   };
 
-  const calculate = () => calculation.run(() => onCalculate({ cityId: city.id, crewIds, constraints }), setRoutes);
+  const calculate = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true; setError("");
+    try {
+      await calculation.run(() => onCalculate({ cityId: city.id, crewIds, constraints }), setRoutes);
+    } catch {
+      setError("Unable to calculate routes. Please retry.");
+    } finally { inFlight.current = false; }
+  };
 
   const assign = async () => {
-    if (!routes?.length) return;
-    setAssigning(true);
+    if (!routes?.length || inFlight.current) return;
+    inFlight.current = true; setAssigning(true); setError("");
     try {
       await onAssign(routes);
       setRoutes(null);
       onClose();
+    } catch {
+      setError("Unable to confirm assignment. Check crew progress before retrying.");
     } finally {
+      inFlight.current = false;
       setAssigning(false);
     }
   };
@@ -64,8 +77,8 @@ export function RoutePlannerOverlay({ visible, city, crews, onClose, onCalculate
   const crewName = (id: string) => crews.find((c) => c.id === id)?.name ?? id;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
-      <Pressable style={[StyleSheet.absoluteFill, s.backdrop]} onPress={onClose} accessibilityLabel="Close route planner" />
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={() => { if (!assigning) onClose(); }}>
+      <Pressable style={[StyleSheet.absoluteFill, s.backdrop]} disabled={assigning} onPress={onClose} accessibilityLabel="Close route planner" />
 
       <Animated.View entering={SlideInDown.duration(260)} style={[s.sheet, { paddingBottom: insets.bottom + Spacing.md }]}>
         <View style={s.handle} />
@@ -74,7 +87,7 @@ export function RoutePlannerOverlay({ visible, city, crews, onClose, onCalculate
             <AppText variant="title">Plan crew routes</AppText>
             <AppText variant="caption" tone="muted">{city.name} · routes start at each crew&apos;s location</AppText>
           </View>
-          <IconButton icon="x" variant="sunken" size="sm" accessibilityLabel="Close" onPress={onClose} />
+          <IconButton icon="x" variant="sunken" size="sm" accessibilityLabel="Close" disabled={assigning} onPress={onClose} />
         </View>
 
         <View style={s.section}>
@@ -126,6 +139,7 @@ export function RoutePlannerOverlay({ visible, city, crews, onClose, onCalculate
           />
         </Row>
 
+        {error ? <AppText accessibilityRole="alert">{error}</AppText> : null}
         {routes && (
           <View style={s.result}>
             {routes.length === 0 ? (

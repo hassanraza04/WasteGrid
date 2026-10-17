@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { startSessionLifecycle } from "@/auth/session";
 import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -14,6 +16,7 @@ const NavigationTheme = {
 };
 
 export default function RootLayout() {
+  useEffect(startSessionLifecycle, []);
   const fontsReady = useAppFonts();
   if (!fontsReady) return null; // native splash stays up until the fonts are in
 

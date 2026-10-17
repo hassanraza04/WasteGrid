@@ -20,7 +20,7 @@ export default function MyRoute() {
 
   return (
     <Screen>
-      <ScreenHeader title="My route" subtitle={crew?.name} trailing={<AccountButton />} />
+      <ScreenHeader title="My route" subtitle={crew ? `${crew.name} · Preview route` : "Live crew routes are not connected yet."} trailing={<AccountButton />} />
 
       {assignment === undefined ? (
         <ActivityIndicator color={Colors.ink} style={s.loading} />

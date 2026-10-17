@@ -27,7 +27,7 @@ export default function Stats() {
 
   return (
     <Screen>
-      <ScreenHeader title="Statistics" trailing={<AccountButton />} />
+      <ScreenHeader title="Statistics" subtitle="Illustrative figures — live statistics are not connected." trailing={<AccountButton />} />
       <CitySearch onSelect={selectCity} />
 
       {city ? (

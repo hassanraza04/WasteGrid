@@ -18,6 +18,10 @@ type Props = {
   describing: boolean;
   onGenerateCaption: () => void;
   canSubmit: boolean;
+  busy: boolean;
+  frozen: boolean;
+  error: string;
+  onEditRejected?: () => void;
   onRetake: () => void;
   onSubmit: () => void;
   onClose: () => void;
@@ -35,20 +39,27 @@ export function ReportForm(props: Props) {
       edges={["top", "bottom"]}
       header={
         <View style={s.header}>
-          <IconButton icon="x" variant="sunken" size="sm" accessibilityLabel="Close" onPress={props.onClose} />
+          <IconButton icon="x" variant="sunken" size="sm" accessibilityLabel="Close" disabled={props.busy} onPress={props.onClose} />
           <AppText variant="title">New report</AppText>
           <View style={s.headerSpacer} />
         </View>
       }
-      footer={<Button label="Submit report" icon="send" onPress={props.onSubmit} disabled={!canSubmit} />}>
+      footer={<View style={s.footer}>
+        {props.error ? <AppText accessibilityRole="alert">{props.error}</AppText> : null}
+        {props.onEditRejected
+          ? <Button label="Edit rejected report" icon="edit" onPress={props.onEditRejected} loading={props.busy} />
+          : <Button label={props.frozen ? "Retry saved upload" : "Submit report"} icon="send" onPress={props.onSubmit} loading={props.busy} disabled={!canSubmit} />}
+      </View>}>
       <View>
         <Image source={{ uri: photoUri }} style={s.preview} contentFit="cover" />
-        <Button label="Retake" icon="refresh-ccw" variant="secondary" size="md" onPress={props.onRetake} style={s.retake} />
+        <Button label="Retake" icon="refresh-ccw" variant="secondary" size="md" onPress={props.onRetake} disabled={props.frozen} style={s.retake} />
       </View>
 
       <View style={s.locationRow}>
         <TextField
           label="Location"
+          editable={!props.frozen}
+          maxLength={500}
           style={s.flex}
           value={location?.address ?? ""}
           onChangeText={props.onAddressChange}
@@ -61,12 +72,14 @@ export function ReportForm(props: Props) {
           accessibilityLabel="Use my current location"
           onPress={props.onRelocate}
           loading={locating}
+          disabled={props.frozen}
           style={s.locate}
         />
       </View>
 
       <TextField
         label="Caption"
+        editable={!props.frozen}
         labelAction={
           <Button
             label={describing ? "Describing…" : "Describe photo"}
@@ -74,6 +87,7 @@ export function ReportForm(props: Props) {
             variant="ghost"
             onPress={props.onGenerateCaption}
             loading={describing}
+            disabled={props.frozen}
           />
         }
         value={caption}
@@ -89,6 +103,7 @@ export function ReportForm(props: Props) {
 
 const s = StyleSheet.create({
   flex: { flex: 1 },
+  footer: { gap: Spacing.sm },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between",
             paddingHorizontal: Layout.screenPadding, paddingVertical: Spacing.md },
   headerSpacer: { width: Sizes.iconButtonSm },

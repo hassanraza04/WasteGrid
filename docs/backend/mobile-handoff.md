@@ -48,7 +48,7 @@ The shared development API passed hosted acceptance on 17 October 2026. Use its
 verified HTTPS URL for device integration; coordinate state-changing tests with
 Omer so they do not alter the illustrative Supabase fixture unexpectedly.
 
-Proposed mobile configuration, for example in `mobile/.env.local`:
+Mobile configuration, for example in `mobile/.env.local`:
 
 ```dotenv
 EXPO_PUBLIC_API_BASE_URL=https://wastegrid-api-dev.onrender.com
@@ -56,10 +56,11 @@ EXPO_PUBLIC_SUPABASE_URL=https://einjnvlhdogzdxafauyr.supabase.co
 EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=REPLACE_WITH_PUBLISHABLE_KEY
 ```
 
-These variable names are the proposed adapter configuration; they are not already
-wired into the mobile app. API paths below are relative to the base URL, with no
-extra `/api` prefix. Resident-only screens need just the API base URL. The two
-Supabase values are needed when implementing staff sign-in.
+The native resident adapter reads `EXPO_PUBLIC_API_BASE_URL`; mobile sign-in now
+uses the two public Supabase settings. Staff roles come from `/auth/me`. API paths
+below are relative to the base URL, with no extra `/api` prefix. Anonymous report
+submission needs just the API base URL. The two
+Supabase values are needed for account sign-in and the login-gated history screen.
 
 Omer can retrieve the project's publishable key in Supabase **Project Settings →
 API Keys**. Request the publishable key (`sb_publishable_…`), never the secret or
@@ -86,7 +87,7 @@ schema or upload directly to Supabase Storage.
 
 | User | Authentication | Mobile responsibility |
 | --- | --- | --- |
-| Resident | A private bearer token for each report; no Supabase account required | Securely retain the token and associate it with that report |
+| Resident report API | A private bearer token for each report; no Supabase account required by these endpoints | Securely retain the token and associate it with that report |
 | Organizer or crew | Supabase Auth session JWT plus a backend-provisioned staff role | Sign in, refresh the session and call `/auth/me` |
 
 Use `Authorization: Bearer <token>` when accessing an existing report. A resident
@@ -97,6 +98,23 @@ creating a report is the resident token, not a Supabase session.
 
 The public reference, for example `WG-0123456789AB`, is an identifier, **not an
 access credential**. Knowing it alone must never display private report data.
+
+### Approved mobile history policy
+
+Omer approved login-required **My reports** as the intended app workflow on
+17 October 2026. This app requirement is separate from the backend's per-report
+authorization described above. Anonymous submission remains available without
+sign-in. History is shown only after account sign-in and contains the reports
+associated with that account's local device index. Anonymous device drafts can be
+imported only through the user's explicit **Import this device's reports** action.
+Signing in must not automatically claim drafts or reveal another account's local history.
+
+Native account sessions are saved in protected device storage and restored after
+restart, with roles reverified by the backend. Signing out clears the account
+session. Web preview sessions remain in memory and end on page reload/closure.
+Neither sign-in nor import creates server-side account ownership or replaces each
+report's private token. Cross-device history and token recovery remain pending
+backend capabilities, not features implied by login.
 
 ### Resident storage
 
@@ -189,7 +207,7 @@ Illustrative response shape (IDs below are examples; token is a placeholder):
 
 `latest_update` and `timeline` are populated when available; tolerate null/empty
 values. Actual fixture records have `illustrative: true`; newly submitted reports
-are not automatically marked illustrative. Creation queues triage, but the worker
+are not automatically marked illustrative. Creation queues assessment, but the worker
 is currently inactive: do not display invented AI decisions or promise an automatic
 status transition immediately after upload.
 
@@ -387,7 +405,9 @@ Use disposable test data for writes. Keep the shared illustrative fixture intact
 - [ ] Submit a real multipart photo with title, note and GPS or manual address.
 - [ ] Persist identity/token before upload; verify a repeated identical request creates one report.
 - [ ] Recover after a simulated timeout and app restart without creating duplicates.
-- [ ] Show the reference and fetch the report after restarting the app.
+- [ ] Restore the intended account after restart, then show its local history and fetch each report with its saved report token.
+- [ ] Verify anonymous submission, login-required history and explicit device-draft import without exposing another account's reports.
+- [ ] Block native back/swipe during sign-in; verify logout during login leaves no restorable session.
 - [ ] Confirm reference-only lookup and a different report's token cannot expose the report.
 - [ ] Load authorized report/completion photos and renew an expired signed URL.
 - [ ] Render null location, empty history, detailed states and illustrative labels correctly.

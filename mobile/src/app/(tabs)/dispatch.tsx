@@ -26,7 +26,7 @@ export default function Dispatch() {
   return (
     <>
       <Screen>
-        <ScreenHeader title="Dispatch" trailing={<AccountButton />} />
+        <ScreenHeader title="Dispatch" subtitle="Preview data — live dispatch is not connected." trailing={<AccountButton />} />
         <CitySearch onSelect={selectCity} />
 
         {city ? (
@@ -53,7 +53,7 @@ export default function Dispatch() {
         )}
       </Screen>
 
-      {city && (
+      {city && plannerOpen && (
         <RoutePlannerOverlay
           key={city.id} // fresh crew selection per city
           visible={plannerOpen}

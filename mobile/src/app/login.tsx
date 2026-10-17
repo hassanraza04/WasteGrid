@@ -1,37 +1,41 @@
-// app/login.tsx — Log in (frontend only: any email/password is accepted)
-import { useRef, useState } from "react";
-import { View, StyleSheet, type TextInputInstance } from "react-native";
-import { router } from "expo-router";
+// Account sign-in; staff roles and crew ownership come from the backend.
+import { useEffect, useRef, useState } from "react";
+import { View, StyleSheet, Platform, type TextInputInstance } from "react-native";
+import { router, usePreventRemove } from "expo-router";
 
-import { AppText, Button, Chip, IconButton, Screen, ScreenHeader, SegmentedControl, TextField } from "@/components/ui";
-import { ROLES } from "@/components/account/roles";
-import { signIn, type Role } from "@/auth/session";
-import { getAllCrews } from "@/data/crews";
+import { AppText, Button, IconButton, Screen, ScreenHeader, TextField } from "@/components/ui";
+import { signIn, useAuthBusy } from "@/auth/session";
 import { Layout, Spacing } from "@/theme";
 
 export default function Login() {
-  const [role, setRole] = useState<Role>("user");
-  const [crewId, setCrewId] = useState<string | null>(null);
+  const busy = useAuthBusy();
+  const disablePrevention = usePreventRemove(busy);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const [error, setError] = useState("");
+  const signingIn = useRef(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const passwordRef = useRef<TextInputInstance>(null);
 
-  const canLogIn = email.trim().length > 0 && password.length > 0 && (role !== "crew" || !!crewId);
-
-  // Credentials belong to one role, so switching roles starts the form over
-  const switchRole = (next: Role) => {
-    if (next === role) return;
-    setRole(next);
-    setCrewId(null);
-    setEmail("");
-    setPassword("");
-  };
-
-  const logIn = () => {
-    if (!canLogIn) return;
-    // TODO: real authentication; the role and crew will come from the account, not these pickers
-    signIn({ email: email.trim(), role, crewId: role === "crew" ? crewId! : undefined });
-    router.back(); // back to wherever Log in was opened from
+  const canLogIn = !busy && email.trim().length > 0 && password.length > 0;
+  const logIn = async () => {
+    if (!canLogIn || signingIn.current) return;
+    signingIn.current = true; setError("");
+    try {
+      await signIn(email.trim(), password);
+      if (mounted.current) {
+        // The global operation has settled; bypass the previous render's native
+        // removal guard before React commits the now-idle snapshot.
+        disablePrevention();
+        router.back();
+      }
+    } catch (error) {
+      if (mounted.current) setError(error instanceof Error ? error.message : "Unable to sign in. Please retry.");
+    } finally { signingIn.current = false; }
   };
 
   return (
@@ -41,26 +45,14 @@ export default function Login() {
       edges={["top", "bottom"]}
       header={
         <View style={s.header}>
-          <IconButton icon="x" variant="sunken" size="sm" accessibilityLabel="Close" onPress={() => router.back()} />
+          <IconButton icon="x" variant="sunken" size="sm" accessibilityLabel="Close" disabled={busy} onPress={() => router.back()} />
         </View>
       }>
       <ScreenHeader title="Log in" subtitle="Report waste and track cleanups. Crews see their routes; admins plan them." />
 
-      <SegmentedControl options={ROLES} value={role} onChange={switchRole} />
-
-      {role === "crew" && (
-        <View style={s.crewPicker}>
-          <AppText variant="label" style={s.crewLabel}>Your crew</AppText>
-          <View style={s.crews}>
-            {getAllCrews().map((crew) => (
-              <Chip key={crew.id} label={crew.name} selected={crew.id === crewId} onPress={() => setCrewId(crew.id)} />
-            ))}
-          </View>
-        </View>
-      )}
-
       <TextField
         label="Email"
+        editable={!busy}
         value={email}
         onChangeText={setEmail}
         placeholder="you@example.com"
@@ -76,6 +68,7 @@ export default function Login() {
       <TextField
         ref={passwordRef}
         label="Password"
+        editable={!busy}
         value={password}
         onChangeText={setPassword}
         placeholder="••••••••"
@@ -85,8 +78,9 @@ export default function Login() {
         onSubmitEditing={logIn}
       />
 
-      <Button label="Log in" onPress={logIn} disabled={!canLogIn} style={s.submit} />
-      <AppText variant="caption" tone="muted" align="center">Demo: any email and password will work.</AppText>
+      <Button label="Log in" onPress={logIn} loading={busy} disabled={!canLogIn} style={s.submit} />
+      {error ? <AppText accessibilityRole="alert">{error}</AppText> : null}
+      <AppText variant="caption" tone="muted">Sign in with your WasteGrid account. {Platform.OS === "web" ? "Your session lasts until this page closes or reloads." : "Your session is securely saved on this device until you sign out."}</AppText>
     </Screen>
   );
 }
