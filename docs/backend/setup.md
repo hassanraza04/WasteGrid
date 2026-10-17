@@ -1,12 +1,75 @@
 # Setup and deployment
 
+## Current local demo
+
+The configured project is `einjnvlhdogzdxafauyr`, with Supabase URL
+`https://einjnvlhdogzdxafauyr.supabase.co`. All six migrations and the private
+`report-photos` bucket are installed. The preserved fixture contains ten
+illustrative reports, six jobs, two crews, ten photos and five assignments.
+Email/password Auth and the protected organizer/crew roles are configured.
+
+Backend credentials are in the Git-ignored `.env`. Demo account passwords,
+Auth UUIDs and crew UUIDs are in the separate Git-ignored `.env.supabase-demo`:
+`organizer@example.com`, `crew-a@example.com`, and `crew-b@example.com`.
+Both credential files have owner-only permissions on this workspace. Share
+only the relevant account or integration credential privately with its owner.
+
+From the repository root, start the API in a terminal:
+
+```bash
+uv run --extra backend uvicorn api.main:app --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+Open [the local API docs](http://127.0.0.1:8000/docs). Stop with **Ctrl+C** in that
+terminal; rerun the same command to restart. In another terminal, run:
+
+```bash
+uv run --extra backend python -m scripts.verify_live_backend
+```
+
+The verifier uses real HTTP and Supabase, checks credentials without printing
+them, and saves its latest timestamped result to
+`.data/backend-live-verification.json`. It exits nonzero on any failed check.
+`--base-url http://localhost:8001` can target another local port; remote origins,
+embedded credentials, paths and query strings are rejected. Redirects are not
+followed. Run this against a trusted local instance of this repository.
+
+Its database transactions are read-only. It checks migration hashes, RLS,
+privileges, the unexposed schema, bucket limits, three staff sessions, organizer
+reads (including crews and the seeded current plan), crew job/evidence isolation,
+and private photo downloads. It also evaluates effective `storage.objects` SELECT
+policies for both crew identities: a read-only transaction uses the claims from
+each verified JWT and switches to the `authenticated` role, requires RLS to be
+active, and requires zero visible objects in `report-photos`. This is database
+policy evaluation, not a direct Storage HTTP request; no privileged Storage key
+is used to judge crew visibility. It evaluates empty, download, list/list-v2,
+sign/sign-many, metadata and authenticated-image operation contexts, because
+[Storage policies can distinguish operations](https://supabase.com/docs/guides/storage/schema/helper-functions).
+Role/claim/operation changes roll back after each check.
+It fingerprints
+application rows, Auth account identities and Storage object metadata before
+and after the run. **Image bytes are not compared**, so the preservation assertion
+is limited to those rows and metadata, not byte-for-byte photo preservation.
+Sign-ins create normal Auth sessions; read access timestamps
+are not treated as object changes. The verifier does not seed, reset, create
+accounts, submit reports, or execute workflow commands. Run it while no one is
+editing the demo data. Expected fixture counts and assignments are intentional;
+a changed demo should fail rather than be silently reset.
+
+The worker remains inactive until Person 3 configures a real provider. New
+reports would queue durable work, but the current demo preserves its fixtures.
+Photon transport and frontend adapters are separate integration work. The
+localhost address is accessible on this machine; teammates must run their own
+backend or use a later shared deployment. See the
+[Swagger walkthrough and owner handoff](dashboard-handoff.md#local-swagger-walkthrough).
+
 ## 1. Local configuration
 
 From the repository root:
 
 ```bash
-uv sync --extra backend
-cp .env.example .env
+uv sync --locked --extra backend
+test -f .env || cp .env.example .env
 ```
 
 Keep `.env` ignored. Existing Photon settings remain in the example. Configure:
@@ -58,7 +121,7 @@ analytics, organizer listings or model context.
    `wastegrid`, with client access revoked and RLS enabled. Keep it out of the
    Supabase exposed API schemas. Migration 0002 creates the private 8 MiB
    JPEG/PNG/WebP bucket. Do not add public Storage policies for this bucket.
-   Existing installations also apply additive migrations 0004–0009 for report
+   Existing installations also apply additive migrations 0004–0010 for report
    identity, event status snapshots and conversation history. Existing references
    are backfilled; unknown addresses/historical statuses stay null. No existing
    migration checksum changes are needed. Apply these before deploying API v0.2.
@@ -83,7 +146,7 @@ analytics, organizer listings or model context.
 6. Start the API:
 
    ```bash
-   uv run --extra backend uvicorn api.main:app --host 0.0.0.0 --port 8000 --no-access-log
+   uv run --extra backend uvicorn api.main:app --host 127.0.0.1 --port 8000 --no-access-log
    ```
 
    `/health` is process liveness; `/ready` requires database/schema access and
@@ -122,7 +185,10 @@ the actual `sent_text` on successful delivery acknowledgements; see
 
 1. Create/connect the Git repository in Render once you have committed/pushed
    the reviewed changes. The prepared `render.yaml` defines the API Docker web
-   service and worker. Choose the intended branch in Render.
+   service and worker. Choose the intended branch in Render. Create the API
+   first; enable the worker only after the real Person 3 provider is reachable
+   and its configuration is supplied. Do not activate the whole Blueprint with
+   empty provider settings.
 2. Put the variables above in Render environment settings. Give the worker
    database/Storage/Chalk settings (and optional external decision settings); give
    the API database/Storage/integration
@@ -134,6 +200,10 @@ the actual `sent_text` on successful delivery acknowledgements; see
    The background worker uses `python -m api.worker`. All persistent state is in
    Supabase; a Render persistent disk is unnecessary.
 5. Record the API HTTPS base URL and add the deployed dashboard origin to CORS.
+   Use an exact origin including scheme and port when applicable, without a
+   path or wildcard. Verify `/health` and `/ready` on the hosted API and test a
+   browser request from that origin. The local verifier intentionally refuses
+   remote URLs; use the documented acceptance flows for hosted verification.
    Give frontend owners that URL, the public Supabase configuration and their
    demo account credentials through your team's private channel.
 6. Complete the live checks below before calling the **deployment** ready.
@@ -169,6 +239,11 @@ Docker smoke run, execute `scripts/verify_backend.sh` with the same exported
 `/tmp/wastegrid-backend-verification/pytest.xml` (override with `VERIFICATION_DIR`).
 
 ## 6. Live acceptance and reset
+
+These are the later full-product checks. They write data and require the real
+provider, frontend and messaging integrations. For the current preserved local
+demo, use `scripts.verify_live_backend`; exercise write workflows with the
+disposable PostgreSQL suite in section 5 instead.
 
 - Sign in as organizer and both crews. Verify one crew cannot access the other's
   job or evidence and that a user without a protected role is denied.

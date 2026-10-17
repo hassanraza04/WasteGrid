@@ -1,5 +1,7 @@
 """Backend proximity policy for unresolved reports; not image-based identity."""
 
+from uuid import UUID
+
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -9,7 +11,11 @@ from api.workflows import distance_km
 
 
 def nearby_open_report(
-    db: Session, location: Location | None, radius_meters: float
+    db: Session,
+    location: Location | None,
+    radius_meters: float,
+    *,
+    exclude_report_id: UUID | None = None,
 ) -> Report | None:
     if location is None or radius_meters <= 0:
         return None
@@ -22,6 +28,7 @@ def nearby_open_report(
         .outerjoin(Job, Report.job_id == Job.id)
         .where(
             Report.illustrative.is_(False),
+            Report.id != exclude_report_id if exclude_report_id is not None else True,
             latitude.between(location.latitude - band, location.latitude + band),
             or_(
                 Report.job_id.is_(None),

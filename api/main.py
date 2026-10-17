@@ -40,7 +40,6 @@ from api.auth import (
 )
 from api.config import Settings
 from api.db import get_db, make_engine
-from api.duplicates import nearby_open_report
 from api.http_limits import BodyLimitMiddleware
 from api.models import (
     Conversation,
@@ -101,6 +100,7 @@ from api.services import (
     command_seen,
     enqueue,
     event,
+    flag_nearby_report,
     invalidate_plan,
     organizer_report_view,
     report_event_condition,
@@ -324,8 +324,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return ReportCreated(
                     report=report_view(db, previous), access_token=x_report_token
                 )
-        # Nearby coordinates are evidence for review, not proof of incident identity.
-        nearby = nearby_open_report(db, location, settings.duplicate_radius_meters)
         report_id, photo_id = client_report_id or uuid4(), uuid4()
         token = x_report_token or "wg_r_" + token_urlsafe(32)
         path = f"reports/{report_id}/{photo_id}"
@@ -352,19 +350,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         )
         event(db, "report.received", report_id=report_id)
-        if nearby:
-            report.needs_review = True
-            report.state = "needs_review"
-            event(
-                db,
-                "report.possible_duplicate",
-                report_id=report_id,
-                details={
-                    "candidate_report_id": str(nearby.id),
-                    "evidence_report_ids": [str(report_id), str(nearby.id)],
-                    "reason": "Coordinates within the configured radius; identity is unverified.",
-                },
-            )
+        flag_nearby_report(db, report, settings.duplicate_radius_meters)
         enqueue(
             db, "assessment", f"assessment:{report_id}", {"report_id": str(report_id)}
         )
@@ -818,7 +804,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         conversation_id: UUID, body: Clarification, db: Session = Depends(get_db)
     ):
         conversation = linked_conversation(db, conversation_id)
-        report = apply_clarification(db, conversation.report_id, body)
+        report = apply_clarification(
+            db,
+            conversation.report_id,
+            body,
+            duplicate_radius_meters=settings.duplicate_radius_meters,
+        )
         db.commit()
         return snapshot(db, report)
 

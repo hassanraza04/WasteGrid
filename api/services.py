@@ -22,6 +22,7 @@ from api.models import (
 from api.schemas import (
     Clarification,
     JobView,
+    Location,
     OrganizerReportView,
     Recheck,
     ReportUpdate,
@@ -220,8 +221,43 @@ def assert_version(actual: int, expected: int):
         raise HTTPException(409, "State changed; fetch current state before retrying")
 
 
+def flag_nearby_report(
+    db: Session, report: Report, radius_meters: float, actor="system"
+) -> bool:
+    """Submission and GPS clarification share the same authoritative review rule."""
+    from api.duplicates import nearby_open_report
+
+    nearby = nearby_open_report(
+        db,
+        Location.model_validate(report.location) if report.location else None,
+        radius_meters,
+        exclude_report_id=report.id,
+    )
+    if nearby is None:
+        return False
+    report.needs_review = True
+    report.state = "needs_review"
+    event(
+        db,
+        "report.possible_duplicate",
+        report_id=report.id,
+        actor=actor,
+        details={
+            "candidate_report_id": str(nearby.id),
+            "evidence_report_ids": [str(report.id), str(nearby.id)],
+            "reason": "Coordinates within the configured radius; identity is unverified.",
+        },
+    )
+    return True
+
+
 def apply_clarification(
-    db: Session, report_id: UUID, body: Clarification, actor="messaging"
+    db: Session,
+    report_id: UUID,
+    body: Clarification,
+    actor="messaging",
+    *,
+    duplicate_radius_meters=10,
 ) -> Report:
     report = db.scalar(select(Report).where(Report.id == report_id).with_for_update())
     if report is None:
@@ -240,9 +276,24 @@ def apply_clarification(
             "created_at": now().isoformat(),
         },
     ]
+    location_changed = body.location is not None and (
+        report.location is None
+        or any(
+            report.location.get(key) != getattr(body.location, key)
+            for key in ("latitude", "longitude")
+        )
+    )
     if body.location:
         report.location = body.location.model_dump()
-    report.state = "received"
+    report.state = (
+        "needs_review"
+        if report.needs_review or report.organizer_review_required
+        else "received"
+    )
+    if report.organizer_review_required:
+        report.needs_review = True
+    if location_changed:
+        flag_nearby_report(db, report, duplicate_radius_meters, actor=actor)
     report.version += 1
     event(
         db,
@@ -253,12 +304,17 @@ def apply_clarification(
         actor=actor,
         details=body.model_dump(mode="json"),
     )
-    enqueue(
-        db,
-        "triage",
-        f"triage:{report.id}:{report.version}",
-        {"report_id": str(report.id)},
-    )
+    if (
+        not report.needs_review
+        and not report.organizer_review_required
+        and report.assessment_status == "assessed"
+    ):
+        enqueue(
+            db,
+            "triage",
+            f"triage:{report.id}:{report.version}",
+            {"report_id": str(report.id)},
+        )
     return report
 
 

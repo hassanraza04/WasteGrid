@@ -1,5 +1,111 @@
 # Dashboard contract completion: verification evidence
 
+## PR #8 review follow-up: 2026-10-17
+
+Hassan's two findings on `a09daea` were confirmed by inspection. The initial
+verifier tested backend authorization/public URLs but not effective Storage
+policies, and its snapshot compared object metadata without comparing image bytes.
+
+The verifier now evaluates `storage.objects` SELECT visibility for each crew using
+that crew's verified JWT claims and transaction-local `SET ROLE authenticated`.
+It requires active RLS and no visible objects in the private bucket. Actual
+PostgreSQL policy evaluation includes applicable PUBLIC and role policies; the
+privileged connection's own visibility is not used as the crew result. Empty,
+download, list/list-v2, sign/sign-many, metadata and authenticated-image operation
+contexts are checked to catch operation-specific SELECT policies. This checks
+effective database policy access, not the Storage HTTP gateway. The live database
+passed for both crews; no Storage policy change was needed or made.
+
+The JSON preservation check is explicitly named
+`application_rows_and_storage_metadata_preserved` and carries a
+`preservation_scope` description. Its assertion covers application rows, Auth
+account identities, bucket metadata and selected object metadata. It does **not**
+assert unchanged image bytes. The verifier never uploads/deletes objects.
+
+| Check | Result |
+| --- | --- |
+| Full backend workflow / disposable PostgreSQL 17 | 116 passed, zero skips |
+| Focused verifier suite | 31 passed; real PostgreSQL regressions detect crew-A-only, crew-B-only, PUBLIC, list-only and download-only object exposure, plus disabled RLS; verify role/claim/operation rollback |
+| Contract export, lint, Black, isort and whitespace | Passed |
+| Docker build / HTTP smoke | Passed all 11 checks |
+| Live Supabase verifier | 23 passed, completed 2026-10-17 16:17:31 UTC |
+| Live fixture / snapshot | 10 reports, 6 jobs, 2 crews, 10 photo records, 5 assignments; compared rows/metadata matched |
+| Organizer dashboard reads | Reports, crews and non-stale fixture plan passed; missing/stale plans also covered by failure tests |
+| Local CORS handoff | Preflights passed for `http://127.0.0.1:8000` and `http://localhost:5173`; unconfigured origin denied |
+| Messaging authentication | Correct key reached an absent-conversation lookup (404); missing/wrong keys rejected (401); no records created |
+
+The API was restarted to load the confirmed CORS origin and remains at
+`http://127.0.0.1:8000`. Private credentials and a short-lived organizer JWT were
+prepared in `.env.hassan-handoff` (ignored, mode 0600); no secrets were added to
+documentation. See [the connection handoff](dashboard-handoff.md#hassans-local-connection-handoff-2026-10-17).
+No live migrations, seed/reset, worker processing or Photon delivery occurred.
+
+Source SHA-256 values:
+
+- `scripts/verify_live_backend.py`: `fd710eba6c986fcb4e2089e7ded66ecf952305dc24baf9a3ba644bc1015f5c08`
+- `tests/backend/test_live_verifier.py`: `be497efaf51f1e56703448e71af5d5369075522511ac35b992f209569fcdc572`
+
+Docker image: `sha256:8497eb60b885c58c095622b4cdeb02b6664a4523dc318f8a108dc7573d34109a`.
+The following sections retain the earlier acceptance history and counts.
+
+## Local backend demo and handoff: 2026-10-17
+
+Verified the working tree on `main`, based on `f9f8f32`, with the repeatable live
+verifier and handoff documentation. Supabase configuration is complete for
+project `einjnvlhdogzdxafauyr`; the earlier statements about unavailable Supabase
+credentials below describe historical checkpoints.
+
+| Check | Result |
+| --- | --- |
+| Full backend workflow, Python 3.12 / disposable PostgreSQL 17 | 107 passed; zero failures, errors or skips |
+| New verifier tests | 22 passed, including failed login, unreachable API, unexpected authorization, public-photo exposure, secret-free diagnostics, loopback validation and read-only database enforcement |
+| Contract export, flake8, Black, isort and whitespace | Passed |
+| Docker build and real HTTP smoke | Passed all 11 checks against disposable data and explicit cloud doubles |
+| Local Uvicorn with live Supabase | Passed all 20 live checks, completed 2026-10-17 15:35:44 UTC |
+| Preserved live fixture | Ten reports, six jobs, two crews, ten photos and five assignments; before/after application, account identity and Storage metadata fingerprints matched |
+
+The API was left running on `http://127.0.0.1:8000`; `/health`, `/ready` and
+`/docs` were checked over HTTP. Runtime availability depends on that local
+process remaining active. Start/stop instructions and repeatable commands are
+in [setup.md](setup.md#current-local-demo); the
+[owner handoff and Swagger walkthrough](dashboard-handoff.md#local-swagger-walkthrough)
+describe the demo without changing its fixtures.
+
+Live checks used real Supabase password sign-ins for all three staff accounts,
+verified protected roles and crew isolation, and downloaded authorized photos
+while rejecting public access. Database reads confirmed all migration hashes,
+RLS, client privilege restrictions and the schema's exclusion from the Data API.
+The bucket remains private with the 8 MiB JPEG/PNG/WebP limit. The verifier made
+no account-creation, report/job mutation or Storage upload/delete calls; sign-ins
+created normal Auth sessions. Preservation evidence compared application rows and
+Storage metadata, not image bytes. State-changing workflows were exercised only
+in disposable databases.
+
+Reproduce from the repository root with the configured local API running:
+
+```bash
+export TEST_DATABASE_URL='postgresql://postgres:wastegrid-local-test@127.0.0.1:55432/wastegrid_test'
+bash scripts/verify_backend.sh
+uv run --extra backend python -m scripts.verify_live_backend
+```
+
+The latest live report is `.data/backend-live-verification.json` (Git-ignored).
+JUnit evidence is `/tmp/wastegrid-backend-verification/pytest.xml`. The existing
+`verification.json` is an older historical record, not this run's evidence.
+The live command overwrites its latest local report with a timestamped result
+on success or failure and returns nonzero for a failed check.
+
+Source SHA-256 values for this acceptance:
+
+- `scripts/verify_live_backend.py`: `99a07e7d551ab71d66d1cba552984d0c10cd0e6da64358631f679f232b04aa6c`
+- `tests/backend/test_live_verifier.py`: `0818691a4c453470fd8f77f4b971368e2ac15e7b2b3b9d33031505bedabff4af`
+
+Docker image: `sha256:14a47c357a86be923b57250138ca61df152485be5662b9bb0f33c57e823e8974`.
+API v0.2, generated contracts and all six migration files are unchanged.
+The worker is inactive; real Person 3 processing, Photon delivery, frontend/mobile
+adapters and public hosting remain separate integration milestones. No real AI
+or messaging delivery is claimed by this local backend acceptance.
+
 ## Integrated branch verification: 2026-10-17
 
 Recorded at 12:00 UTC after merging `origin/main`

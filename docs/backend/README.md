@@ -12,6 +12,10 @@ Start with [setup.md](setup.md), then share [contracts.md](contracts.md).
 [example payloads](fixtures/) are generated from the Python models.
 [verification.md](verification.md) records what has actually been tested.
 
+For the mobile app owner, share the standalone [mobile integration handoff](mobile-handoff.md).
+It covers resident tokens, uploads, tracking, optional staff authentication and the
+connection details still needed for device integration.
+
 The dashboard contract increment is implemented: title/address, public reference
 lookup, latest updates and paginated update/conversation history. Share
 [dashboard-handoff.md](dashboard-handoff.md) for endpoint examples and the exact
@@ -51,13 +55,23 @@ calls and real authentication; a public reference alone grants no access.
 
 ## Integration status
 
-No live Supabase, Render or Person 3 credentials were supplied. Provider calls
-are tested using explicit doubles. With Chalk configured, the production worker
-uses `api.decisions.AssessmentDecisionProvider` for triage, planning and follow-up
+The main-branch handoff records a local API backed by live Supabase, private
+photo Storage, staff accounts and an illustrative demo dataset. See
+[setup.md](setup.md#current-local-demo) and [verification.md](verification.md) for
+that setup and its acceptance evidence. Credentials remain in ignored local env
+files; they are not available in this review workspace. Apply this PR's additional
+migrations before using the updated worker against that project.
+
+With Chalk configured, the production worker uses
+`api.decisions.AssessmentDecisionProvider` for triage, planning and follow-up
 without extra model calls. External facades/factories can override it explicitly.
 The route planner is a greedy heuristic over labeled travel estimates, not a
 global optimum or live-road service. The separate legacy test provider remains
 in `tests/backend/providers.py`, excluded from Docker.
+
+A user-run live Grok 4.3 photo check returned validated assessment JSON in 3.253
+seconds; see [assessment.md](assessment.md). Hosted assessment/job processing,
+Render deployment and real Photon delivery still need acceptance testing.
 
 The upstream `web/` application currently uses browser-local storage, three
 presentation statuses and a development sign-in. Its owner must replace those

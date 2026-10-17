@@ -803,3 +803,153 @@ def test_builtin_followup_uses_explicit_commands_only(
         if action == "clarification":
             assert output.action.data.note == "Beside the blue gate"
             assert output.action.data.expected_version == row.version
+
+
+@pytest.mark.parametrize("in_flight", [False, True])
+def test_organizer_review_survives_assessment_and_clarification(
+    report_api, assessment_db, in_flight
+):
+    from uuid import UUID
+
+    from api.models import Job
+    from api.schemas import Clarification
+    from api.services import apply_clarification
+    from api.workflows import apply_triage
+
+    client, image, _ = report_api
+    rid = UUID(submit(client, image).json()["report"]["id"])
+
+    def request_review():
+        with Session(assessment_db) as db:
+            row = db.get(Report, rid)
+            proposal = ordinary_proposal(row, next_action="review")
+            proposal.decision_summary = "Organizer requested review of this photo."
+            apply_triage(db, proposal, actor="organizer-test", organizer_override=True)
+            db.commit()
+
+    if not in_flight:
+        request_review()
+
+    def assess(*args):
+        if in_flight:
+            request_review()
+        return assessment()
+
+    assert process_one(
+        assessment_db, None, client.app.state.cloud, SimpleNamespace(assess=assess)
+    )
+    with Session(assessment_db) as db:
+        row = db.get(Report, rid)
+        assert row.organizer_review_required and row.needs_review
+        assert row.assessment_status == "needs_review" and row.state == "needs_review"
+        assert (
+            row.priority == "routine"
+        )  # Safe-looking AI evidence does not clear the hold.
+        assert db.scalar(select(Task).where(Task.kind == "triage")) is None
+        apply_clarification(
+            db,
+            rid,
+            Clarification(
+                command_id=uuid4(),
+                expected_version=row.version,
+                note="Please look again.",
+            ),
+        )
+        assert row.organizer_review_required and row.state == "needs_review"
+        apply_triage(
+            db, ordinary_proposal(row)
+        )  # A stale/independent ordinary provider cannot bypass it.
+        assert row.job_id is None and db.scalar(select(Job)) is None
+        apply_triage(
+            db, ordinary_proposal(row), actor="organizer-test", organizer_override=True
+        )
+        assert row.job_id is not None
+        assert not row.organizer_review_required and not row.needs_review
+        db.commit()
+
+
+@pytest.mark.parametrize("initial_latitude", [None, 25.5])
+@pytest.mark.parametrize("radius", [0, 10])
+def test_clarification_applies_authoritative_proximity_review(
+    report_api, assessment_db, initial_latitude, radius
+):
+    from uuid import UUID
+
+    from api.models import Event
+    from api.schemas import Clarification
+    from api.services import apply_clarification
+    from api.workflows import apply_triage
+
+    client, image, _ = report_api
+    first = submit(client, image).json()["report"]
+    created = client.post(
+        "/reports",
+        files={"photo": ("a.png", image, "image/png")},
+        data=(
+            {}
+            if initial_latitude is None
+            else {"latitude": initial_latitude, "longitude": 67.09}
+        ),
+    ).json()
+    rid = UUID(created["report"]["id"])
+    with Session(assessment_db) as db:
+        row = db.get(Report, rid)
+        row.assessment = assessment().model_dump()
+        row.assessment_status = "assessed"
+        row.priority = "routine"
+        body = Clarification(
+            command_id=uuid4(),
+            expected_version=row.version,
+            note="GPS location corrected",
+            location={"latitude": 24.92001, "longitude": 67.09},
+        )
+        apply_clarification(db, rid, body, duplicate_radius_meters=radius)
+        db.commit()
+        version = row.version
+        apply_clarification(db, rid, body, duplicate_radius_meters=radius)
+        assert row.version == version
+        records = list(
+            db.scalars(
+                select(Event).where(
+                    Event.report_id == rid, Event.kind == "report.possible_duplicate"
+                )
+            )
+        )
+        assert len(records) == (1 if radius else 0)
+        if radius:
+            assert records[0].details["candidate_report_id"] == first["id"]
+            assert row.needs_review and row.state == "needs_review"
+            assert db.scalar(select(Task).where(Task.kind == "triage")) is None
+            apply_triage(db, ordinary_proposal(row))
+            assert row.job_id is None
+        else:
+            assert not row.needs_review
+            assert db.scalar(select(Task).where(Task.kind == "triage")) is not None
+
+
+def test_clarification_never_marks_itself_as_duplicate(report_api, assessment_db):
+    from uuid import UUID
+
+    from api.models import Event
+    from api.schemas import Clarification
+    from api.services import apply_clarification
+
+    client, image, _ = report_api
+    rid = UUID(submit(client, image).json()["report"]["id"])
+    with Session(assessment_db) as db:
+        row = db.get(Report, rid)
+        apply_clarification(
+            db,
+            rid,
+            Clarification(
+                command_id=uuid4(),
+                expected_version=row.version,
+                note="Slight GPS correction",
+                location={"latitude": 24.92001, "longitude": 67.09},
+            ),
+        )
+        assert not row.needs_review
+        assert (
+            db.scalar(select(Event).where(Event.kind == "report.possible_duplicate"))
+            is None
+        )

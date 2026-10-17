@@ -68,11 +68,13 @@ def fail_assessment(report):
     report.version += 1
 
 
-def process_one(engine, provider, cloud, assessment_client=None) -> bool:
+def process_one(
+    engine, provider, cloud, assessment_client=None, *, duplicate_radius_meters=10
+) -> bool:
     if provider is None and assessment_client is not None:
         from api.decisions import AssessmentDecisionProvider
 
-        provider = AssessmentDecisionProvider()
+        provider = AssessmentDecisionProvider(duplicate_radius_meters)
     with Session(engine) as db:
         mutation_lock(db)
         task = db.scalar(
@@ -191,6 +193,9 @@ def process_one(engine, provider, cloud, assessment_client=None) -> bool:
                         Event.kind == "report.possible_duplicate",
                     )
                 )
+                if report.organizer_review_required:
+                    decision.needs_review = True
+                    decision.priority_reason += " Organizer review must be resolved before automatic assignment."
                 if duplicate:
                     decision.needs_review = True
                     decision.priority_reason += " Nearby report is a possible duplicate; organizer review required."
@@ -232,7 +237,11 @@ def process_one(engine, provider, cloud, assessment_client=None) -> bool:
                     action.data.command_id = uuid5(task_id, "followup-action")
                 if action.kind == "clarification":
                     apply_clarification(
-                        db, report.id, action.data, actor="agent-followup"
+                        db,
+                        report.id,
+                        action.data,
+                        actor="agent-followup",
+                        duplicate_radius_meters=duplicate_radius_meters,
                     )
                 elif action.kind == "recheck":
                     apply_recheck(db, report, action.data, actor="agent-followup")
@@ -314,7 +323,13 @@ def main():
     cloud = SupabaseCloud(settings)
     try:
         while True:
-            worked = process_one(engine, provider, cloud, assessment_client)
+            worked = process_one(
+                engine,
+                provider,
+                cloud,
+                assessment_client,
+                duplicate_radius_meters=settings.duplicate_radius_meters,
+            )
             if args.once:
                 break
             if not worked:

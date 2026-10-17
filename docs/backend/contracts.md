@@ -154,7 +154,10 @@ that report in `evidence_report_ids` and an open linked job. Ordinary creation
 requires location, sufficient evidence, equipment, and a positive service estimate.
 An organizer-only decision can approve a settled assessment for job creation or
 linking, clearing the review flag with an actor/reason/previous-state audit. Raw
-assessment output is preserved. Pending assessments cannot be overridden, and
+assessment output is preserved. An explicit organizer review is persisted independently of the assessment;
+automatic completion/triage and clarification cannot clear it. A successful audited
+organizer approval clears the hold. Coordinate clarification runs the same configured
+proximity review as submission and excludes the report itself. Pending assessments cannot be overridden, and
 automated decisions cannot grant themselves this exception. Nearby real reports
 are retained with private possible-duplicate evidence, never automatically merged.
 The backend stores the recommendation and applied state; confidence alone has no

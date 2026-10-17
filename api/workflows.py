@@ -92,6 +92,7 @@ def assessment_allows_job(report: Report) -> bool:
     if (
         report.assessment_status != "assessed"
         or report.needs_review
+        or report.organizer_review_required
         or report.priority not in ("high", "medium", "routine")
         or report.assessment is None
     ):
@@ -109,7 +110,7 @@ def assessment_allows_job(report: Report) -> bool:
 def job_assessment_approved(db: Session, report: Report) -> bool:
     if assessment_allows_job(report):
         return True
-    if report.needs_review or report.job_id is None:
+    if report.needs_review or report.organizer_review_required or report.job_id is None:
         return False
     # Only backend-generated organizer audit details can grant this exception.
     return any(
@@ -155,6 +156,7 @@ def apply_triage(
         )
     previous_review = {
         "needs_review": report.needs_review,
+        "organizer_review_required": report.organizer_review_required,
         "assessment_status": report.assessment_status,
         "priority_reason": report.priority_reason,
     }
@@ -166,6 +168,7 @@ def apply_triage(
             not override
             and (
                 report.needs_review
+                or report.organizer_review_required
                 or (report.assessment or {}).get("special_handling") == "suspected"
                 or (report.assessment or {}).get("visible_fire") == "yes"
                 or (report.assessment or {}).get("visible_sharp_objects") == "yes"
@@ -235,8 +238,12 @@ def apply_triage(
             report.job_id = job.id
             report.state = "linked_to_job"
             event(db, "job.created", job_id=job.id, actor=actor)
-    if override and report.job_id:
+    if organizer_override and report.state == "needs_review":
+        report.organizer_review_required = True
+        report.needs_review = True
+    if override and report.state == "linked_to_job":
         report.needs_review = False
+        report.organizer_review_required = False
     report.version += 1
     event(
         db,
@@ -255,7 +262,7 @@ def apply_triage(
                     "reason": proposal.decision_summary,
                     "job_id": str(report.job_id),
                 }
-                if override and report.job_id
+                if override and report.state == "linked_to_job"
                 else {}
             ),
         },

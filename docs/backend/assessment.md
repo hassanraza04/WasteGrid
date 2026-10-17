@@ -29,7 +29,7 @@ ASSESSMENT_TIMEOUT_SECONDS=30
 DUPLICATE_RADIUS_METERS=10
 ```
 
-Apply migrations 0007–0009, then start the existing worker alongside FastAPI:
+Apply migrations 0007–0010, then start the existing worker alongside FastAPI:
 
 ```sh
 uv run --extra backend python -m scripts.migrate
@@ -110,7 +110,12 @@ submission still returns its original report without another photo/task.
 
 Completed jobs, recheck-requested jobs and illustrative seed reports do not trigger
 proximity review. `DUPLICATE_RADIUS_METERS=0` disables it for a demo. No reports are
-rejected or merged based only on proximity.
+rejected or merged based only on proximity. Coordinate changes through either the
+internal clarification endpoint or worker follow-up apply the same authoritative
+proximity rule as submission, using the configured radius and excluding the
+report itself. Nearby evidence and the review flag persist in the clarification
+transaction, and no ordinary triage is queued while review remains unresolved.
+Idempotent replay does not add another clarification or duplicate-evidence event.
 
 Automatic creation/linking requires a completed eligible assessment, with evidence
 and resident answers revalidated in Python. An authenticated organizer can use the
@@ -125,7 +130,12 @@ Only this authorized endpoint enables the exception. Agents/residents cannot cle
 review by setting fields. Successful approval clears `needs_review` and records the
 organizer actor, reason, prior assessment status/review and resulting job ID in the
 existing `report.triaged` audit. Raw model evidence and assessment status remain as
-the historical model outcome. Pending assessments cannot be overridden. Command
+the historical model outcome. Pending assessments cannot be overridden. An organizer decision requesting review
+sets a separate persisted `organizer_review_required` hold. Model completion,
+automated triage, and resident clarification cannot clear this hold or enqueue
+automatic assignment. Only a successful audited organizer create/link approval
+clears it. Migration 0010 conservatively preserves existing unresolved review
+states as holds. Command
 idempotency and version checks still apply. Approved linked reports can serve as
 future duplicate targets based on that organizer audit.
 
@@ -188,3 +198,13 @@ and deterministic priority. It creates no report or database rows. No request is
 sent if credentials or the photo are missing/invalid. Credentials and upstream
 error bodies are never printed. Exit codes: 0 success, 1 gateway/output failure,
 2 missing configuration/invalid local inputs.
+
+## Live model evidence
+
+On 2026-10-17 the user ran the local checker against their desktop `trash.png`
+with `xai/grok-4.3` through Chalk. It returned validated assessment JSON in 3.253
+seconds, describing a large mixed-waste pile. Obstruction and traffic displacement
+were unknown, so Python returned null priority and review required, as intended.
+This is one user-reported live photo request, not a latency benchmark or independent
+accuracy check. It did not create a database report or verify hosted worker flows.
+No API key or source photo is stored in this evidence.

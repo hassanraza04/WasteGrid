@@ -36,7 +36,12 @@ def drain(client, engine, provider=None):
     provider = provider or TestProvider()
     prepare_legacy_triage(engine)
     for _ in range(50):
-        if not process_one(engine, provider, client.app.state.cloud):
+        if not process_one(
+            engine,
+            provider,
+            client.app.state.cloud,
+            duplicate_radius_meters=client.app.state.settings.duplicate_radius_meters,
+        ):
             break
     with Session(engine) as db:
         bad = db.scalars(select(Task).where(Task.status != "succeeded")).all()
@@ -1315,3 +1320,153 @@ def test_chalk_configuration_processes_real_bind_followup_claim_loop(
     )
     assert delivered.status_code == 200, delivered.text
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("in_flight", [False, True])
+def test_api_organizer_review_persists_through_pending_assessment(
+    client, png, engine, in_flight
+):
+    from types import SimpleNamespace
+
+    from api.models import Job
+    from tests.test_assessment import assessment, ordinary_proposal
+
+    created = report(client, png)
+    rid = UUID(created["report"]["id"])
+    convo = bind(client, created)
+    path = f"/organizer/reports/{rid}/decision"
+
+    def request_review():
+        with Session(engine) as db:
+            body = ordinary_proposal(
+                db.get(Report, rid), next_action="review"
+            ).model_dump(mode="json")
+        response = client.post(path, headers=auth("org"), json=body)
+        assert response.status_code == 200, response.text
+        assert response.json()["needs_review"]
+        assert response.json()["assessment_status"] == "pending"
+
+    if not in_flight:
+        request_review()
+
+    def assess(*args):
+        if in_flight:
+            request_review()
+        return assessment()
+
+    model = SimpleNamespace(assess=assess)
+    assert process_one(engine, None, client.app.state.cloud, model)
+    assert not process_one(engine, None, client.app.state.cloud, model)
+    current = client.get(
+        f"/reports/{rid}", headers=auth(created["access_token"])
+    ).json()
+    assert current["needs_review"] and current["assessment_status"] == "needs_review"
+    clarified = client.post(
+        f"/internal/conversations/{convo['id']}/clarification",
+        headers=INTERNAL,
+        json={
+            "command_id": str(uuid4()),
+            "expected_version": current["version"],
+            "note": "Extra detail",
+        },
+    )
+    assert clarified.status_code == 200, clarified.text
+    assert clarified.json()["report"]["needs_review"]
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        assert row.organizer_review_required and row.job_id is None
+        assert db.scalar(select(Job)) is None
+        assert db.scalar(select(Task).where(Task.kind == "triage")) is None
+        body = ordinary_proposal(row).model_dump(mode="json")
+    approved = client.post(path, headers=auth("org"), json=body)
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["job_id"] and not approved.json()["needs_review"]
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        assert not row.organizer_review_required
+        audit = db.scalar(
+            select(Event).where(Event.command_id == UUID(body["command_id"]))
+        )
+        assert audit.details["previous_review"]["organizer_review_required"]
+
+
+@pytest.mark.parametrize("via_worker", [False, True])
+@pytest.mark.parametrize("radius", [0, 2, 10])
+def test_clarification_entrypoints_apply_configured_proximity(
+    client, png, engine, via_worker, radius
+):
+    from api.schemas import FollowupResult
+    from api.services import enqueue
+    from tests.test_assessment import ordinary_proposal
+
+    client.app.state.settings.duplicate_radius_meters = radius
+    first = report(client, png)
+    second_response = client.post(
+        "/reports", files={"photo": ("a.png", png, "image/png")}
+    )
+    assert second_response.status_code == 201
+    second = second_response.json()
+    rid = UUID(second["report"]["id"])
+    convo = bind(client, second)
+    with Session(engine) as db:
+        seed_eligible_assessment(db.get(Report, rid))
+        # Isolate the settled-assessment clarification path from photo processing.
+        for task in db.scalars(select(Task).where(Task.kind == "assessment")):
+            task.status = "succeeded"
+        db.commit()
+    body = {
+        "command_id": str(uuid4()),
+        "expected_version": 1,
+        "note": "Adding GPS",
+        "location": {"latitude": 24.92005, "longitude": 67.09},
+    }
+    if via_worker:
+
+        class Clarifier(TestProvider):
+            def handle_followup(self, request):
+                return FollowupResult(
+                    reply_text="Location recorded.",
+                    action={"kind": "clarification", "data": body},
+                )
+
+        with Session(engine) as db:
+            enqueue(
+                db,
+                "followup",
+                "test:gps",
+                {"conversation_id": convo["id"], "text": "Adding GPS"},
+            )
+            db.commit()
+        assert process_one(
+            engine, Clarifier(), client.app.state.cloud, duplicate_radius_meters=radius
+        )
+    else:
+        response = client.post(
+            f"/internal/conversations/{convo['id']}/clarification",
+            headers=INTERNAL,
+            json=body,
+        )
+        assert response.status_code == 200, response.text
+        replay = client.post(
+            f"/internal/conversations/{convo['id']}/clarification",
+            headers=INTERNAL,
+            json=body,
+        )
+        assert replay.json() == response.json()
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        assert row.location["latitude"] == body["location"]["latitude"]
+        assert row.needs_review is (radius == 10)
+        duplicate = db.scalar(
+            select(Event).where(
+                Event.report_id == rid, Event.kind == "report.possible_duplicate"
+            )
+        )
+        triage = db.scalar(select(Task).where(Task.kind == "triage"))
+        if radius == 10:
+            assert duplicate.details["candidate_report_id"] == first["report"]["id"]
+            assert row.state == "needs_review" and triage is None
+            apply_triage(db, ordinary_proposal(row))
+            assert row.job_id is None
+        else:
+            assert duplicate is None and triage is not None
