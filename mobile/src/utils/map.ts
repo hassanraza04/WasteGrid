@@ -9,3 +9,8 @@ export const DEFAULT_REGION: Region = { latitude: 24.8138, longitude: 67.03, lat
 export function regionAround(coords: Coords, delta = 0.01): Region {
   return { ...coords, latitudeDelta: delta, longitudeDelta: delta };
 }
+
+// A string that changes only when the positions do, for effects that shouldn't rerun on a new array of the same points
+export function coordsKey(coords: Coords[]): string {
+  return coords.map((c) => `${c.latitude},${c.longitude}`).join("|");
+}

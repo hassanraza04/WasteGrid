@@ -7,6 +7,7 @@ import { AppText, Button, Chip, Icon, IconButton } from "@/components/ui";
 import { Colors, Layout, Radius, Spacing } from "@/theme";
 import type { City } from "@/data/cities";
 import type { Crew } from "@/data/crews";
+import { useLatestRequest } from "@/hooks/use-latest-request";
 import { DEFAULT_CONSTRAINTS, type CrewRoute, type RouteConstraints, type RouteRequest } from "@/utils/route-planner";
 
 type Props = {
@@ -26,27 +27,27 @@ export function RoutePlannerOverlay({ visible, city, crews, onClose, onCalculate
   const [constraints, setConstraints] = useState(DEFAULT_CONSTRAINTS);
   const [crewIds, setCrewIds] = useState(() => crews.filter((c) => c.onDuty).map((c) => c.id));
   const [routes, setRoutes] = useState<CrewRoute[] | null>(null); // null = not calculated yet
-  const [calculating, setCalculating] = useState(false);
+  const calculation = useLatestRequest();
   const [assigning, setAssigning] = useState(false);
+  const busy = calculation.pending || assigning; // inputs are locked while a request uses them
+
+  // The result no longer matches the inputs: clear it and ignore any calculation still in flight
+  const resetRoutes = () => {
+    calculation.invalidate();
+    setRoutes(null);
+  };
 
   const update = (patch: Partial<RouteConstraints>) => {
     setConstraints((prev) => ({ ...prev, ...patch }));
-    setRoutes(null); // result no longer matches the inputs
+    resetRoutes();
   };
 
   const toggleCrew = (id: string) => {
     setCrewIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
-    setRoutes(null);
+    resetRoutes();
   };
 
-  const calculate = async () => {
-    setCalculating(true);
-    try {
-      setRoutes(await onCalculate({ cityId: city.id, crewIds, constraints }));
-    } finally {
-      setCalculating(false);
-    }
-  };
+  const calculate = () => calculation.run(() => onCalculate({ cityId: city.id, crewIds, constraints }), setRoutes);
 
   const assign = async () => {
     if (!routes?.length) return;
@@ -87,7 +88,7 @@ export function RoutePlannerOverlay({ visible, city, crews, onClose, onCalculate
                   key={crew.id}
                   label={crew.onDuty ? crew.name : `${crew.name} · off duty`}
                   selected={crewIds.includes(crew.id)}
-                  disabled={!crew.onDuty}
+                  disabled={!crew.onDuty || busy}
                   onPress={() => toggleCrew(crew.id)}
                 />
               ))}
@@ -100,6 +101,7 @@ export function RoutePlannerOverlay({ visible, city, crews, onClose, onCalculate
             value={constraints.hours}
             display={`${constraints.hours} h`}
             step={0.5} min={0.5} max={8}
+            disabled={busy}
             onChange={(hours) => update({ hours })}
           />
         </Row>
@@ -109,6 +111,7 @@ export function RoutePlannerOverlay({ visible, city, crews, onClose, onCalculate
             value={constraints.maxStopsPerCrew}
             display={String(constraints.maxStopsPerCrew)}
             step={1} min={1} max={25}
+            disabled={busy}
             onChange={(maxStopsPerCrew) => update({ maxStopsPerCrew })}
           />
         </Row>
@@ -117,6 +120,7 @@ export function RoutePlannerOverlay({ visible, city, crews, onClose, onCalculate
           <Switch
             value={constraints.returnToStart}
             onValueChange={(returnToStart) => update({ returnToStart })}
+            disabled={busy}
             trackColor={{ true: Colors.primary, false: Colors.outline }}
             thumbColor={Colors.surface}
           />
@@ -155,7 +159,7 @@ export function RoutePlannerOverlay({ visible, city, crews, onClose, onCalculate
             label="Calculate routes"
             icon="navigation"
             onPress={calculate}
-            loading={calculating}
+            loading={calculation.pending}
             disabled={crewIds.length === 0}
             style={s.cta}
           />
@@ -174,14 +178,14 @@ function Row({ label, last, children }: { label: string; last?: boolean; childre
   );
 }
 
-type StepperProps = { value: number; display: string; step: number; min: number; max: number; onChange: (value: number) => void };
+type StepperProps = { value: number; display: string; step: number; min: number; max: number; disabled?: boolean; onChange: (value: number) => void };
 
-function Stepper({ value, display, step, min, max, onChange }: StepperProps) {
+function Stepper({ value, display, step, min, max, disabled, onChange }: StepperProps) {
   return (
     <View style={s.stepper}>
-      <IconButton icon="minus" variant="sunken" size="sm" accessibilityLabel="Decrease" disabled={value <= min} onPress={() => onChange(value - step)} />
+      <IconButton icon="minus" variant="sunken" size="sm" accessibilityLabel="Decrease" disabled={disabled || value <= min} onPress={() => onChange(value - step)} />
       <AppText variant="bodyStrong" align="center" style={s.stepValue}>{display}</AppText>
-      <IconButton icon="plus" variant="sunken" size="sm" accessibilityLabel="Increase" disabled={value >= max} onPress={() => onChange(value + step)} />
+      <IconButton icon="plus" variant="sunken" size="sm" accessibilityLabel="Increase" disabled={disabled || value >= max} onPress={() => onChange(value + step)} />
     </View>
   );
 }

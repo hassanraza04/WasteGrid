@@ -4,16 +4,19 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import mapStyle from "@/theme/mapStyle.json";
 
 import { StopMarker } from "@/components/route/stop-marker";
+import { useFitToCoordinates } from "@/hooks/use-fit-to-coordinates";
 import { Colors, Radius, Shadow } from "@/theme";
-import { regionAround } from "@/utils/map";
+import { DEFAULT_REGION, regionAround } from "@/utils/map";
 import type { AssignedStop } from "@/data/assignments";
 
 const EDGE = { top: 48, right: 48, bottom: 48, left: 48 };
 
-// Fixed preview of a route: the line through every stop, with numbered markers
+// Fixed preview of a route: the line through every stop, with numbered markers.
+// Refits whenever the stops move (e.g. a new assignment), since the map itself can't be panned.
 export function RouteMap({ stops }: { stops: AssignedStop[] }) {
   const mapRef = useRef<MapView>(null);
   const coords = stops.map((stop) => stop.coords);
+  const onMapReady = useFitToCoordinates(mapRef, coords, EDGE);
 
   return (
     <View style={s.frame}>
@@ -22,8 +25,8 @@ export function RouteMap({ stops }: { stops: AssignedStop[] }) {
         provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFill}
         customMapStyle={mapStyle}
-        initialRegion={regionAround(coords[0], 0.05)}
-        onMapReady={() => mapRef.current?.fitToCoordinates(coords, { edgePadding: EDGE, animated: false })}
+        initialRegion={coords.length ? regionAround(coords[0], 0.05) : DEFAULT_REGION}
+        onMapReady={onMapReady}
         // Static so it doesn't fight the page's scrolling
         scrollEnabled={false}
         zoomEnabled={false}
