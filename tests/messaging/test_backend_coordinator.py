@@ -14,6 +14,7 @@ class FakeBackend:
     resolved: list[tuple[str, str]] = field(default_factory=list)
     submitted: list[tuple[str, str, str]] = field(default_factory=list)
     acknowledged: list[tuple[str, str, str | None, str]] = field(default_factory=list)
+    status_response: str = "Current status"
 
     def resolve_conversation(
         self, channel: str, external_id: str
@@ -26,6 +27,9 @@ class FakeBackend:
 
     def claim_outgoing(self, limit: int) -> list[ClaimedOutgoingMessage]:
         return self.claims
+
+    def status_text(self, conversation_id: str) -> str:
+        return self.status_response
 
     def acknowledge_delivery(
         self,
@@ -111,3 +115,27 @@ def test_non_imessage_and_blank_replies_are_skipped() -> None:
     assert coordinator.dispatch_claimed() == []
     assert gateway.sent == []
     assert backend.acknowledged == []
+
+
+def test_status_event_uses_current_snapshot_text() -> None:
+    backend = FakeBackend(
+        claims=[
+            ClaimedOutgoingMessage(
+                "out-1",
+                "lease-1",
+                "imessage",
+                "space-1",
+                None,
+                "conversation-1",
+                "report.received",
+                "report-1",
+            )
+        ],
+        status_response="WG-ABCDEF123456: Your report has been received.",
+    )
+    gateway = FakeGateway()
+
+    assert BackendCoordinator(backend, gateway, "agent-1").dispatch_claimed() == [
+        "out-1"
+    ]
+    assert gateway.sent[0]["text"] == "WG-ABCDEF123456: Your report has been received."

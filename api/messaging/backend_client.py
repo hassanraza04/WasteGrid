@@ -12,6 +12,14 @@ from api.messaging.config import BackendConfig
 class BackendClientError(RuntimeError):
     """A backend failure with no response content or request secrets."""
 
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+class InboundRejectedError(BackendClientError):
+    """An inbound message cannot succeed on a retry with the same payload."""
+
 
 @dataclass(frozen=True)
 class Conversation:
@@ -26,7 +34,10 @@ class ClaimedOutgoingMessage:
     lease_id: str
     channel: str
     external_id: str
-    text: str
+    text: str | None
+    conversation_id: str = ""
+    kind: str = ""
+    report_id: str = ""
 
 
 def _required_text(value: Any) -> str | None:
@@ -42,11 +53,12 @@ class WasteGridBackendClient:
         self._config = config
         self._transport = transport
 
-    def _post(
+    def _request(
         self,
+        method: str,
         operation: str,
         path: str,
-        payload: dict[str, object],
+        payload: dict[str, object] | None = None,
         *,
         missing_ok: bool = False,
     ) -> httpx.Response | None:
@@ -58,7 +70,7 @@ class WasteGridBackendClient:
                 transport=self._transport,
                 headers={"X-Integration-Key": self._config.messaging_api_key},
             ) as client:
-                response = client.post(path, json=payload)
+                response = client.request(method, path, json=payload)
         except (httpx.HTTPError, ValueError):
             failed = True
         if failed:
@@ -67,9 +79,20 @@ class WasteGridBackendClient:
             return None
         if not 200 <= response.status_code < 300:
             raise BackendClientError(
-                f"{operation} failed (status {response.status_code})"
+                f"{operation} failed (status {response.status_code})",
+                status_code=response.status_code,
             )
         return response
+
+    def _post(
+        self,
+        operation: str,
+        path: str,
+        payload: dict[str, object],
+        *,
+        missing_ok: bool = False,
+    ) -> httpx.Response | None:
+        return self._request("POST", operation, path, payload, missing_ok=missing_ok)
 
     @staticmethod
     def _json(response: httpx.Response, operation: str) -> Any:
@@ -105,11 +128,18 @@ class WasteGridBackendClient:
         return Conversation(identity, resolved_channel, resolved_external_id)
 
     def submit_followup(self, conversation_id: str, message_id: str, text: str) -> None:
-        self._post(
-            "submit_followup",
-            f"/internal/conversations/{quote(str(conversation_id), safe='')}/followup",
-            {"message_id": message_id, "text": text},
-        )
+        try:
+            self._post(
+                "submit_followup",
+                f"/internal/conversations/{quote(str(conversation_id), safe='')}/followup",
+                {"message_id": message_id, "text": text},
+            )
+        except BackendClientError as error:
+            if error.status_code in {400, 409, 413, 415, 422}:
+                raise InboundRejectedError(
+                    str(error), status_code=error.status_code
+                ) from None
+            raise
 
     def claim_outgoing(self, limit: int) -> list[ClaimedOutgoingMessage]:
         operation = "claim_outgoing"
@@ -130,14 +160,51 @@ class WasteGridBackendClient:
             fields = (
                 _required_text(item.get("id")),
                 _required_text(item.get("lease_id")),
+                _required_text(conversation.get("id")),
                 _required_text(conversation.get("channel")),
                 _required_text(conversation.get("external_id")),
-                _required_text(payload.get("reply_text")),
+                payload.get("reply_text"),
+                _required_text(payload.get("kind")),
+                _required_text(payload.get("report_id")),
             )
-            if any(field is None for field in fields):
+            if (
+                any(field is None for field in fields[:5])
+                or fields[5] is not None
+                and not isinstance(fields[5], str)
+                or any(field is None for field in fields[6:])
+            ):
                 raise BackendClientError(f"{operation} failed (schema)")
-            messages.append(ClaimedOutgoingMessage(*fields))
+            messages.append(
+                ClaimedOutgoingMessage(
+                    id=fields[0],
+                    lease_id=fields[1],
+                    conversation_id=fields[2],
+                    channel=fields[3],
+                    external_id=fields[4],
+                    text=fields[5],
+                    kind=fields[6],
+                    report_id=fields[7],
+                )
+            )
         return messages
+
+    def status_text(self, conversation_id: str) -> str:
+        operation = "conversation_snapshot"
+        response = self._request(
+            "GET",
+            operation,
+            f"/internal/conversations/{quote(str(conversation_id), safe='')}/snapshot",
+        )
+        data = self._json(response, operation)
+        report = data.get("report") if isinstance(data, dict) else None
+        if not isinstance(report, dict):
+            raise BackendClientError(f"{operation} failed (schema)")
+        reference = _required_text(report.get("public_reference"))
+        update = report.get("latest_update")
+        message = update.get("message") if isinstance(update, dict) else None
+        if reference is None or not _required_text(message):
+            raise BackendClientError(f"{operation} failed (schema)")
+        return f"{reference}: {message}"
 
     def acknowledge_delivery(
         self,

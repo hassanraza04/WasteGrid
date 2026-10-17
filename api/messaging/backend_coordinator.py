@@ -3,7 +3,11 @@
 import logging
 from typing import Protocol
 
-from api.messaging.backend_client import ClaimedOutgoingMessage, Conversation
+from api.messaging.backend_client import (
+    ClaimedOutgoingMessage,
+    Conversation,
+    InboundRejectedError,
+)
 from api.messaging.messages import InboundMessage
 
 logger = logging.getLogger(__name__)
@@ -17,6 +21,7 @@ class Backend(Protocol):
         self, conversation_id: str, message_id: str, text: str
     ) -> None: ...
     def claim_outgoing(self, limit: int) -> list[ClaimedOutgoingMessage]: ...
+    def status_text(self, conversation_id: str) -> str: ...
     def acknowledge_delivery(
         self,
         message_id: str,
@@ -49,6 +54,9 @@ class BackendCoordinator:
                 return False
             self._backend.submit_followup(conversation.id, message.id, message.text)
             return True
+        except InboundRejectedError:
+            logger.warning("Photon inbound message rejected")
+            return False
         except Exception as error:
             logger.warning("Photon inbound submission failed: %s", type(error).__name__)
             raise
@@ -62,13 +70,18 @@ class BackendCoordinator:
 
         delivered: list[str] = []
         for message in claimed:
-            if message.channel != "imessage" or not message.text.strip():
+            if message.channel != "imessage":
                 continue
             try:
+                text = message.text or self._backend.status_text(
+                    message.conversation_id
+                )
+                if not text.strip():
+                    continue
                 self._sender.send_to_space(
                     space_id=message.external_id,
                     sender_id=self._agent_sender_id,
-                    text=message.text,
+                    text=text,
                     idempotency_key=message.id,
                 )
             except Exception as error:
@@ -76,7 +89,7 @@ class BackendCoordinator:
                 continue
             try:
                 self._backend.acknowledge_delivery(
-                    message.id, message.lease_id, None, message.text
+                    message.id, message.lease_id, None, text
                 )
             except Exception as error:
                 logger.warning(

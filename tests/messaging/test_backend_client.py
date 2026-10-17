@@ -10,6 +10,7 @@ from api.messaging.backend_client import (
     BackendClientError,
     ClaimedOutgoingMessage,
     Conversation,
+    InboundRejectedError,
     WasteGridBackendClient,
 )
 from api.messaging.config import BackendConfig
@@ -85,6 +86,16 @@ def test_submit_followup_posts_message_without_parsing_unused_response() -> None
     )
 
 
+def test_submit_followup_classifies_permanent_validation_rejection() -> None:
+    client = client_for(lambda request: httpx.Response(422, text="private text"))
+
+    with pytest.raises(InboundRejectedError) as caught:
+        client.submit_followup("conversation-1", "message-1", "private text")
+
+    assert caught.value.status_code == 422
+    assert "private text" not in str(caught.value)
+
+
 def test_claim_outgoing_reads_only_required_nested_fields() -> None:
     def respond(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
@@ -97,11 +108,17 @@ def test_claim_outgoing_reads_only_required_nested_fields() -> None:
                     "id": "outgoing-1",
                     "lease_id": "lease-1",
                     "conversation": {
+                        "id": "conversation-1",
                         "channel": "imessage",
                         "external_id": "pho-user-1",
                         "report_id": "unused",
                     },
-                    "payload": {"reply_text": "Send this", "unused": "ignored"},
+                    "payload": {
+                        "kind": "conversation.reply",
+                        "report_id": "report-1",
+                        "reply_text": "Send this",
+                        "unused": "ignored",
+                    },
                     "attempts": 1,
                 }
             ],
@@ -111,11 +128,70 @@ def test_claim_outgoing_reads_only_required_nested_fields() -> None:
 
     assert result == [
         ClaimedOutgoingMessage(
-            "outgoing-1", "lease-1", "imessage", "pho-user-1", "Send this"
+            "outgoing-1",
+            "lease-1",
+            "imessage",
+            "pho-user-1",
+            "Send this",
+            "conversation-1",
+            "conversation.reply",
+            "report-1",
         )
     ]
     with pytest.raises(FrozenInstanceError):
         result[0].text = "changed"
+
+
+def test_claim_outgoing_preserves_status_event_without_reply_text() -> None:
+    client = client_for(
+        lambda request: httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "outgoing-1",
+                    "lease_id": "lease-1",
+                    "conversation": {
+                        "id": "conversation-1",
+                        "channel": "imessage",
+                        "external_id": "pho-user-1",
+                    },
+                    "payload": {
+                        "kind": "report.received",
+                        "report_id": "report-1",
+                    },
+                }
+            ],
+        )
+    )
+
+    claim = client.claim_outgoing(1)[0]
+
+    assert claim.text is None
+    assert claim.conversation_id == "conversation-1"
+    assert claim.kind == "report.received"
+    assert claim.report_id == "report-1"
+
+
+def test_status_text_reads_current_conversation_snapshot() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/api/internal/conversations/conversation-1/snapshot"
+        return httpx.Response(
+            200,
+            json={
+                "report": {
+                    "public_reference": "WG-ABCDEF123456",
+                    "display_status": "received",
+                    "latest_update": {"message": "Your report has been received."},
+                },
+                "job": None,
+            },
+        )
+
+    assert (
+        client_for(respond).status_text("conversation-1")
+        == "WG-ABCDEF123456: Your report has been received."
+    )
 
 
 def test_acknowledge_delivery_posts_exact_contract_fields() -> None:

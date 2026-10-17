@@ -48,6 +48,7 @@ class FakeCoordinator:
     events: list[str] = field(default_factory=list)
     submitted: list[InboundMessage] = field(default_factory=list)
     fail_submit: bool = False
+    reject_submit: bool = False
 
     def dispatch_claimed(self) -> list[str]:
         self.events.append("dispatch")
@@ -58,6 +59,8 @@ class FakeCoordinator:
         self.submitted.append(message)
         if self.fail_submit:
             raise TimeoutError("private text https://secret.example")
+        if self.reject_submit:
+            return False
         return True
 
 
@@ -115,6 +118,38 @@ def test_run_once_keeps_checkpoint_when_processing_fails(
         ["dispatch"] if failure == "fetch" else ["dispatch", "submit"]
     )
     assert ledger.checkpoint_or_initialize(started + timedelta(minutes=1)) == checkpoint
+
+
+def test_run_once_advances_checkpoint_after_permanent_rejection(
+    tmp_path: Path,
+) -> None:
+    checkpoint = datetime(2026, 10, 16, 20, tzinfo=UTC)
+    started = checkpoint + timedelta(minutes=5)
+    ledger = DeliveryLedger(tmp_path / "delivery.db")
+    ledger.checkpoint_or_initialize(checkpoint)
+    rejected = inbound_message()
+    accepted = Message(
+        "photon-2",
+        "imessage",
+        "received",
+        Content("text", "valid"),
+        Entity("agent-1"),
+        Entity("space-1"),
+    )
+    gateway = FakeGateway(messages=[rejected, accepted])
+
+    @dataclass
+    class RejectFirstCoordinator(FakeCoordinator):
+        def submit_inbound(self, message: InboundMessage) -> bool:
+            self.events.append("submit")
+            self.submitted.append(message)
+            return message.id != "photon-1"
+
+    coordinator = RejectFirstCoordinator()
+
+    assert run_once(gateway, coordinator, ledger, started) == ["photon-2"]
+    assert [message.id for message in coordinator.submitted] == ["photon-1", "photon-2"]
+    assert ledger.checkpoint_or_initialize(started + timedelta(minutes=1)) == started
 
 
 def config(tmp_path: Path) -> PhotonConfig:
