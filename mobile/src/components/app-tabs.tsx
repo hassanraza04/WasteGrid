@@ -1,34 +1,29 @@
-import { NativeTabs } from 'expo-router/native-tabs';
-import { useColorScheme } from 'react-native';
+import { Tabs } from "expo-router/js-tabs";
 
-import { Colors } from '@/constants/theme';
+import { Icon, TabBar, type IconName } from "@/components/ui";
+import { Colors } from "@/theme";
+
+// Tab order, titles and icons. Each name matches a file in app/(tabs)/.
+const TABS: { name: string; title: string; icon: IconName }[] = [
+  { name: "index", title: "Map", icon: "map" },
+  { name: "reports", title: "Reports", icon: "file-text" },
+  { name: "stats", title: "Stats", icon: "bar-chart-2" },
+  { name: "account", title: "Account", icon: "user" },
+];
 
 export default function AppTabs() {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
-
   return (
-    <NativeTabs
-      backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}>
-      <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>Map</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/map-tab.png')}
-          renderingMode="template"
+    <Tabs
+      tabBar={(props) => <TabBar {...props} />}
+      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: Colors.background } }}>
+      {TABS.map((tab) => (
+        <Tabs.Screen
+          key={tab.name}
+          name={tab.name}
+          // `as string`: TabBar always passes a theme color
+          options={{ title: tab.title, tabBarIcon: ({ color, size }) => <Icon name={tab.icon} size={size} color={color as string} /> }}
         />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="reports">
-        <NativeTabs.Trigger.Label>Reports</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf="list.bullet.rectangle" md="list_alt" />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="stats">
-        <NativeTabs.Trigger.Label>Stats</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf="chart.bar" md="bar_chart" />
-      </NativeTabs.Trigger>
-    </NativeTabs>
+      ))}
+    </Tabs>
   );
 }

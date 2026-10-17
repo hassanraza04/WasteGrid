@@ -1,12 +1,10 @@
 import { useState, type ReactNode } from "react";
-import { View, Text, Pressable, Switch, ActivityIndicator, StyleSheet } from "react-native";
-import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { View, Pressable, Switch, Modal, StyleSheet } from "react-native";
+import Animated, { SlideInDown } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { PressableScale } from "@/components/ui/pressable-scale";
-import { Chip } from "@/components/ui/chip";
-import { AppColors } from "@/constants/theme";
+import { AppText, Button, Chip, Icon, IconButton } from "@/components/ui";
+import { Colors, Layout, Radius, Spacing } from "@/theme";
 import type { Area } from "@/data/areas";
 import type { Crew } from "@/data/crews";
 import { DEFAULT_CONSTRAINTS, type CrewRoute, type RouteConstraints, type RouteRequest } from "@/utils/route-planner";
@@ -21,13 +19,13 @@ type Props = {
 
 // Admin-only sheet: pick crews in the area, set constraints, then calculate one route per crew.
 // Give it key={area.id} so the crew selection resets when the area changes.
+// Rendered in a Modal so it sits above the floating tab bar.
 export function RoutePlannerOverlay({ visible, area, crews, onClose, onCalculate }: Props) {
+  const insets = useSafeAreaInsets();
   const [constraints, setConstraints] = useState(DEFAULT_CONSTRAINTS);
   const [crewIds, setCrewIds] = useState(() => crews.filter((c) => c.onDuty).map((c) => c.id));
   const [routes, setRoutes] = useState<CrewRoute[] | null>(null); // null = not calculated yet
   const [calculating, setCalculating] = useState(false);
-
-  if (!visible) return null;
 
   const update = (patch: Partial<RouteConstraints>) => {
     setConstraints((prev) => ({ ...prev, ...patch }));
@@ -50,107 +48,103 @@ export function RoutePlannerOverlay({ visible, area, crews, onClose, onCalculate
 
   const crewName = (id: string) => crews.find((c) => c.id === id)?.name ?? id;
 
-  // Fragment, not a wrapper View: the exit animations only run if these Animated.Views are what unmounts
   return (
-    <>
-      <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(200)} style={[StyleSheet.absoluteFill, s.backdrop]}>
-        <Pressable style={s.flex} onPress={onClose} accessibilityLabel="Close route planner" />
-      </Animated.View>
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
+      <Pressable style={[StyleSheet.absoluteFill, s.backdrop]} onPress={onClose} accessibilityLabel="Close route planner" />
 
-      <Animated.View entering={SlideInDown.duration(260)} exiting={SlideOutDown.duration(200)} style={s.sheet}>
-        <SafeAreaView edges={["bottom"]}>
-          <View style={s.handle} />
-          <View style={s.header}>
-            <View>
-              <Text style={s.title}>Plan crew routes</Text>
-              <Text style={s.subtitle}>{area.name} · routes start at each crew&apos;s location</Text>
-            </View>
-            <PressableScale onPress={onClose} hitSlop={12}><Feather name="x" size={24} color={AppColors.text} /></PressableScale>
+      <Animated.View entering={SlideInDown.duration(260)} style={[s.sheet, { paddingBottom: insets.bottom + Spacing.md }]}>
+        <View style={s.handle} />
+        <View style={s.header}>
+          <View style={s.flex}>
+            <AppText variant="title">Plan crew routes</AppText>
+            <AppText variant="caption" tone="muted">{area.name} · routes start at each crew&apos;s location</AppText>
           </View>
+          <IconButton icon="x" variant="sunken" size="sm" accessibilityLabel="Close" onPress={onClose} />
+        </View>
 
-          <View style={s.section}>
-            <Text style={s.rowLabel}>Crews</Text>
-            {crews.length === 0 ? (
-              <Text style={s.muted}>No crews in this area.</Text>
-            ) : (
-              <View style={s.chips}>
-                {crews.map((crew) => (
-                  <Chip
-                    key={crew.id}
-                    label={crew.onDuty ? crew.name : `${crew.name} · off duty`}
-                    selected={crewIds.includes(crew.id)}
-                    disabled={!crew.onDuty}
-                    onPress={() => toggleCrew(crew.id)}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-
-          <Row label="Time available">
-            <Stepper
-              value={constraints.hours}
-              display={`${constraints.hours} h`}
-              step={0.5} min={0.5} max={8}
-              onChange={(hours) => update({ hours })}
-            />
-          </Row>
-
-          <Row label="Max stops per crew">
-            <Stepper
-              value={constraints.maxStopsPerCrew}
-              display={String(constraints.maxStopsPerCrew)}
-              step={1} min={1} max={25}
-              onChange={(maxStopsPerCrew) => update({ maxStopsPerCrew })}
-            />
-          </Row>
-
-          <Row label="Return to start">
-            <Switch
-              value={constraints.returnToStart}
-              onValueChange={(returnToStart) => update({ returnToStart })}
-              trackColor={{ true: AppColors.primary, false: AppColors.border }}
-            />
-          </Row>
-
-          {routes && (
-            <View style={s.result}>
-              {routes.length === 0 ? (
-                <View style={s.resultRow}>
-                  <Feather name="map" size={18} color={AppColors.accent} />
-                  <Text style={s.resultText}>Route planning isn&apos;t connected yet. Routes will show here.</Text>
-                </View>
-              ) : (
-                routes.map((route) => (
-                  <View key={route.crewId} style={s.resultRow}>
-                    <Feather name="truck" size={18} color={AppColors.accent} />
-                    <Text style={s.resultText}>
-                      {crewName(route.crewId)} · {route.stops.length} stops · {route.distanceKm.toFixed(1)} km · {Math.round(route.durationMin)} min
-                    </Text>
-                  </View>
-                ))
-              )}
+        <View style={s.section}>
+          <AppText variant="label">Crews</AppText>
+          {crews.length === 0 ? (
+            <AppText variant="caption" tone="muted">No crews in this area.</AppText>
+          ) : (
+            <View style={s.chips}>
+              {crews.map((crew) => (
+                <Chip
+                  key={crew.id}
+                  label={crew.onDuty ? crew.name : `${crew.name} · off duty`}
+                  selected={crewIds.includes(crew.id)}
+                  disabled={!crew.onDuty}
+                  onPress={() => toggleCrew(crew.id)}
+                />
+              ))}
             </View>
           )}
+        </View>
 
-          <PressableScale
-            haptic="medium"
-            style={[s.cta, (crewIds.length === 0 || calculating) && s.disabled]}
-            onPress={calculate}
-            disabled={crewIds.length === 0 || calculating}>
-            {calculating ? <ActivityIndicator color={AppColors.onPrimary} /> : <Feather name="navigation" size={18} color={AppColors.onPrimary} />}
-            <Text style={s.ctaText}>Calculate routes</Text>
-          </PressableScale>
-        </SafeAreaView>
+        <Row label="Time available">
+          <Stepper
+            value={constraints.hours}
+            display={`${constraints.hours} h`}
+            step={0.5} min={0.5} max={8}
+            onChange={(hours) => update({ hours })}
+          />
+        </Row>
+
+        <Row label="Max stops per crew">
+          <Stepper
+            value={constraints.maxStopsPerCrew}
+            display={String(constraints.maxStopsPerCrew)}
+            step={1} min={1} max={25}
+            onChange={(maxStopsPerCrew) => update({ maxStopsPerCrew })}
+          />
+        </Row>
+
+        <Row label="Return to start" last>
+          <Switch
+            value={constraints.returnToStart}
+            onValueChange={(returnToStart) => update({ returnToStart })}
+            trackColor={{ true: Colors.primary, false: Colors.outline }}
+            thumbColor={Colors.surface}
+          />
+        </Row>
+
+        {routes && (
+          <View style={s.result}>
+            {routes.length === 0 ? (
+              <View style={s.resultRow}>
+                <Icon name="map" size={18} color={Colors.primary} />
+                <AppText variant="caption" style={s.flex}>Route planning isn&apos;t connected yet. Routes will show here.</AppText>
+              </View>
+            ) : (
+              routes.map((route) => (
+                <View key={route.crewId} style={s.resultRow}>
+                  <Icon name="truck" size={18} color={Colors.primary} />
+                  <AppText variant="caption" style={s.flex}>
+                    {crewName(route.crewId)} · {route.stops.length} stops · {route.distanceKm.toFixed(1)} km · {Math.round(route.durationMin)} min
+                  </AppText>
+                </View>
+              ))
+            )}
+          </View>
+        )}
+
+        <Button
+          label="Calculate routes"
+          icon="navigation"
+          onPress={calculate}
+          loading={calculating}
+          disabled={crewIds.length === 0}
+          style={s.cta}
+        />
       </Animated.View>
-    </>
+    </Modal>
   );
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+function Row({ label, last, children }: { label: string; last?: boolean; children: ReactNode }) {
   return (
-    <View style={s.row}>
-      <Text style={s.rowLabel}>{label}</Text>
+    <View style={[s.row, !last && s.divider]}>
+      <AppText variant="label">{label}</AppText>
       {children}
     </View>
   );
@@ -161,41 +155,27 @@ type StepperProps = { value: number; display: string; step: number; min: number;
 function Stepper({ value, display, step, min, max, onChange }: StepperProps) {
   return (
     <View style={s.stepper}>
-      <PressableScale style={[s.stepBtn, value <= min && s.disabled]} disabled={value <= min} onPress={() => onChange(value - step)} hitSlop={6}>
-        <Feather name="minus" size={16} color={AppColors.text} />
-      </PressableScale>
-      <Text style={s.stepValue}>{display}</Text>
-      <PressableScale style={[s.stepBtn, value >= max && s.disabled]} disabled={value >= max} onPress={() => onChange(value + step)} hitSlop={6}>
-        <Feather name="plus" size={16} color={AppColors.text} />
-      </PressableScale>
+      <IconButton icon="minus" variant="sunken" size="sm" accessibilityLabel="Decrease" disabled={value <= min} onPress={() => onChange(value - step)} />
+      <AppText variant="bodyStrong" align="center" style={s.stepValue}>{display}</AppText>
+      <IconButton icon="plus" variant="sunken" size="sm" accessibilityLabel="Increase" disabled={value >= max} onPress={() => onChange(value + step)} />
     </View>
   );
 }
 
 const s = StyleSheet.create({
   flex: { flex: 1 },
-  backdrop: { backgroundColor: AppColors.backdrop },
-  sheet: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: AppColors.surface,
-           borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 8 },
-  handle: { alignSelf: "center", width: 40, height: 5, borderRadius: 3, backgroundColor: AppColors.border, marginBottom: 12 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 },
-  title: { fontSize: 20, fontWeight: "700", color: AppColors.text },
-  subtitle: { fontSize: 14, color: AppColors.textMuted, marginTop: 2 },
-  section: { paddingVertical: 12, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: AppColors.border },
-  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 56,
-         borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: AppColors.border },
-  rowLabel: { fontSize: 15, fontWeight: "500", color: AppColors.text },
-  muted: { fontSize: 14, color: AppColors.textMuted },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  stepper: { flexDirection: "row", alignItems: "center", gap: 12 },
-  stepBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: AppColors.background, borderWidth: 1, borderColor: AppColors.border,
-             alignItems: "center", justifyContent: "center" },
-  stepValue: { minWidth: 44, textAlign: "center", fontSize: 16, fontWeight: "600", color: AppColors.text },
-  result: { marginTop: 16, padding: 12, gap: 10, borderRadius: 12, backgroundColor: AppColors.background },
-  resultRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  resultText: { flex: 1, fontSize: 14, color: AppColors.text },
-  cta: { marginTop: 16, marginBottom: 12, height: 56, borderRadius: 16, backgroundColor: AppColors.primary,
-         flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  ctaText: { color: AppColors.onPrimary, fontSize: 17, fontWeight: "600" },
-  disabled: { opacity: 0.4 },
+  backdrop: { backgroundColor: Colors.backdrop },
+  sheet: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: Colors.surface,
+           borderTopLeftRadius: Radius.lg, borderTopRightRadius: Radius.lg, paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.sm },
+  handle: { alignSelf: "center", width: 40, height: 5, borderRadius: Radius.pill, backgroundColor: Colors.hairline, marginBottom: Spacing.md },
+  header: { flexDirection: "row", alignItems: "flex-start", gap: Spacing.md, marginBottom: Spacing.sm },
+  section: { paddingVertical: Spacing.md, gap: Spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.hairline },
+  row: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 60 },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.hairline },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: Spacing.sm },
+  stepper: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
+  stepValue: { minWidth: 44 },
+  result: { marginTop: Spacing.md, padding: Spacing.md, gap: Spacing.sm, borderRadius: Radius.sm, backgroundColor: Colors.surfaceSunken },
+  resultRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  cta: { marginTop: Spacing.lg },
 });

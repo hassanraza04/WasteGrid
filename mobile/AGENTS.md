@@ -29,6 +29,20 @@ Run lint and typecheck before declaring any task done.
 - Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
 - Docs: https://docs.expo.dev/router/introduction.md
 
+## UI system
+
+Three layers; each only uses the ones above it:
+
+1. **`src/theme/`** (import from `@/theme`): the only place colors, fonts, type scale, spacing, radii, shadows and fixed sizes are defined. `mapStyle.json` (Google map style) lives here too.
+2. **`src/components/ui/`** (import from `@/components/ui`): generic building blocks: `Screen`, `ScreenHeader`, `AppText`, `Icon`, `Button`, `IconButton`, `Card`, `ListRow`, `TextField`, `Badge`, `Chip`, `SegmentedControl`, `Avatar`, `EmptyState`, `TabBar`. All visual styling lives here. Inside this folder, import siblings by path, not via the index.
+3. **Feature components** (`src/components/<feature>/`) and **screens** (`src/app/`): compose the blocks. Screens hold layout only (order, gaps, padding from `Spacing`/`Layout`).
+
+Rules:
+- Outside `theme/` and `components/ui/`, never hardcode a color, `fontSize`/`fontFamily`/`fontWeight`, or a shadow. Use `<AppText variant tone>` for text and `<Icon>` for icons (don't use React Native's `Text` or `@expo/vector-icons` directly).
+- Need a new look? Add a token or a variant to an existing block first; add a new block to `components/ui/` only if it'll be reused.
+- Tab screens use `<Screen>` (or `useScreenPadding()` on a FlatList) so content clears the floating tab bar. Overlays that must cover the tab bar go in a `Modal`.
+- Tabs are configured in `src/components/app-tabs.tsx` (title + icon per route).
+
 ## Building with EAS
 
 Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.

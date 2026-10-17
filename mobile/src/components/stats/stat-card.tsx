@@ -1,10 +1,10 @@
-import { View, Text, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
-import { Feather } from "@expo/vector-icons";
+import { View, StyleSheet, type StyleProp, type ViewStyle } from "react-native";
 
-import { AppColors } from "@/constants/theme";
+import { AppText, Card, Icon, type IconName } from "@/components/ui";
+import { Colors, Sizes, Spacing } from "@/theme";
 
 type Props = {
-  icon: keyof typeof Feather.glyphMap;
+  icon: IconName;
   label: string;
   value: string;
   highlight?: boolean; // the headline number: green and larger
@@ -13,20 +13,17 @@ type Props = {
 
 export function StatCard({ icon, label, value, highlight, style }: Props) {
   return (
-    <View style={[s.card, style]}>
+    <Card style={[s.card, style]}>
       <View style={s.labelRow}>
-        <Feather name={icon} size={14} color={highlight ? AppColors.primary : AppColors.textMuted} />
-        <Text style={s.label}>{label}</Text>
+        <Icon name={icon} size={Sizes.iconSm} color={highlight ? Colors.primary : Colors.inkMuted} />
+        <AppText variant="caption" tone="muted">{label}</AppText>
       </View>
-      <Text style={[s.value, highlight && s.valueHighlight]}>{value}</Text>
-    </View>
+      <AppText variant={highlight ? "stat" : "headline"} tone={highlight ? "primary" : "default"}>{value}</AppText>
+    </Card>
   );
 }
 
 const s = StyleSheet.create({
-  card: { backgroundColor: AppColors.surface, borderRadius: 16, borderWidth: 1, borderColor: AppColors.border, padding: 16, gap: 6 },
-  labelRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  label: { fontSize: 13, fontWeight: "500", color: AppColors.textMuted },
-  value: { fontSize: 26, fontWeight: "700", color: AppColors.text },
-  valueHighlight: { fontSize: 40, color: AppColors.primary },
+  card: { gap: Spacing.sm },
+  labelRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
 });

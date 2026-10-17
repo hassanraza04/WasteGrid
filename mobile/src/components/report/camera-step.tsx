@@ -1,11 +1,11 @@
 import { useRef, useState, useEffect } from "react";
-import { View, Text, StyleSheet, Linking } from "react-native";
+import { View, StyleSheet, Linking } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
+import { StatusBar } from "expo-status-bar";
 import { playSfx, preloadSounds } from '@/utils/sounds';
-import { AppColors } from '@/constants/theme';
-import { PressableScale } from '@/components/ui/pressable-scale';
+import { AppText, Button, IconButton, PressableScale } from '@/components/ui';
+import { Colors, Layout, Spacing } from '@/theme';
 
 type Props = {
   onCapture: (uri: string) => void;
@@ -19,20 +19,21 @@ export function CameraStep({ onCapture, onClose }: Props) {
   const [ready, setReady] = useState(false); // takePictureAsync fails before onCameraReady
   const [busy, setBusy] = useState(false);   // blocks double-taps on the shutter
   useEffect(() => { preloadSounds(); }, []);
-  
-  if (!permission) return <View style={s.container} />; // permission status still loading
+
+  if (!permission) return <View style={s.container}><StatusBar style="light" /></View>; // permission status still loading
 
   if (!permission.granted) {
     return (
       <SafeAreaView style={[s.container, s.center]}>
-        <Text style={s.message}>WasteGrid needs your camera to photograph waste reports.</Text>
-        <PressableScale
-          haptic="medium"
+        <StatusBar style="light" />
+        <AppText variant="title" tone="inverse" align="center">WasteGrid needs your camera to photograph waste reports.</AppText>
+        <Button
+          label={permission.canAskAgain ? "Allow camera" : "Open Settings"}
+          icon="camera"
+          onPress={() => (permission.canAskAgain ? requestPermission() : Linking.openSettings())}
           style={s.permissionBtn}
-          onPress={() => (permission.canAskAgain ? requestPermission() : Linking.openSettings())}>
-          <Text style={s.permissionText}>{permission.canAskAgain ? "Allow camera" : "Open Settings"}</Text>
-        </PressableScale>
-        <PressableScale onPress={onClose} hitSlop={12}><Text style={s.cancel}>Cancel</Text></PressableScale>
+        />
+        <PressableScale onPress={onClose} hitSlop={12}><AppText variant="label" tone="inverseMuted">Cancel</AppText></PressableScale>
       </SafeAreaView>
     );
   }
@@ -51,13 +52,13 @@ export function CameraStep({ onCapture, onClose }: Props) {
 
   return (
     <View style={s.container}>
+      <StatusBar style="light" />
       <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" onCameraReady={() => setReady(true)} />
 
       <SafeAreaView edges={["top", "bottom"]} pointerEvents="box-none" style={s.overlay}>
-        <PressableScale style={s.close} onPress={onClose} hitSlop={12}>
-          <Feather name="x" size={26} color={AppColors.onDark} />
-        </PressableScale>
-        <PressableScale haptic="heavy" style={[s.shutter, (!ready || busy) && s.disabled]} onPress={takePhoto} disabled={!ready || busy}>
+        <IconButton icon="x" variant="scrim" accessibilityLabel="Close camera" onPress={onClose} style={s.close} />
+        <PressableScale haptic="heavy" style={[s.shutter, (!ready || busy) && s.disabled]} onPress={takePhoto} disabled={!ready || busy}
+                        accessibilityRole="button" accessibilityLabel="Take photo">
           <View style={s.shutterInner} />
         </PressableScale>
       </SafeAreaView>
@@ -66,16 +67,13 @@ export function CameraStep({ onCapture, onClose }: Props) {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: AppColors.cameraBackground },
-  center: { alignItems: "center", justifyContent: "center", padding: 32, gap: 16 },
-  message: { color: AppColors.onDark, fontSize: 16, textAlign: "center" },
-  permissionBtn: { backgroundColor: AppColors.primary, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 14 },
-  permissionText: { color: AppColors.onPrimary, fontSize: 16, fontWeight: "600" },
-  cancel: { color: AppColors.onDarkMuted, fontSize: 15 },
+  container: { flex: 1, backgroundColor: Colors.cameraBackground },
+  center: { alignItems: "center", justifyContent: "center", padding: Spacing.xxxl, gap: Spacing.lg },
+  permissionBtn: { alignSelf: "stretch", marginTop: Spacing.sm },
   overlay: { ...StyleSheet.absoluteFill, justifyContent: "space-between" },
-  close: { alignSelf: "flex-start", margin: 16 },
-  shutter: { alignSelf: "center", marginBottom: 32, width: 76, height: 76, borderRadius: 38, borderWidth: 4, borderColor: AppColors.onDark,
+  close: { alignSelf: "flex-start", margin: Layout.screenPadding },
+  shutter: { alignSelf: "center", marginBottom: Spacing.xxxl, width: 78, height: 78, borderRadius: 39, borderWidth: 4, borderColor: Colors.onDark,
              alignItems: "center", justifyContent: "center" },
-  shutterInner: { width: 60, height: 60, borderRadius: 30, backgroundColor: AppColors.onDark },
+  shutterInner: { width: 62, height: 62, borderRadius: 31, backgroundColor: Colors.onDark },
   disabled: { opacity: 0.5 },
 });

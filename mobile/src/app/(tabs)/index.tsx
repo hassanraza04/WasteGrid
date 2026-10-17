@@ -1,24 +1,25 @@
 // app/(tabs)/index.tsx — Explore screen
 import { useRef, useState } from "react";
-import { View, Text, StyleSheet, ActivityIndicator, Alert } from "react-native";
+import { View, StyleSheet, ActivityIndicator } from "react-native";
 import MapView, { PROVIDER_GOOGLE } from "react-native-maps";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
-import mapStyle from "../../theme/mapStyle.json";
 import { router } from "expo-router";
+import mapStyle from "@/theme/mapStyle.json";
 
-import { PressableScale } from "@/components/ui/pressable-scale";
-import { signOut, useSession } from "@/auth/session";
+import { AppText, Button, Card, IconButton, useTabBarClearance } from "@/components/ui";
 import { useStartRegion } from "@/hooks/use-start-region";
 import { getCurrentCoords } from "@/utils/location";
 import { regionAround } from "@/utils/map";
-import { AppColors } from "@/constants/theme";
+import { Colors, Layout, Spacing } from "@/theme";
 
 export default function MapPage() {
   const mapRef = useRef<MapView>(null);
   const start = useStartRegion();
-  const session = useSession();
+  const clearance = useTabBarClearance();
   const [locating, setLocating] = useState(false); // GPS can take seconds — show a spinner meanwhile
+  const [cardHeight, setCardHeight] = useState(0);
+
+  const cardBottom = clearance - Spacing.sm; // just above the floating tab bar
 
   const recenter = async () => {
     setLocating(true);
@@ -29,18 +30,6 @@ export default function MapPage() {
     } finally {
       setLocating(false);
     }
-  };
-
-  // Top-left button: log in when signed out, log out (after confirming) when signed in
-  const onAccountPress = () => {
-    if (!session) {
-      router.push("/login");
-      return;
-    }
-    Alert.alert("Log out?", `You're signed in as ${session.email}.`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Log out", style: "destructive", onPress: signOut },
-    ]);
   };
 
   return (
@@ -57,54 +46,33 @@ export default function MapPage() {
           showsUserLocation
           showsMyLocationButton={false}   // you have your own button
           toolbarEnabled={false}
-          mapPadding={{ top: 90, bottom: 110, left: 0, right: 0 }} // keeps Google logo clear of overlays
+          mapPadding={{ top: 0, bottom: cardBottom + cardHeight, left: 0, right: 0 }} // keeps the Google logo clear of the card
         >
 
           {/* reports.map(r => <Marker key={r.id} coordinate={...} />) */}
         </MapView>
       ) : (
-        <View style={s.placeholder}><ActivityIndicator color={AppColors.text} /></View>
+        <View style={s.placeholder}><ActivityIndicator color={Colors.ink} /></View>
       )}
 
       {/* Layer 2: overlays. box-none lets touches pass through to the map */}
-      <SafeAreaView edges={["top"]} pointerEvents="box-none" style={s.header}>
-        <View style={s.brand}>
-          <PressableScale style={[s.avatar, session && s.avatarSignedIn]} onPress={onAccountPress}
-                          accessibilityLabel={session ? `Account, signed in as ${session.email}` : "Log in"}>
-            {session
-              ? <Text style={s.avatarText}>{session.email.charAt(0).toUpperCase()}</Text>
-              : <Feather name="log-in" size={18} color={AppColors.text} />}
-          </PressableScale>
-          <Text style={s.title}>WasteGrid</Text>
-        </View>
+      <SafeAreaView edges={["top"]} pointerEvents="box-none" style={s.controls}>
+        <IconButton icon="layers" accessibilityLabel="Map layers" onPress={() => {}} /* TODO: layer picker */ />
+        <IconButton icon="crosshair" accessibilityLabel="Center on my location" onPress={recenter} loading={locating} />
       </SafeAreaView>
 
-      <View pointerEvents="box-none" style={s.fabs}>
-        <PressableScale style={s.fab}><Feather name="layers" size={22} color={AppColors.text} /></PressableScale>
-        <PressableScale style={s.fab} onPress={recenter} disabled={locating}>
-          {locating ? <ActivityIndicator color={AppColors.text} /> : <Feather name="crosshair" size={22} color={AppColors.text} />}
-        </PressableScale>
-      </View>
-
-      <PressableScale haptic="medium" style={s.cta} onPress={() => {router.push("/report")}}>
-        <Feather name="camera" size={20} color={AppColors.onPrimary} /><Text style={s.ctaText}>Report waste</Text>
-      </PressableScale>
+      <Card style={[s.card, { bottom: cardBottom }]} onLayout={(e) => setCardHeight(e.nativeEvent.layout.height)}>
+        <AppText variant="headline" align="center">Spotted waste?</AppText>
+        <AppText tone="muted" align="center" style={s.cardText}>Snap a photo and we&apos;ll get it cleaned up.</AppText>
+        <Button label="Report waste" icon="camera" onPress={() => router.push("/report")} />
+      </Card>
     </View>
   );
 }
 
-const shadow = { elevation: 4, shadowColor: AppColors.shadow, shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } };
 const s = StyleSheet.create({
-  placeholder: { ...StyleSheet.absoluteFill, backgroundColor: AppColors.background, alignItems: "center", justifyContent: "center" },
-  header: { position: "absolute", top: 0, left: 16, right: 16, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  brand: { flexDirection: "row", alignItems: "center", gap: 10 },
-  title: { fontSize: 22, fontWeight: "500", color: AppColors.text },
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: AppColors.surface, alignItems: "center", justifyContent: "center", ...shadow },
-  avatarSignedIn: { backgroundColor: AppColors.primary },
-  avatarText: { fontWeight: "700", fontSize: 17, color: AppColors.onPrimary },
-  fabs: { position: "absolute", right: 16, bottom: 104, gap: 12 },
-  fab: { width: 52, height: 52, borderRadius: 14, backgroundColor: AppColors.surface, alignItems: "center", justifyContent: "center", ...shadow },
-  cta: { position: "absolute", left: 24, right: 24, bottom: 20, height: 64, borderRadius: 16, backgroundColor: AppColors.primary,
-         flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, ...shadow },
-  ctaText: { color: AppColors.onPrimary, fontSize: 17, fontWeight: "600" },
+  placeholder: { ...StyleSheet.absoluteFill, backgroundColor: Colors.background, alignItems: "center", justifyContent: "center" },
+  controls: { position: "absolute", top: Spacing.sm, right: Layout.screenPadding, gap: Spacing.md },
+  card: { position: "absolute", left: Layout.screenPadding, right: Layout.screenPadding, gap: Spacing.xs },
+  cardText: { marginBottom: Spacing.md },
 });
