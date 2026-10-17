@@ -56,7 +56,7 @@ class ReplyPolicy(Protocol):
 
 - [ ] Write failing tests that assert `load_photon_config()` returns `Path(".data/photon-delivery.db")` by default and respects `PHOTON_DELIVERY_DB_PATH=/tmp/ledger.db`.
 - [ ] Run `uv run pytest tests/messaging/test_config.py -q`; expect failure because `delivery_db_path` is absent.
-- [ ] Add `delivery_db_path: Path` to `PhotonConfig` and parse `Path(environ.get("PHOTON_DELIVERY_DB_PATH", ".data/photon-delivery.db")).expanduser()`.
+- [ ] Add `delivery_db_path: Path` to `PhotonConfig` and parse `Path(environ.get("PHOTON_DELIVERY_DB_PATH", ".data/photon-delivery.db")).expanduser()`. Update every direct `PhotonConfig(...)` fixture in `tests/messaging/test_photon_gateway.py` and `tests/messaging/test_run_imessage_agent.py` to pass `Path(".data/test-delivery.db")`.
 - [ ] Add `.data/` to `.gitignore`. Document it as a local retry spool, not the shared report database.
 - [ ] Run `uv run pytest tests/messaging/test_config.py -q`; expect pass.
 - [ ] Commit with `git add .gitignore README.md api/messaging/config.py tests/messaging/test_config.py && git commit -m "Configure Photon delivery ledger"`.
