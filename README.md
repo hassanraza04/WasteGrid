@@ -25,3 +25,29 @@ Photon Spectrum is connected. You said: <your message>
 The process reads only fresh iMessages received after it starts. It ignores older
 messages, non-iMessage events, blank messages, and duplicate message IDs within
 one process lifetime. `.env` is ignored by Git and must never be committed.
+
+## Dashboard foundation
+
+The dashboard foundation provides public customer report flows and a separate,
+development-only organizer route. It uses browser-local demo data until the report
+API is ready.
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Open the public customer view at the Vite URL. Open `/admin` for the organizer
+view while running the development server. Production builds omit both organizer
+routes. Its local sign-in is only a development adapter and is not production
+authentication.
+
+Run the frontend checks with:
+
+```bash
+cd web
+npm run test
+npm run typecheck
+npm run build
+```
