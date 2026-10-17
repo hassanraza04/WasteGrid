@@ -9,13 +9,11 @@ import { BrowserReportRepository } from "../data/browserReportRepository";
 import type { ReportRepository } from "../data/reportRepository";
 import { AccessError, createOrganizerApi, type LiveReport, type OrganizerApi } from "./organizerApi";
 
-const defaultRepository = new BrowserReportRepository(window.localStorage);
-
 function OrganizerConfigurationPage({ message }: { message: string }) {
   return <main><h1>Organiser sign in</h1><p role="alert">{message}</p></main>;
 }
 
-export function LiveApp({ api: suppliedApi, repository = defaultRepository }: { api?: OrganizerApi; repository?: ReportRepository }) {
+export function LiveApp({ api: suppliedApi, repository }: { api?: OrganizerApi; repository?: ReportRepository }) {
   const [dashboard] = useState(() => {
     if (suppliedApi) return { api: suppliedApi, configurationError: "" };
     try { return { api: createOrganizerApi(), configurationError: "" }; }
@@ -29,13 +27,30 @@ export function LiveApp({ api: suppliedApi, repository = defaultRepository }: { 
     }
   });
   return <ReportErrorBoundary><Routes>
-    <Route path="/" element={<CustomerHomePage repository={repository} />} />
-    <Route path="/report/new" element={<CreateReportPage repository={repository} />} />
+    <Route path="/" element={<CustomerHomeRoute repository={repository} />} />
+    <Route path="/report/new" element={<CreateReportRoute repository={repository} />} />
     <Route path="/report/track" element={<TrackReportPage />} />
-    <Route path="/report/:reference" element={<ReportDetailPage repository={repository} />} />
+    <Route path="/report/:reference" element={<ReportDetailRoute repository={repository} />} />
     <Route path="/admin/*" element={dashboard.api ? <Dashboard api={dashboard.api} /> : <OrganizerConfigurationPage message={dashboard.configurationError} />} />
     <Route path="*" element={<main><h1>Page not found</h1><Link to="/">Home</Link></main>} />
   </Routes></ReportErrorBoundary>;
+}
+
+function useCustomerRepository(repository?: ReportRepository) {
+  const [resolved] = useState<ReportRepository>(() => repository ?? new BrowserReportRepository(window.localStorage));
+  return resolved;
+}
+
+function CustomerHomeRoute({ repository }: { repository?: ReportRepository }) {
+  return <CustomerHomePage repository={useCustomerRepository(repository)} />;
+}
+
+function CreateReportRoute({ repository }: { repository?: ReportRepository }) {
+  return <CreateReportPage repository={useCustomerRepository(repository)} />;
+}
+
+function ReportDetailRoute({ repository }: { repository?: ReportRepository }) {
+  return <ReportDetailPage repository={useCustomerRepository(repository)} />;
 }
 
 function Dashboard({ api }: { api: OrganizerApi }) {
