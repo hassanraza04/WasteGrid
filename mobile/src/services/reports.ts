@@ -1,4 +1,4 @@
-import * as Crypto from "expo-crypto";
+import * as Crypto from "@/utils/secure-random";
 import * as SecureStore from "expo-secure-store";
 import { Directory, File, Paths } from "expo-file-system";
 import { fetch } from "expo/fetch";

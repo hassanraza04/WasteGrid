@@ -21,7 +21,7 @@ function setup() {
  process.env.EXPO_PUBLIC_API_BASE_URL='https://api.example';
  const api=new transport.StaffClient(()=>process.env.EXPO_PUBLIC_API_BASE_URL,async()=>{const identity=owner;return{token:'jwt',identity,isCurrent:()=>identity===owner}},(...args)=>respond(...args));
  const reload=()=>load('services/pending-staff.ts',{
-  'expo-crypto':{randomUUID:()=>`command-${++next}`},'expo-file-system':{Directory,File,Paths:{document:'file:///documents'}},
+  '@/utils/secure-random':{randomUUID:()=>`command-${++next}`},'expo-file-system':{Directory,File,Paths:{document:'file:///documents'}},
   'react-native':{Platform:{OS:'android'}},'@/auth/session':{getSession:()=>owner},'./staff':{staffApi:api},'./staff-client':transport,'./staff-commands':commands,
  });
  return{service:reload(),reload,files,faults,api,respond:value=>{respond=value},session:value=>{owner=value}};

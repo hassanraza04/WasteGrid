@@ -1,4 +1,4 @@
-import * as Crypto from "expo-crypto";
+import * as Crypto from "@/utils/secure-random";
 import { Directory, File, Paths } from "expo-file-system";
 import { Platform } from "react-native";
 import { getSession } from "@/auth/session";

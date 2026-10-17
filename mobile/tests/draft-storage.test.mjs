@@ -30,7 +30,7 @@ function setup() {
  let response = () => new Response(null, { status: 404 });
  process.env.EXPO_PUBLIC_API_BASE_URL = 'https://api.example';
  const reload = () => load('services/reports.ts', {
-  'expo-crypto': { randomUUID: () => 'draft-' + (++nextId), getRandomBytesAsync: async () => new Uint8Array(32) },
+  '@/utils/secure-random': { randomUUID: () => 'draft-' + (++nextId), getRandomBytesAsync: async () => new Uint8Array(32) },
   'expo-secure-store': { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'device', setItemAsync: async (key, value) => { secrets.set(key, value); }, getItemAsync: async key => secrets.get(key), deleteItemAsync: async key => { secrets.delete(key); } },
   'expo-file-system': { Directory, File, Paths: { document: 'file:///documents' } },
   'expo/fetch': { fetch: (...args) => response(...args) }, 'react-native': { Platform: { OS: 'android' } },
