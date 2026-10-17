@@ -51,6 +51,10 @@ class DeliveryLedger:
                     created_at TEXT NOT NULL,
                     sent_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS outgoing_texts (
+                    message_id TEXT PRIMARY KEY,
+                    text TEXT NOT NULL
+                );
                 """)
 
     def _connect(self) -> sqlite3.Connection:
@@ -85,6 +89,19 @@ class DeliveryLedger:
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (_utc_iso(checkpoint),),
             )
+
+    def bind_outgoing_text(self, message_id: str, text: str) -> str:
+        """Persist the first rendered text for one backend-owned outgoing ID."""
+        with self._transaction() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO outgoing_texts (message_id, text) VALUES (?, ?)",
+                (message_id, text),
+            )
+            row = connection.execute(
+                "SELECT text FROM outgoing_texts WHERE message_id = ?", (message_id,)
+            ).fetchone()
+        assert row is not None
+        return row[0]
 
     def enqueue_reply(self, message: InboundMessage, text: str, now: datetime) -> bool:
         timestamp = _utc_iso(now)

@@ -86,6 +86,19 @@ def test_checkpoint_advances_and_persists(tmp_path) -> None:
     )
 
 
+def test_rendered_outgoing_text_is_stable_across_restarts(tmp_path) -> None:
+    path = tmp_path / "delivery.db"
+    first = DeliveryLedger(path)
+
+    assert (
+        first.bind_outgoing_text("outgoing-1", "Original status") == "Original status"
+    )
+    assert (
+        DeliveryLedger(path).bind_outgoing_text("outgoing-1", "Changed status")
+        == "Original status"
+    )
+
+
 def test_failures_retry_at_five_then_ten_seconds_and_third_is_terminal(
     tmp_path,
 ) -> None:
