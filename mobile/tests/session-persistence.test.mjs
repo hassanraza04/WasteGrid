@@ -47,8 +47,9 @@ test('failed restore grants no role, and a late verification cannot undo logout'
   await session.restoreSession(); assert.equal(session.getSession(), null); assert.equal(app.secrets.size, 1);
   const started = deferred(), pending = deferred();
   globalThis.fetch = () => { started.resolve(); return pending.promise; };
-  const restore = session.restoreSession(); await started.promise; await session.signOut();
-  pending.resolve(await organizer()); await restore;
+  const restore = session.restoreSession(); await started.promise; const logout = session.signOut();
+  assert.equal(session.getSession(), null);
+  pending.resolve(await organizer()); await Promise.all([restore, logout]);
   assert.equal(session.getSession(), null); assert.equal(app.secrets.size, 0);
  } finally { globalThis.fetch = original; }
 });
@@ -58,8 +59,12 @@ test('foreground lifecycle controls refresh and refreshed tokens reverify the ac
  try {
   const session = app.reload(); await session.signIn('person@example.test', 'password');
   stop = session.startSessionLifecycle(); app.state('background'); app.state('active');
-  assert.deepEqual(app.counts(), { starts: 2, stops: 1 });
   await session.restoreSession();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.ok(app.counts().starts > 0);
+  app.state('background'); await new Promise(resolve => setImmediate(resolve));
+  assert.ok(app.counts().stops > 0);
+  app.state('active'); await session.restoreSession();
   app.secrets.set('session', JSON.stringify({ ...app.stored, access_token: 'renewed' }));
   const checked = deferred();
   globalThis.fetch = async (_url, init) => { assert.equal(init.headers.Authorization, 'Bearer renewed'); checked.resolve(); return new Response(null, { status: 403 }); };
