@@ -63,7 +63,7 @@ def build_planning_input(db: Session) -> PlanningInput:
             service_minutes=j.estimated_service_minutes,
         )
         for j in unfinished
-        if j.assigned_crew_id and (j.locked or j.status == "in_progress")
+        if j.assigned_crew_id and (j.locked or j.status in ("in_progress", "blocked"))
     ]
     value = PlanningInput(
         jobs=[JobView.model_validate(j) for j in unfinished],
@@ -193,7 +193,7 @@ def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
             proposed.service_minutes,
         ) != (stop.crew_id, stop.position, stop.service_minutes):
             raise HTTPException(
-                422, "Preserve in-progress and manually locked assignments"
+                422, "Preserve in-progress, blocked, and locked assignments"
             )
         if (
             jobs[jid].status == "in_progress"
@@ -215,11 +215,15 @@ def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
         previous = f"crew:{cid}"
         for stop in stops:
             job = jobs[stop.job_id]
-            # Ongoing work stays with its crew even if availability changes.
-            if job.status != "in_progress" and (
-                not eligible(job, crews[cid])
-                or job.held
-                or job.status in ("blocked", "recheck_requested")
+            # Ongoing and blocked work retain their crew; resuming still checks
+            # current availability and capacity.
+            if (job.status == "blocked" and job.id not in fixed) or (
+                job.status not in ("in_progress", "blocked")
+                and (
+                    not eligible(job, crews[cid])
+                    or job.held
+                    or job.status == "recheck_requested"
+                )
             ):
                 raise HTTPException(
                     422,
@@ -233,12 +237,12 @@ def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
             used[str(cid)] += stop.travel_minutes + stop.service_minutes
             previous = f"job:{job.id}"
         tails[cid] = previous
-        # If existing completed/ongoing work already exceeds a shortened shift,
+        # If existing completed/ongoing/blocked work exceeds a shortened shift,
         # preserve it but admit no further work to that crew.
         protected = current.completed_minutes[str(cid)] + sum(
             s.travel_minutes + s.service_minutes
             for s in stops
-            if jobs[s.job_id].status == "in_progress"
+            if jobs[s.job_id].status in ("in_progress", "blocked")
         )
         if used[str(cid)] > max(crews[cid].shift_minutes, protected) + 0.001:
             raise HTTPException(422, "Plan exceeds crew shift capacity")
@@ -292,7 +296,7 @@ def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
             job.route_position = stop.position
             job.travel_minutes = stop.travel_minutes
             job.unassigned_reason = None
-            if job.status != "in_progress":
+            if job.status not in ("in_progress", "blocked"):
                 job.status = "assigned"
             db.add(
                 Assignment(

@@ -28,7 +28,8 @@ calls and real authentication; a public reference alone grants no access.
   obtains decisions through the Person 3 boundary and applies backend rules:
   missing location requests information, hazards and uncertain duplicates go
   to review, eligible ordinary reports create/link jobs.
-- Plans must cover unfinished jobs exactly once, preserve locked/ongoing work,
+- Plans must cover unfinished jobs exactly once, preserve locked/ongoing/blocked
+  assigned work,
   respect equipment and shift budgets, and use at least the supplied travel
   estimates. Completed work continues consuming shift capacity after a recheck.
 - Crew changes invalidate plans and release unlocked pending assignments. A

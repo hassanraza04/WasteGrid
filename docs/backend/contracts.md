@@ -41,13 +41,13 @@ ID merely to bypass a conflict.
 | `GET /health`, `GET /ready` | Public | Liveness / configured DB readiness |
 | `GET /auth/me` | Staff | User ID, role, crew ID |
 | `POST /reports` | Public | Multipart photo, optional coordinate pair, landmark, note; 201 report + access token |
-| `GET /reports/{id}` | Resident token, organizer, assigned crew | `ReportView` without credentials |
-| `GET /reports/by-reference/{reference}` | Resident token, organizer, assigned crew | Same `ReportView`; reference is trimmed/uppercased and is not a credential |
+| `GET /reports/{id}` | Resident token, organizer, assigned crew | Public `ReportView` without credentials or internal triage |
+| `GET /reports/by-reference/{reference}` | Resident token, organizer, assigned crew | Same public `ReportView`; reference is trimmed/uppercased and is not a credential |
 | `GET /reports/{id}/updates` | Resident token, organizer, assigned crew | `{items, limit, offset, total}`; oldest first; limit 1–100 (default 50), offset ≥0 |
 | `GET /reports/{id}/messages` | Resident token or organizer; never crew | Same page envelope; oldest first across the report's linked conversations; transport identifiers excluded |
-| `GET /organizer/reports` | Organizer | Paginated array (`limit` 1–100, `offset`) |
-| `GET /organizer/reports/{id}` | Organizer | Report plus audit details/decisions |
-| `POST /organizer/reports/{id}/decision` | Organizer | `TriageRecommendation`; audited override applied through the same rules |
+| `GET /organizer/reports` | Organizer | Paginated `OrganizerReportView` array (`limit` 1–100, `offset`) |
+| `GET /organizer/reports/{id}` | Organizer | `OrganizerReportView` plus audit details/decisions |
+| `POST /organizer/reports/{id}/decision` | Organizer | `TriageRecommendation` input; audited override returns `OrganizerReportView` |
 | `POST /reports/{id}/followup-link` | Resident token | Ten-minute one-time code; Person 4 builds the actual channel link |
 | `GET /photos/{id}/access` | Authorized report/job reader | Signed private URL, expires in 300 seconds |
 | `GET /jobs` | Staff | Organizer jobs or own crew's jobs, ordered by crew/stop position; MVP cap 100 |
@@ -73,6 +73,10 @@ Every report has an immutable `public_reference`, `WG-` plus 12 uppercase hex
 characters, with database uniqueness. Creation retries retain the same reference;
 changing title/address on a retry returns 409. All report views include these
 fields. The dashboard maps `public_reference` to its existing `reference` field.
+`ReportCreated` and both `/reports` lookup routes use the public `ReportView` and
+never include the internal `triage` recommendation. Only organizer-specific
+report routes include `triage` in `OrganizerReportView`. Trusted Person 3
+snapshots retain it for contextual reasoning.
 
 Identity increment examples: `fixtures/report-created.json` for POST `/reports`,
 `fixtures/report.json` for either lookup route, `fixtures/organizer-report-list.json`
@@ -113,6 +117,10 @@ release, reassign, lock/unlock, and resolve blocked/recheck jobs back to
 unassigned. Completed/ongoing work cannot be reassigned or held. Reassignment
 locks the chosen crew and queues plan validation; a fresh validated plan is
 required before starting. Held work stays unassigned.
+Blocking an assigned job makes the current plan stale. The planner must retain
+that crew and stop in its next validated plan; the crew may resume only after
+that plan exists and availability, equipment, and shift capacity still pass.
+An unassigned blocked job remains unassigned until organizer intervention.
 
 Crew edits release unlocked assigned jobs, preserve completed/ongoing/locked
 work, mark plans stale and enqueue replanning. If a locked job's resources become
@@ -149,9 +157,10 @@ history; they do not replace the original note.
 Planning input `node_ids` defines both matrix axes: crew depots then unfinished
 jobs, each sorted by UUID. Values are minutes; use the exact supplied label.
 `completed_minutes` reserves already consumed shift time. `fixed_assignments`
-contains in-progress/manually locked stops that must retain crew, position and
-service duration. Preserve already consumed travel for in-progress work; pending
-locked stops may receive updated travel estimates for the validated route.
+contains in-progress, assigned-blocked, and manually locked stops that must
+retain crew, position and service duration. Preserve already consumed travel
+for in-progress work; blocked and pending locked stops may receive updated
+travel estimates for the validated route.
 Preserve completed work outside the unfinished-job output. Each unfinished
 job appears exactly once in assignments or unassigned, with a supported reason.
 The backend checks resources, positions, unchanged service estimates, travel

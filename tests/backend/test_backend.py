@@ -8,7 +8,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from api.models import Event, OutgoingMessage, Photo, Plan, Report, Task, now
-from api.schemas import TriageRecommendation
+from api.schemas import PlanStop, TriageRecommendation
 from api.worker import process_one
 from api.workflows import apply_plan, apply_triage, build_planning_input
 from scripts.migrate import migrate
@@ -346,6 +346,101 @@ def test_removed_crew_cannot_start_and_replan_is_feasible(client, png, engine, s
     new = client.get("/jobs", headers=auth("org")).json()[0]
     assert new["assigned_crew_id"] != cid
     assert new["status"] == "assigned"
+
+
+@pytest.mark.parametrize("start_first", [False, True])
+def test_blocked_job_retains_assignment_and_can_resume_after_replan(
+    client, png, engine, seeded, start_first
+):
+    report(client, png)
+    drain(client, engine)
+    job = client.get("/jobs", headers=auth("org")).json()[0]
+    crew_id = job["assigned_crew_id"]
+    owner = "a" if crew_id == str(seeded["crew_a"]) else "b"
+    path = "/jobs/" + job["id"]
+
+    if start_first:
+        started = client.patch(
+            path,
+            headers=auth(owner),
+            json={
+                "command_id": str(uuid4()),
+                "expected_version": job["version"],
+                "status": "in_progress",
+            },
+        )
+        assert started.status_code == 200, started.text
+        job = started.json()
+        drain(client, engine)
+
+    blocked = client.patch(
+        path,
+        headers=auth(owner),
+        json={
+            "command_id": str(uuid4()),
+            "expected_version": job["version"],
+            "status": "blocked",
+        },
+    )
+    assert blocked.status_code == 200, blocked.text
+    assert blocked.json()["assigned_crew_id"] == crew_id
+    assert client.get("/plans/current", headers=auth("org")).json()["plan"]["stale"]
+    resume = {
+        "command_id": str(uuid4()),
+        "expected_version": blocked.json()["version"],
+        "status": "in_progress",
+    }
+    assert client.patch(path, headers=auth(owner), json=resume).status_code == 409
+
+    drain(client, engine)
+    current = client.get(path, headers=auth(owner)).json()["job"]
+    assert current["status"] == "blocked"
+    assert current["assigned_crew_id"] == crew_id
+    plan = client.get("/plans/current", headers=auth("org")).json()["plan"]
+    assert not plan["stale"]
+    assert any(stop["job_id"] == job["id"] for stop in plan["assignments"])
+    resume["expected_version"] = current["version"]
+    resumed = client.patch(path, headers=auth(owner), json=resume)
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["status"] == "in_progress"
+    assert resumed.json()["assigned_crew_id"] == crew_id
+    assert client.patch(path, headers=auth(owner), json=resume).status_code == 200
+
+
+def test_planner_cannot_assign_an_unassigned_blocked_job(client, png, engine, seeded):
+    report(client, png)
+    assert process_one(engine, TestProvider(), client.app.state.cloud)
+    job = client.get("/jobs", headers=auth("org")).json()[0]
+    assert job["status"] == "unassigned"
+    blocked = client.patch(
+        "/jobs/" + job["id"],
+        headers=auth("org"),
+        json={
+            "command_id": str(uuid4()),
+            "expected_version": job["version"],
+            "status": "blocked",
+            "reason": "Needs organizer review",
+        },
+    )
+    assert blocked.status_code == 200, blocked.text
+    with Session(engine) as db:
+        current = build_planning_input(db)
+        proposal = TestProvider().generate_plan(current)
+        assert proposal.unassigned[0].reason_code == "blocked"
+        proposal.unassigned = []
+        crew_index = current.node_ids.index(f"crew:{seeded['crew_a']}")
+        job_index = current.node_ids.index(f"job:{job['id']}")
+        proposal.assignments = [
+            PlanStop(
+                job_id=UUID(job["id"]),
+                crew_id=seeded["crew_a"],
+                position=0,
+                travel_minutes=current.travel_minutes[crew_index][job_index],
+                service_minutes=job["estimated_service_minutes"],
+            )
+        ]
+        with pytest.raises(HTTPException, match="job eligibility"):
+            apply_plan(db, proposal)
 
 
 def test_missing_information_and_hazard_do_not_create_jobs(client, png, engine):

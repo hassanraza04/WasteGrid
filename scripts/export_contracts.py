@@ -57,9 +57,11 @@ def fixtures():
             job_status=None,
         ),
         timeline=[],
-        triage=None,
     )
-    snapshot = S.Snapshot(report=report, job=None)
+    organizer_report = S.OrganizerReportView.model_validate(
+        {**report.model_dump(), "triage": None}
+    )
+    snapshot = S.Snapshot(report=organizer_report, job=None)
     crew = S.CrewView(
         id=cid,
         name="Illustrative Crew A",
@@ -108,8 +110,8 @@ def fixtures():
         "report-updates": S.ReportUpdates(
             items=[report.latest_update], limit=50, offset=0, total=1
         ),
-        "organizer-report-list": [report],
-        "organizer-report-detail": S.ReportDetails(report=report, events=[]),
+        "organizer-report-list": [organizer_report],
+        "organizer-report-detail": S.ReportDetails(report=organizer_report, events=[]),
         "auth-me": Principal(
             user_id=UUID("60000000-0000-4000-8000-000000000002"),
             role="organizer",

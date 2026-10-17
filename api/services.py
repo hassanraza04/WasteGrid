@@ -22,6 +22,7 @@ from api.models import (
 from api.schemas import (
     Clarification,
     JobView,
+    OrganizerReportView,
     Recheck,
     ReportUpdate,
     ReportView,
@@ -112,7 +113,6 @@ def report_view(db: Session, report: Report) -> ReportView:
         latest_update=latest,
         timeline=events,
         clarifications=report.clarifications,
-        triage=report.triage,
         completion_photo_ids=(
             list(db.scalars(select(Photo.id).where(Photo.job_id == report.job_id)))
             if job
@@ -121,10 +121,17 @@ def report_view(db: Session, report: Report) -> ReportView:
     )
 
 
+def organizer_report_view(db: Session, report: Report) -> OrganizerReportView:
+    return OrganizerReportView.model_validate(
+        {**report_view(db, report).model_dump(), "triage": report.triage}
+    )
+
+
 def snapshot(db: Session, report: Report) -> Snapshot:
     job = db.get(Job, report.job_id) if report.job_id else None
     return Snapshot(
-        report=report_view(db, report), job=JobView.model_validate(job) if job else None
+        report=organizer_report_view(db, report),
+        job=JobView.model_validate(job) if job else None,
     )
 
 

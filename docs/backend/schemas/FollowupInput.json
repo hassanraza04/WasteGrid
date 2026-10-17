@@ -262,88 +262,9 @@
       "title": "Location",
       "type": "object"
     },
-    "ReportState": {
-      "enum": [
-        "received",
-        "needs_info",
-        "needs_review",
-        "linked_to_job"
-      ],
-      "title": "ReportState",
-      "type": "string"
-    },
-    "ReportUpdate": {
+    "OrganizerReportView": {
       "additionalProperties": false,
-      "properties": {
-        "created_at": {
-          "format": "date-time",
-          "title": "Created At",
-          "type": "string"
-        },
-        "id": {
-          "format": "uuid",
-          "title": "Id",
-          "type": "string"
-        },
-        "job_status": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/JobState"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "kind": {
-          "title": "Kind",
-          "type": "string"
-        },
-        "message": {
-          "title": "Message",
-          "type": "string"
-        },
-        "report_state": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ReportState"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "status": {
-          "anyOf": [
-            {
-              "enum": [
-                "submitted",
-                "in-progress",
-                "resolved"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Status"
-        }
-      },
-      "required": [
-        "id",
-        "kind",
-        "created_at",
-        "message",
-        "status",
-        "report_state",
-        "job_status"
-      ],
-      "title": "ReportUpdate",
-      "type": "object"
-    },
-    "ReportView": {
-      "additionalProperties": false,
+      "description": "Organizer and trusted reasoning context, never a resident response.",
       "properties": {
         "address": {
           "anyOf": [
@@ -507,7 +428,87 @@
         "timeline",
         "triage"
       ],
-      "title": "ReportView",
+      "title": "OrganizerReportView",
+      "type": "object"
+    },
+    "ReportState": {
+      "enum": [
+        "received",
+        "needs_info",
+        "needs_review",
+        "linked_to_job"
+      ],
+      "title": "ReportState",
+      "type": "string"
+    },
+    "ReportUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "job_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JobState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "report_state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReportState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "submitted",
+                "in-progress",
+                "resolved"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Status"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "created_at",
+        "message",
+        "status",
+        "report_state",
+        "job_status"
+      ],
+      "title": "ReportUpdate",
       "type": "object"
     },
     "Snapshot": {
@@ -525,7 +526,7 @@
           ]
         },
         "report": {
-          "$ref": "#/$defs/ReportView"
+          "$ref": "#/$defs/OrganizerReportView"
         }
       },
       "required": [

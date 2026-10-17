@@ -25,6 +25,9 @@ their adapters; these payload shapes remain proposed until coordinated.
 the resident token cannot reveal report details or transcripts. There is no
 token-recovery flow in this MVP; show an access-required state rather than
 falling back to anonymous lookup.
+The creation and tracking responses omit the internal triage recommendation.
+Use the organizer-only list/detail routes for `triage` and audit details; an
+organizer calling a general `/reports` lookup still receives the public shape.
 
 ## Endpoint examples
 
@@ -35,8 +38,8 @@ All example URLs, IDs and credentials in the fixture files are illustrative.
 | Create | `POST /reports`, multipart photo/title/address, optional coordinates/note | [201 report + token](fixtures/report-created.json) |
 | Track by reference | `GET /reports/by-reference/WG-A1B2C3D4E5F6`, resident/staff bearer | [200 report](fixtures/report.json) |
 | Read by UUID | `GET /reports/{id}`, resident/staff bearer | [200 report](fixtures/report.json) |
-| Organizer list | `GET /organizer/reports?limit=50&offset=0`, organizer bearer | [200 array](fixtures/organizer-report-list.json) |
-| Organizer detail | `GET /organizer/reports/{id}`, organizer bearer | [200 report + audit events](fixtures/organizer-report-detail.json) |
+| Organizer list | `GET /organizer/reports?limit=50&offset=0`, organizer bearer | [200 organizer array with triage](fixtures/organizer-report-list.json) |
+| Organizer detail | `GET /organizer/reports/{id}`, organizer bearer | [200 organizer report + audit events](fixtures/organizer-report-detail.json) |
 | Update history | `GET /reports/{id}/updates?limit=50&offset=0`, resident/staff bearer | [200 page](fixtures/report-updates.json) |
 | Conversation history | `GET /reports/{id}/messages?limit=50&offset=0`, resident/organizer bearer | [200 page](fixtures/report-messages.json) |
 | Current staff identity | `GET /auth/me`, staff bearer | [200 role](fixtures/auth-me.json) |

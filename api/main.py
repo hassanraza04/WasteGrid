@@ -5,6 +5,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import timedelta, timezone
 from hashlib import sha256
+from hmac import compare_digest
 from secrets import token_urlsafe
 from uuid import UUID, uuid4
 
@@ -78,6 +79,7 @@ from api.schemas import (
     JobView,
     LinkCreated,
     Location,
+    OrganizerReportView,
     OutgoingView,
     PhotoAccess,
     Recheck,
@@ -98,6 +100,7 @@ from api.services import (
     enqueue,
     event,
     invalidate_plan,
+    organizer_report_view,
     report_event_condition,
     report_update,
     report_view,
@@ -427,7 +430,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             total=total,
         )
 
-    @app.get("/organizer/reports", response_model=list[ReportView])
+    @app.get("/organizer/reports", response_model=list[OrganizerReportView])
     def list_reports(
         limit: int = 100,
         offset: int = 0,
@@ -442,7 +445,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             .limit(limit)
             .offset(offset)
         )
-        return [report_view(db, report) for report in reports]
+        return [organizer_report_view(db, report) for report in reports]
 
     @app.post(
         "/reports/{report_id}/followup-link",
@@ -478,7 +481,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             report_access(request, db, find_report(db, photo.report_id), authorization)
         elif authorization and authorization.startswith("Bearer wg_r_"):
             candidates = db.scalars(select(Report).where(Report.job_id == photo.job_id))
-            if not any(r.token_hash == digest(authorization[7:]) for r in candidates):
+            token_hash = digest(authorization[7:])
+            if not any(compare_digest(r.token_hash, token_hash) for r in candidates):
                 raise HTTPException(404, "Photo not found")
         else:
             job_access(db, photo.job_id, get_staff(request, db, authorization))
@@ -672,9 +676,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             .order_by(Event.created_at, Event.id)
         ).all()
-        return {"report": report_view(db, report), "events": events}
+        return {"report": organizer_report_view(db, report), "events": events}
 
-    @app.post("/organizer/reports/{report_id}/decision", response_model=ReportView)
+    @app.post(
+        "/organizer/reports/{report_id}/decision", response_model=OrganizerReportView
+    )
     def organizer_decision(
         report_id: UUID,
         body: TriageRecommendation,
@@ -685,7 +691,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, "Report ID does not match request path")
         report = apply_triage(db, body, actor=str(staff.user_id))
         db.commit()
-        return report_view(db, report)
+        return organizer_report_view(db, report)
 
     @app.get("/tasks", response_model=list[TaskView])
     def tasks(db: Session = Depends(get_db), staff: Principal = Depends(organizer)):

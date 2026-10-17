@@ -1,5 +1,33 @@
 # Dashboard contract completion — verification evidence
 
+## PR review follow-up — 2026-10-17
+
+Hassan's requested privacy and credential-comparison fixes are implemented in
+the working tree. Public report creation/lookup responses now omit `triage`;
+organizer report routes and trusted Person 3 snapshots retain it. Completion
+photo access uses constant-time resident token-hash comparison. The separate
+automated review finding is also addressed: assigned blocked work remains fixed
+through a new plan and can resume when the current plan and crew constraints
+allow it. Focused tests cover both blocked entry states, cross-report photo
+access, and denial of planner assignment for unassigned blocked work.
+
+`scripts/verify_backend.sh` passed on the review working tree: **82 Python
+tests**, contract export, flake8/Black/isort, six migrations, Docker build, and
+11 HTTP smoke checks. A disposable copy combining this backend with latest
+`origin/main` `430a0172323c938e6ea927681f5372fd7e4eac74` passed **82 tests** and
+the generated contract check with a resolved combined lockfile. No live
+Supabase, Render, Chalk, or Photon exchange is claimed.
+
+The new upstream CI workflow needs integration when the user updates this
+branch: its `uv sync --locked --group dev` omits the optional `backend` extra,
+and its Python job provides no `TEST_DATABASE_URL`. Replaying its commands in
+the disposable combined copy failed during collection with missing `psycopg`.
+Install the backend extra and provision disposable PostgreSQL for CI to test the
+backend rather than skipping it. The review changes are uncommitted; PR #4 is
+currently conflicting with the advanced `main` until the user updates it.
+
+## Earlier dashboard-contract evidence
+
 Recorded 2026-10-17T03:43:06.641278+00:00. The approved incremental backend plan is
 implemented. The code is ready for teammate adapter integration and review;
 live deployment and end-to-end frontend/Photon acceptance remain external steps.
