@@ -31,6 +31,7 @@ from api.schemas import (
 )
 
 UPDATE_MESSAGES = {
+    "report.priority_set": "An organiser has reviewed the cleanup priority.",
     "report.received": "Your report has been received.",
     "report.assessed": "Your report has been assessed for cleanup priority.",
     "report.assessment_failed": "Automatic assessment failed; organizer review is required.",

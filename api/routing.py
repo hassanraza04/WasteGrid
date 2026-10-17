@@ -19,10 +19,18 @@ from api.routing_schemas import (
     CrewLocationUpdate,
     CrewLocationView,
     DispatchRoutes,
+    PriorityDecision,
     RouteDispatchView,
     RoutePreviewView,
 )
-from api.services import event
+from api.schemas import OrganizerReportView
+from api.services import (
+    assert_version,
+    command_seen,
+    event,
+    invalidate_plan,
+    organizer_report_view,
+)
 from api.workflows import distance_km, job_assessment_approved
 
 
@@ -447,6 +455,49 @@ def dispatch_preview(db, preview, command_id, actor, settings):
 
 def routing_router(settings):
     router = APIRouter()
+
+    @router.post(
+        "/organizer/reports/{report_id}/priority", response_model=OrganizerReportView
+    )
+    def set_priority(
+        report_id: UUID,
+        body: PriorityDecision,
+        db: Session = Depends(get_db),
+        staff: Principal = Depends(organizer),
+    ):
+        report = db.get(Report, report_id)
+        if report is None:
+            raise HTTPException(404, "Report not found")
+        seen, fingerprint = command_seen(db, report.id, body, "report.priority_set")
+        if seen:
+            return organizer_report_view(db, report)
+        assert_version(report.version, body.expected_version)
+        if report.assessment_status == "pending":
+            raise HTTPException(
+                409, "Wait for the pending assessment before setting priority"
+            )
+        previous = report.priority
+        report.priority = body.priority
+        report.priority_reason = "Priority set by an organiser after review."
+        report.version += 1
+        # This decision never clears safety/review gates or changes AI observations.
+        event(
+            db,
+            "report.priority_set",
+            report_id=report.id,
+            actor=str(staff.user_id),
+            command_id=body.command_id,
+            request_hash=fingerprint,
+            details={
+                "previous_priority": previous,
+                "priority": body.priority,
+                "reason": body.reason,
+            },
+        )
+        if report.job_id:
+            invalidate_plan(db)
+        db.commit()
+        return organizer_report_view(db, report)
 
     def enabled():
         if not settings.organizer_routing_enabled:

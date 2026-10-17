@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from api.schemas import Contract, Location
+from api.schemas import Command, Contract, Location
 
 
 class ComputeRoutes(Contract):
@@ -34,6 +34,11 @@ class CrewLocationView(Contract):
 
 class DispatchRoutes(Contract):
     command_id: UUID
+
+
+class PriorityDecision(Command):
+    priority: Literal["high", "medium", "routine"]
+    reason: str = Field(min_length=1, max_length=1000, pattern=r"\S")
 
 
 class RoutingStop(Contract):

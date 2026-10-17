@@ -30,7 +30,9 @@ Let `w_i` be its priority weight.
 Proposed initial weights for testing: high = 3, medium = 2, low = 1. These are
 finite trade-offs, not a rule that every high-priority stop must precede every
 low-priority stop. The existing API value `routine` maps to low for routing;
-no API enum rename is required.
+no API enum rename is required. Organisers can set an audited effective priority
+through `POST /organizer/reports/{report_id}/priority`; this preserves model
+observations, cannot override pending assessments and never clears review gates.
 
 Evaluate complete candidate plans using:
 
@@ -459,7 +461,9 @@ matrix and settings in each preview; validate service-time and score assumptions
 using small examples and the demo geography.
 
 The recommendation is to keep Python priority rules behind Chalk observations.
-No priority-policy change is authorised by this document alone.
+Automatic classification rules are unchanged. An authenticated organiser can make
+an explicit, audited priority decision with a reason; review/handling approval is
+still a separate gate.
 
 The branch implements backend routing with these starting defaults. Frontend
 integration, live road-service configuration and live crew GPS observations are

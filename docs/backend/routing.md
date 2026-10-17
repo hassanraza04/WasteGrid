@@ -46,6 +46,15 @@ both services before using the new UI.
 
 ## API sequence
 
+If an assessment leaves priority unknown, an organiser can submit
+`POST /organizer/reports/{report_id}/priority` with `command_id`,
+`expected_version`, `priority` (`high`, `medium` or `routine`) and an audit `reason`.
+This updates the effective priority, preserves the AI assessment and never clears
+review/handling gates. Pending assessments cannot be overridden. Resolve review
+through the existing organiser decision before dispatch. This also supports older
+manually approved jobs that still have null priority. Crew/resident callers cannot
+set priority. Replay of the same command is idempotent.
+
 1. Each authenticated crew sends `POST /crews/me/location`:
 
    ```json

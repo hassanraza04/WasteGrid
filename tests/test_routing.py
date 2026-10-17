@@ -553,3 +553,88 @@ def test_osrm_timeout_is_unavailable_not_unreachable(monkeypatch):
     with pytest.raises(TravelDataUnavailable):
         OSRMRoadTimes("https://roads.invalid").matrix([dict(latitude=24, longitude=67)])
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("state", ["approved", "held", "pending"])
+def test_organizer_priority_choice_is_audited_without_clearing_review(
+    assessment_db, state
+):
+    from api.models import Event
+
+    ids, jobs = seed_routing(assessment_db)
+    org, crew = uuid4(), uuid4()
+    raw = assessment(obstruction="unknown", obstruction_level="unknown").model_dump(
+        mode="json"
+    )
+    with Session(assessment_db) as db:
+        row = db.scalar(select(Report).where(Report.job_id == jobs[0]))
+        rid = row.id
+        row.priority, row.assessment = None, raw
+        row.assessment_status = "pending" if state == "pending" else "needs_review"
+        row.needs_review = row.organizer_review_required = state != "approved"
+        if state == "approved":
+            db.add(
+                Event(
+                    report_id=rid,
+                    kind="report.triaged",
+                    actor=str(org),
+                    details={
+                        "organizer_override": True,
+                        "job_id": str(jobs[0]),
+                        "reason": "Prior audited organiser approval",
+                    },
+                )
+            )
+        db.add_all(
+            [
+                StaffRole(user_id=org, role="organizer"),
+                StaffRole(user_id=crew, role="crew", crew_id=ids[0]),
+            ]
+        )
+        db.commit()
+    app = create_app(config())
+    app.state.engine = assessment_db
+    app.state.cloud.close()
+    app.state.cloud = SimpleNamespace(
+        user_id=lambda token: {"org": org, "crew": crew}[token], close=lambda: None
+    )
+    with TestClient(app) as client:
+        body = dict(
+            command_id=str(uuid4()),
+            expected_version=1,
+            priority="high",
+            reason="Reviewed access obstruction on site",
+        )
+        url = f"/organizer/reports/{rid}/priority"
+        assert (
+            client.post(
+                url, json=body, headers={"Authorization": "Bearer crew"}
+            ).status_code
+            == 403
+        )
+        response = client.post(url, json=body, headers={"Authorization": "Bearer org"})
+        assert response.status_code == (
+            409 if state == "pending" else 200
+        ), response.text
+        if state == "pending":
+            return
+        assert response.json()["priority"] == "high"
+        assert response.json()["needs_review"] == (state == "held")
+        assert response.json()["assessment"] == raw
+        assert (
+            client.post(
+                url, json=body, headers={"Authorization": "Bearer org"}
+            ).status_code
+            == 200
+        )
+        with Session(assessment_db) as db:
+            records = list(
+                db.scalars(select(Event).where(Event.kind == "report.priority_set"))
+            )
+            assert len(records) == 1 and records[0].actor == str(org)
+            assert records[0].details["reason"] == body["reason"]
+            assert records[0].details["previous_priority"] is None
+            snap = snapshot(db, ids[:2], config(), now())
+            assert (str(jobs[0]) in {j["id"] for j in snap["jobs"]}) == (
+                state == "approved"
+            )
