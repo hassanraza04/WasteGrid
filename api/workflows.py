@@ -6,9 +6,11 @@ import math
 from uuid import uuid4
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.assessment import calculate_priority
 from api.models import Assignment, Crew, Event, Job, Plan, Report
 from api.schemas import (
     CrewPatch,
@@ -18,7 +20,9 @@ from api.schemas import (
     PlanningInput,
     PlanProposal,
     PlanStop,
+    ResidentAnswers,
     TriageRecommendation,
+    WasteAssessment,
 )
 from api.services import assert_version, command_seen, event, invalidate_plan
 
@@ -63,7 +67,7 @@ def build_planning_input(db: Session) -> PlanningInput:
             service_minutes=j.estimated_service_minutes,
         )
         for j in unfinished
-        if j.assigned_crew_id and (j.locked or j.status == "in_progress")
+        if j.assigned_crew_id and (j.locked or j.status in ("in_progress", "blocked"))
     ]
     value = PlanningInput(
         jobs=[JobView.model_validate(j) for j in unfinished],
@@ -81,6 +85,25 @@ def build_planning_input(db: Session) -> PlanningInput:
         ).encode()
     ).hexdigest()
     return value
+
+
+def assessment_allows_job(report: Report) -> bool:
+    """Legacy decisions cannot bypass the completed assessment boundary."""
+    if (
+        report.assessment_status != "assessed"
+        or report.needs_review
+        or report.priority not in ("high", "medium", "routine")
+        or report.assessment is None
+    ):
+        return False
+    try:
+        result = calculate_priority(
+            WasteAssessment.model_validate(report.assessment),
+            ResidentAnswers.model_validate(report.resident_answers),
+        )
+    except ValidationError:
+        return False
+    return not result.needs_review and result.priority is not None
 
 
 def apply_triage(db: Session, proposal: TriageRecommendation, actor="agent") -> Report:
@@ -116,6 +139,14 @@ def apply_triage(db: Session, proposal: TriageRecommendation, actor="agent") -> 
         report.state = "needs_info"
     elif not proposal.evidence_sufficient:
         report.state = "needs_review"
+    elif proposal.next_action in (
+        "create_job",
+        "link_job",
+    ) and not assessment_allows_job(report):
+        raise HTTPException(
+            409,
+            "A completed eligible assessment is required before creating or linking a job",
+        )
     elif proposal.next_action == "link_job":
         candidate = (
             db.get(Report, proposal.duplicate_candidate_id)
@@ -126,6 +157,7 @@ def apply_triage(db: Session, proposal: TriageRecommendation, actor="agent") -> 
         if (
             not proposal.duplicate_confirmed
             or not job
+            or not assessment_allows_job(candidate)
             or candidate.id == report.id
             or job.status in ("completed", "recheck_requested")
             or candidate.id not in evidence
@@ -200,7 +232,7 @@ def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
             proposed.service_minutes,
         ) != (stop.crew_id, stop.position, stop.service_minutes):
             raise HTTPException(
-                422, "Preserve in-progress and manually locked assignments"
+                422, "Preserve in-progress, blocked, and locked assignments"
             )
         if (
             jobs[jid].status == "in_progress"
@@ -222,11 +254,18 @@ def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
         previous = f"crew:{cid}"
         for stop in stops:
             job = jobs[stop.job_id]
-            # Ongoing work stays with its crew even if availability changes.
-            if job.status != "in_progress" and (
-                not eligible(job, crews[cid])
-                or job.held
-                or job.status in ("blocked", "recheck_requested")
+            # Ongoing work remains fixed. Blocked work can only retain a
+            # currently eligible crew so its validated plan permits resumption.
+            if (
+                job.status == "blocked"
+                and (job.id not in fixed or not eligible(job, crews[cid]) or job.held)
+            ) or (
+                job.status not in ("in_progress", "blocked")
+                and (
+                    not eligible(job, crews[cid])
+                    or job.held
+                    or job.status == "recheck_requested"
+                )
             ):
                 raise HTTPException(
                     422,
@@ -240,13 +279,18 @@ def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
             used[str(cid)] += stop.travel_minutes + stop.service_minutes
             previous = f"job:{job.id}"
         tails[cid] = previous
-        # If existing completed/ongoing work already exceeds a shortened shift,
-        # preserve it but admit no further work to that crew.
+        # Ongoing work cannot be undone when a shift shrinks. Blocked work
+        # must still fit so the crew can resume from this validated plan.
         protected = current.completed_minutes[str(cid)] + sum(
             s.travel_minutes + s.service_minutes
             for s in stops
-            if jobs[s.job_id].status == "in_progress"
+            if jobs[s.job_id].status in ("in_progress", "blocked")
         )
+        if any(jobs[s.job_id].status == "blocked" for s in stops):
+            if used[str(cid)] > crews[cid].shift_minutes + 0.001:
+                raise HTTPException(
+                    422, "Blocked assignment exceeds crew shift capacity"
+                )
         if used[str(cid)] > max(crews[cid].shift_minutes, protected) + 0.001:
             raise HTTPException(422, "Plan exceeds crew shift capacity")
     for jid, item in unassigned.items():
@@ -299,7 +343,7 @@ def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
             job.route_position = stop.position
             job.travel_minutes = stop.travel_minutes
             job.unassigned_reason = None
-            if job.status != "in_progress":
+            if job.status not in ("in_progress", "blocked"):
                 job.status = "assigned"
             db.add(
                 Assignment(

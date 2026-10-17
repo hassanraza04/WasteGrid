@@ -76,6 +76,14 @@ handling requires review even when a high/medium obstruction priority is support
 Suspected special handling keeps any supported high/medium priority and prohibits
 ordinary job creation through the legacy automatic triage boundary.
 
+Creating or linking an ordinary job requires a completed `assessed` result, a
+supported priority and no review flag. The backend revalidates stored evidence
+and resident answers before permitting either action; pending, failed, missing
+or unsafe assessments cannot bypass this gate through legacy triage. Duplicate
+linking also requires an eligible assessment on the existing report. Review and
+information requests remain possible while assessment is pending. Demo seeds and
+legacy planning tests explicitly supply labeled synthetic assessments.
+
 Timeout, provider error, missing credentials at processing time or invalid JSON
 sets `assessment_status: failed`, `priority: null`, `needs_review: true`. The report
 and photo remain available. There is no output repair or automatic retry. Expired

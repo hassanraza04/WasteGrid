@@ -8,24 +8,33 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from api.models import Event, OutgoingMessage, Photo, Plan, Report, Task, now
-from api.schemas import TriageRecommendation
+from api.schemas import PlanStop, TriageRecommendation
 from api.worker import process_one
 from api.workflows import apply_plan, apply_triage, build_planning_input
 from scripts.migrate import migrate
 from tests.backend.conftest import INTERNAL, auth, bind, report
-from tests.backend.providers import TestProvider
+from tests.backend.providers import TestProvider, seed_eligible_assessment
 
 
-def drain(client, engine, provider=None):
-    provider = provider or TestProvider()
+def prepare_legacy_triage(engine):
     # Explicitly seed legacy triage work for these planning/messaging scenarios.
     # New-report assessment processing is tested independently in test_assessment.py.
     with Session(engine) as db:
         for task in db.scalars(
-            select(Task).where(Task.kind == "assessment", Task.status == "pending")
+            select(Task).where(
+                Task.kind.in_(["assessment", "triage"]), Task.status == "pending"
+            )
         ):
             task.kind = "triage"
+            row = db.get(Report, UUID(task.payload["report_id"]))
+            if row.assessment_status == "pending":
+                seed_eligible_assessment(row)
         db.commit()
+
+
+def drain(client, engine, provider=None):
+    provider = provider or TestProvider()
+    prepare_legacy_triage(engine)
     for _ in range(50):
         if not process_one(engine, provider, client.app.state.cloud):
             break
@@ -356,6 +365,152 @@ def test_removed_crew_cannot_start_and_replan_is_feasible(client, png, engine, s
     assert new["status"] == "assigned"
 
 
+@pytest.mark.parametrize("start_first", [False, True])
+def test_blocked_job_retains_assignment_and_can_resume_after_replan(
+    client, png, engine, seeded, start_first
+):
+    report(client, png)
+    drain(client, engine)
+    job = client.get("/jobs", headers=auth("org")).json()[0]
+    crew_id = job["assigned_crew_id"]
+    owner = "a" if crew_id == str(seeded["crew_a"]) else "b"
+    path = "/jobs/" + job["id"]
+
+    if start_first:
+        started = client.patch(
+            path,
+            headers=auth(owner),
+            json={
+                "command_id": str(uuid4()),
+                "expected_version": job["version"],
+                "status": "in_progress",
+            },
+        )
+        assert started.status_code == 200, started.text
+        job = started.json()
+        drain(client, engine)
+
+    blocked = client.patch(
+        path,
+        headers=auth(owner),
+        json={
+            "command_id": str(uuid4()),
+            "expected_version": job["version"],
+            "status": "blocked",
+        },
+    )
+    assert blocked.status_code == 200, blocked.text
+    assert blocked.json()["assigned_crew_id"] == crew_id
+    assert client.get("/plans/current", headers=auth("org")).json()["plan"]["stale"]
+    resume = {
+        "command_id": str(uuid4()),
+        "expected_version": blocked.json()["version"],
+        "status": "in_progress",
+    }
+    assert client.patch(path, headers=auth(owner), json=resume).status_code == 409
+
+    drain(client, engine)
+    current = client.get(path, headers=auth(owner)).json()["job"]
+    assert current["status"] == "blocked"
+    assert current["assigned_crew_id"] == crew_id
+    plan = client.get("/plans/current", headers=auth("org")).json()["plan"]
+    assert not plan["stale"]
+    assert any(stop["job_id"] == job["id"] for stop in plan["assignments"])
+    resume["expected_version"] = current["version"]
+    resumed = client.patch(path, headers=auth(owner), json=resume)
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["status"] == "in_progress"
+    assert resumed.json()["assigned_crew_id"] == crew_id
+    assert client.patch(path, headers=auth(owner), json=resume).status_code == 200
+
+
+def test_planner_cannot_assign_an_unassigned_blocked_job(client, png, engine, seeded):
+    report(client, png)
+    prepare_legacy_triage(engine)
+    assert process_one(engine, TestProvider(), client.app.state.cloud)
+    job = client.get("/jobs", headers=auth("org")).json()[0]
+    assert job["status"] == "unassigned"
+    blocked = client.patch(
+        "/jobs/" + job["id"],
+        headers=auth("org"),
+        json={
+            "command_id": str(uuid4()),
+            "expected_version": job["version"],
+            "status": "blocked",
+            "reason": "Needs organizer review",
+        },
+    )
+    assert blocked.status_code == 200, blocked.text
+    with Session(engine) as db:
+        current = build_planning_input(db)
+        proposal = TestProvider().generate_plan(current)
+        assert proposal.unassigned[0].reason_code == "blocked"
+        proposal.unassigned = []
+        crew_index = current.node_ids.index(f"crew:{seeded['crew_a']}")
+        job_index = current.node_ids.index(f"job:{job['id']}")
+        proposal.assignments = [
+            PlanStop(
+                job_id=UUID(job["id"]),
+                crew_id=seeded["crew_a"],
+                position=0,
+                travel_minutes=current.travel_minutes[crew_index][job_index],
+                service_minutes=job["estimated_service_minutes"],
+            )
+        ]
+        with pytest.raises(HTTPException, match="job eligibility"):
+            apply_plan(db, proposal)
+
+
+@pytest.mark.parametrize(
+    ("crew_change", "error"),
+    [
+        ({"available": False}, "job eligibility"),
+        ({"equipment": []}, "job eligibility"),
+        ({"shift_minutes": 1}, "shift capacity"),
+    ],
+)
+def test_blocked_assignment_replan_requires_current_crew_resources(
+    client, png, engine, seeded, crew_change, error
+):
+    report(client, png)
+    drain(client, engine)
+    job = client.get("/jobs", headers=auth("org")).json()[0]
+    crew_id = job["assigned_crew_id"]
+    owner = "a" if crew_id == str(seeded["crew_a"]) else "b"
+    blocked = client.patch(
+        "/jobs/" + job["id"],
+        headers=auth(owner),
+        json={
+            "command_id": str(uuid4()),
+            "expected_version": job["version"],
+            "status": "blocked",
+        },
+    )
+    assert blocked.status_code == 200, blocked.text
+    crew = next(
+        c
+        for c in client.get("/crews", headers=auth("org")).json()
+        if c["id"] == crew_id
+    )
+    changed = client.patch(
+        "/crews/" + crew_id,
+        headers=auth("org"),
+        json={
+            "command_id": str(uuid4()),
+            "expected_version": crew["version"],
+            **crew_change,
+        },
+    )
+    assert changed.status_code == 200, changed.text
+    with Session(engine) as db:
+        proposal = TestProvider().generate_plan(build_planning_input(db))
+        assert any(stop.job_id == UUID(job["id"]) for stop in proposal.assignments)
+        count = db.scalar(select(func.count()).select_from(Plan))
+        with pytest.raises(HTTPException, match=error):
+            apply_plan(db, proposal)
+        assert db.scalar(select(func.count()).select_from(Plan)) == count
+
+
 def test_missing_information_and_hazard_do_not_create_jobs(client, png, engine):
     report(client, png, note="Suspected hazard")
     missing = client.post("/reports", files={"photo": ("a.png", png, "image/png")})
@@ -533,6 +688,7 @@ def test_triage_safety_duplicate_and_stale_decision(client, png, engine):
         estimated_service_minutes=10,
     )
     with Session(engine) as db:
+        seed_eligible_assessment(db.get(Report, rid))
         row = apply_triage(db, proposal)
         assert row.state == "needs_review" and row.job_id is None
         db.commit()
@@ -689,8 +845,15 @@ def test_contract_exports_match_source():
 
     from scripts.export_contracts import DEST, artifacts
 
-    for relative, value in artifacts().items():
+    generated = artifacts()
+    for relative, value in generated.items():
         assert json.loads((DEST / relative).read_text()) == value, relative
+    assert (
+        generated["openapi.json"]["paths"]["/reports"]["post"]["responses"]["413"][
+            "description"
+        ]
+        == "Content Too Large"
+    )
 
 
 @pytest.mark.parametrize("phrase", ["Request Entity Too Large", "Content Too Large"])

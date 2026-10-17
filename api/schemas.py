@@ -163,7 +163,7 @@ class ReportView(Contract):
     updated_at: datetime
     latest_update: ReportUpdate | None
     timeline: list[EventView]
-    triage: TriageRecommendation | None
+
     assessment_status: Literal["pending", "assessed", "needs_review", "failed"] = (
         "pending"
     )
@@ -172,6 +172,12 @@ class ReportView(Contract):
     priority_reason: str | None = None
     assessment: WasteAssessment | None = None
     resident_answers: ResidentAnswers = Field(default_factory=ResidentAnswers)
+
+
+class OrganizerReportView(ReportView):
+    """Organizer and trusted reasoning context, never a resident response."""
+
+    triage: TriageRecommendation | None
 
 
 class ReportCreated(Contract):
@@ -209,7 +215,7 @@ class JobDetails(Contract):
 
 
 class ReportDetails(Contract):
-    report: ReportView
+    report: OrganizerReportView
     events: list[AuditEvent]
 
 
@@ -280,7 +286,7 @@ class ConversationView(Contract):
 class Snapshot(Contract):
     """Explicit allowlist for reasoning; never includes resident credentials."""
 
-    report: ReportView
+    report: OrganizerReportView
     job: JobView | None
 
 
@@ -314,7 +320,7 @@ class UnassignedJob(Contract):
 class PlanningInput(Contract):
     jobs: list[JobView]  # unfinished jobs, sorted by UUID
     crews: list[CrewView]  # sorted by UUID
-    fixed_assignments: list[PlanStop]  # in-progress or manually locked
+    fixed_assignments: list[PlanStop]  # in-progress, blocked with a crew, or locked
     completed_minutes: dict[str, float]  # crew UUID -> consumed shift minutes
     node_ids: list[str]  # crew:<uuid> depots followed by job:<uuid> locations
     travel_minutes: list[list[float]]

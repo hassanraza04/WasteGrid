@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.models import ConversationMessage, Event, OutgoingMessage, Report, Task
+from api.services import snapshot
 from scripts.migrate import MIGRATIONS
 from tests.backend.conftest import INTERNAL, auth, bind, report
 from tests.backend.test_backend import drain
@@ -59,8 +60,38 @@ def test_reference_lookup_authorization_and_organizer_views(client, png):
     listing = client.get("/organizer/reports", headers=auth("org")).json()
     assert any(r["public_reference"] == value["public_reference"] for r in listing)
     detail = client.get("/organizer/reports/" + value["id"], headers=auth("org"))
-    assert detail.json()["report"] == value
+    assert detail.json()["report"] == {**value, "triage": None}
     assert token not in detail.text
+
+
+def test_triage_decision_is_private_to_organizer_and_internal_context(
+    client, png, engine, seeded
+):
+    created = report(client, png, title="Park litter")
+    rid = created["report"]["id"]
+    reference = created["report"]["public_reference"]
+    assert "triage" not in created["report"]
+    drain(client, engine)
+    organizer = client.get("/organizer/reports/" + rid, headers=auth("org"))
+    decision = organizer.json()["report"]["triage"]
+    assert decision["decision_summary"] == "Test-only structured recommendation"
+    job = client.get("/jobs", headers=auth("org")).json()[0]
+    owner = "a" if job["assigned_crew_id"] == str(seeded["crew_a"]) else "b"
+    for path in (f"/reports/{rid}", f"/reports/by-reference/{reference}"):
+        for token in (created["access_token"], "org", owner):
+            response = client.get(path, headers=auth(token))
+            assert response.status_code == 200, response.text
+            assert "triage" not in response.json()
+            assert decision["decision_summary"] not in response.text
+    listing = client.get("/organizer/reports", headers=auth("org")).json()
+    assert next(item for item in listing if item["id"] == rid)["triage"] == decision
+    with Session(engine) as db:
+        assert (
+            snapshot(db, db.get(Report, UUID(rid))).report.triage.model_dump(
+                mode="json"
+            )
+            == decision
+        )
 
 
 def test_reference_is_unique_and_immutable_in_database(client, png, engine):
@@ -231,6 +262,13 @@ def test_update_history_keeps_completion_snapshot_after_recheck(
     completed_view = client.get(url, headers=headers).json()
     assert completed_view["dashboard_status"] == "resolved"
     assert completed_view["latest_update"]["job_status"] == "completed"
+    completion_photo = completed_view["completion_photo_ids"][0]
+    photo_path = f"/photos/{completion_photo}/access"
+    assert client.get(photo_path, headers=headers).status_code == 200
+    other = report(client, png)
+    assert (
+        client.get(photo_path, headers=auth(other["access_token"])).status_code == 404
+    )
     recheck = client.post(
         "/internal/conversations/" + convo["id"] + "/recheck",
         headers=INTERNAL,

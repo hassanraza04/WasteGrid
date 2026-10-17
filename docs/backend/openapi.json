@@ -1076,6 +1076,231 @@
         "title": "Location",
         "type": "object"
       },
+      "OrganizerReportView": {
+        "additionalProperties": false,
+        "description": "Organizer and trusted reasoning context, never a resident response.",
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "assessment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WasteAssessment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assessment_status": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "assessed",
+              "needs_review",
+              "failed"
+            ],
+            "title": "Assessment Status",
+            "type": "string"
+          },
+          "clarifications": {
+            "items": {
+              "$ref": "#/components/schemas/ClarificationRecord"
+            },
+            "title": "Clarifications",
+            "type": "array"
+          },
+          "completion_photo_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Completion Photo Ids",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dashboard_status": {
+            "enum": [
+              "submitted",
+              "in-progress",
+              "resolved"
+            ],
+            "title": "Dashboard Status",
+            "type": "string"
+          },
+          "display_status": {
+            "title": "Display Status",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "illustrative": {
+            "title": "Illustrative",
+            "type": "boolean"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "latest_update": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportUpdate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "location": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Location"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "needs_review": {
+            "default": false,
+            "title": "Needs Review",
+            "type": "boolean"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "photo_id": {
+            "format": "uuid",
+            "title": "Photo Id",
+            "type": "string"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "high",
+                  "medium",
+                  "routine"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "priority_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Reason"
+          },
+          "public_reference": {
+            "pattern": "^WG-[0-9A-F]{12}$",
+            "title": "Public Reference",
+            "type": "string"
+          },
+          "resident_answers": {
+            "$ref": "#/components/schemas/ResidentAnswers"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ReportState"
+          },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/EventView"
+            },
+            "title": "Timeline",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "triage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TriageRecommendation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "public_reference",
+          "title",
+          "address",
+          "state",
+          "display_status",
+          "dashboard_status",
+          "location",
+          "note",
+          "clarifications",
+          "photo_id",
+          "completion_photo_ids",
+          "job_id",
+          "version",
+          "illustrative",
+          "created_at",
+          "updated_at",
+          "latest_update",
+          "timeline",
+          "triage"
+        ],
+        "title": "OrganizerReportView",
+        "type": "object"
+      },
       "OutgoingView": {
         "additionalProperties": false,
         "properties": {
@@ -1285,7 +1510,7 @@
             "type": "array"
           },
           "report": {
-            "$ref": "#/components/schemas/ReportView"
+            "$ref": "#/components/schemas/OrganizerReportView"
           }
         },
         "required": [
@@ -1586,16 +1811,6 @@
             "title": "Title",
             "type": "string"
           },
-          "triage": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TriageRecommendation"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -1625,8 +1840,7 @@
           "created_at",
           "updated_at",
           "latest_update",
-          "timeline",
-          "triage"
+          "timeline"
         ],
         "title": "ReportView",
         "type": "object"
@@ -1675,7 +1889,7 @@
             ]
           },
           "report": {
-            "$ref": "#/components/schemas/ReportView"
+            "$ref": "#/components/schemas/OrganizerReportView"
           }
         },
         "required": [
@@ -4364,7 +4578,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/ReportView"
+                    "$ref": "#/components/schemas/OrganizerReportView"
                   },
                   "title": "Response List Reports Organizer Reports Get",
                   "type": "array"
@@ -4607,7 +4821,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReportView"
+                  "$ref": "#/components/schemas/OrganizerReportView"
                 }
               }
             },

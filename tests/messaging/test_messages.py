@@ -35,7 +35,9 @@ class WrappedMessage:
     root: object
 
 
-def message(*, platform: str = "imessage", status: str = "received", text: str = "hello") -> Message:
+def message(
+    *, platform: str = "imessage", status: str = "received", text: str = "hello"
+) -> Message:
     return Message(
         id="pho_msg_test",
         platform=platform,
@@ -82,8 +84,12 @@ def test_extract_inbound_text_unwraps_generated_root_models() -> None:
 
 def test_extract_inbound_text_unwraps_agent_and_space_root_models() -> None:
     inbound_message = message()
-    object.__setattr__(inbound_message, "receivedBy", WrappedMessage(User(id="pho_usr_agent")))
-    object.__setattr__(inbound_message, "space", WrappedMessage(Space(id="pho_spc_test")))
+    object.__setattr__(
+        inbound_message, "receivedBy", WrappedMessage(User(id="pho_usr_agent"))
+    )
+    object.__setattr__(
+        inbound_message, "space", WrappedMessage(Space(id="pho_spc_test"))
+    )
 
     inbound = extract_inbound_text(inbound_message)
 

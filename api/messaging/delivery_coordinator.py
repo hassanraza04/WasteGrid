@@ -1,7 +1,7 @@
 """Queue and dispatch replies through the durable delivery ledger."""
 
-from datetime import datetime
 import logging
+from datetime import datetime
 from typing import Iterable, Protocol
 
 from api.messaging.delivery_ledger import DeliveryLedger
@@ -39,7 +39,9 @@ class DeliveryCoordinator:
     ) -> list[str]:
         queued: list[str] = []
         for message in messages:
-            if self._ledger.enqueue_reply(message, self._policy.reply_for(message), now):
+            if self._ledger.enqueue_reply(
+                message, self._policy.reply_for(message), now
+            ):
                 queued.append(message.id)
         return queued
 

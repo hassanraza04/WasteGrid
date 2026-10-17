@@ -33,10 +33,14 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
     try:
         poll_interval_seconds = float(interval_text)
     except ValueError as error:
-        raise ConfigurationError("PHOTON_POLL_INTERVAL_SECONDS must be a number") from error
+        raise ConfigurationError(
+            "PHOTON_POLL_INTERVAL_SECONDS must be a number"
+        ) from error
 
     if poll_interval_seconds <= 0:
-        raise ConfigurationError("PHOTON_POLL_INTERVAL_SECONDS must be greater than zero")
+        raise ConfigurationError(
+            "PHOTON_POLL_INTERVAL_SECONDS must be greater than zero"
+        )
 
     return PhotonConfig(
         project_id=project_id,

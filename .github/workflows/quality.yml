@@ -1,0 +1,66 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python quality
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: uv sync --locked --group dev --extra backend
+      - run: uv run --extra backend black --check api scripts tests
+      - run: uv run --extra backend isort --check-only api scripts tests
+      - run: uv run --extra backend flake8 api/*.py scripts tests/backend --select=E9,F63,F7,F82,F401,F841
+      - run: uv run --extra backend mypy --strict api/messaging
+      - run: uv run --extra backend python -m scripts.export_contracts --check
+      - run: uv run --extra backend pytest -q
+      - run: uv run --extra backend pip-audit --ignore-vuln PYSEC-2026-2275
+
+  web:
+    name: Web quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run coverage
+      - run: npm run build

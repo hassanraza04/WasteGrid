@@ -1,0 +1,7 @@
+{
+  "high": true,
+   "report-type": "summary",
+  // braces + node-forge: no patched release yet; build tooling only (Metro, Expo CLI), not in the app bundle.
+  // Recheck when Expo/Metro ships a fix.
+  "allowlist": ["GHSA-vfj7-8cjw-p6xm", "GHSA-86w9-cpqp-85rv"]
+}

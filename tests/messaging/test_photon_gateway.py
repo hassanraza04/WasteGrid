@@ -64,14 +64,23 @@ def test_send_reply_targets_the_same_space_from_the_agent_identity() -> None:
         text="hello",
     )
 
-    gateway(FakeClient(projects)).send_reply(inbound, "Photon Spectrum is connected. You said: hello")
+    gateway(FakeClient(projects)).send_reply(
+        inbound, "Photon Spectrum is connected. You said: hello"
+    )
 
     assert projects.send_input is not None
     assert projects.send_input.path.id == "pho_prj_test"
-    assert projects.send_input.headers.idempotency_key == "wastegrid-reply-pho_msg_inbound"
+    assert (
+        projects.send_input.headers.idempotency_key == "wastegrid-reply-pho_msg_inbound"
+    )
     assert projects.send_input.body.senderId == "pho_usr_agent"
     assert projects.send_input.body.spaceId == "pho_spc_test"
-    assert "parentMessageId" not in projects.send_input.body.model_dump(exclude_unset=True)
+    assert "parentMessageId" not in projects.send_input.body.model_dump(
+        exclude_unset=True
+    )
     assert projects.send_input.body.content.type == "text"
     assert projects.send_input.body.content.format == "plain"
-    assert projects.send_input.body.content.text == "Photon Spectrum is connected. You said: hello"
+    assert (
+        projects.send_input.body.content.text
+        == "Photon Spectrum is connected. You said: hello"
+    )

@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from api.assessment import calculate_priority
 from api.auth import digest
 from api.config import Settings
 from api.db import make_engine, mutation_lock
@@ -26,7 +27,13 @@ from api.models import (
     Report,
     Task,
 )
-from api.schemas import PlanProposal, PlanStop, TriageRecommendation, UnassignedJob
+from api.schemas import (
+    PlanProposal,
+    PlanStop,
+    TriageRecommendation,
+    UnassignedJob,
+    WasteAssessment,
+)
 from api.services import event
 from api.storage import SupabaseCloud
 from api.workflows import apply_plan, apply_triage, build_planning_input
@@ -159,6 +166,28 @@ def seed(engine, cloud, reset=False):
                     note="ILLUSTRATIVE: " + label,
                     illustrative=True,
                 )
+                # Explicit synthetic evidence, never represented as a live AI result.
+                assessment = WasteAssessment(
+                    description="Illustrative: " + label,
+                    size="medium",
+                    obstruction="none_visible",
+                    obstruction_level="none",
+                    forces_people_into_traffic="no",
+                    special_handling=(
+                        "suspected" if kind == "hazard" else "none_identified"
+                    ),
+                    visible_fire="no",
+                    visible_sharp_objects="no",
+                    reason="Illustrative fixture; not an actual model result.",
+                )
+                priority = calculate_priority(assessment)
+                row.assessment = assessment.model_dump(mode="json")
+                row.assessment_status = (
+                    "needs_review" if priority.needs_review else "assessed"
+                )
+                row.priority = priority.priority
+                row.needs_review = priority.needs_review
+                row.priority_reason = priority.priority_reason
                 db.add(row)
                 db.flush()
                 content = fixture_photo(label)

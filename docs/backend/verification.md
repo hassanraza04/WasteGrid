@@ -1,4 +1,96 @@
-# Dashboard contract completion — verification evidence
+# Dashboard contract completion: verification evidence
+
+## Integrated branch verification: 2026-10-17
+
+Recorded at 12:00 UTC after merging `origin/main`
+`60687a73453827efe7f8a54a02ba5f78ae246f66` into `omer/backend-foundation`.
+Review checkpoint `fd2603e` and merge commit `b625a91` preserve published history.
+The following results cover the actual merged branch with the accompanying CI
+integration changes, rather than the earlier disposable compatibility copies.
+
+| Check | Result |
+| --- | --- |
+| Python 3.12.3, full suite against PostgreSQL 17 | 85 passed; 0 failures/errors/skips |
+| Python 3.13.15, full suite against PostgreSQL 17 | 85 passed; 0 failures/errors/skips |
+| OpenAPI/schema/fixture export checks | Passed on Python 3.12 and 3.13 |
+| Black, isort, flake8, messaging mypy | Passed; mypy checked 8 messaging source files |
+| Python dependency audit | Passed with upstream's existing `PYSEC-2026-2275` exception; no new exclusions |
+| Six migrations, populated upgrade and replay checks | Passed on disposable databases |
+| Python 3.12 Docker build and HTTP smoke | Passed all 11 HTTP checks |
+| Web, Node 22.23.3 | 24 tests passed; coverage and production build passed; audit found 0 vulnerabilities |
+| Mobile, Node 22.23.3 | Typecheck, lint, and configured audit passed |
+
+The mobile audit reported 20 high-severity dependency findings covered by its
+existing two advisory exceptions (`GHSA-86w9-cpqp-85rv` and
+`GHSA-vfj7-8cjw-p6xm`). The exceptions were preserved, not expanded.
+Mobile, web, and messaging source matches the merged upstream revision.
+
+The CI Python job now installs the backend extra and the unified dev group,
+starts PostgreSQL 17 with disposable test credentials, and verifies generated
+contracts. The local verification script also checks that the lockfile agrees
+with the manifest. Both Python test reports confirm no skipped tests.
+
+Docker image: `sha256:b3b7e1d475640a973de1b72db641c23456c38c76b81a6edd7ca7b15f2a914cbd`.
+Local JUnit reports: `/tmp/wastegrid-backend-verification/pytest.xml` and
+`/tmp/wastegrid-backend-verification/pytest313.xml`.
+Hosted CI and review status are available on [PR #4](https://github.com/hassanraza04/WasteGrid/pull/4).
+Live Supabase, Render, Person 3, Photon, and frontend acceptance remain separate
+integration checks; the cloud calls in local backend tests use explicit doubles.
+The earlier sections and `verification.json` below are historical evidence.
+
+## Second PR review follow-up: 2026-10-17
+
+Fixed blocked assignments now require current crew availability and equipment
+when a plan is applied. A blocked crew route must also fit its current shift;
+ongoing work retains the previous shortened-shift exception. Three regression
+cases reject plans after availability, equipment, or shift capacity changes,
+while the existing blocked-job resume and ongoing-work tests still pass.
+
+The 413 OpenAPI description is now explicitly `Content Too Large`, so generated
+contracts do not depend on the Python HTTP status phrase. The regenerated
+`openapi.json` differs only in that description. `uv sync --locked --extra
+backend` and the contract export check passed. The full
+`scripts/verify_backend.sh` run passed **85 Python tests**, contract checks,
+flake8, Black, isort, six disposable PostgreSQL migrations, Docker build, and
+11 HTTP smoke checks. No tests were skipped. The four documentation headings
+with em dashes were updated to plain punctuation.
+
+At this checkpoint, the fetched `origin/main` was `430a0172323c938e6ea927681f5372fd7e4eac74`.
+An isolated copy of that revision with the current backend files and a resolved
+combined lockfile passed the contract check and **85 Python tests** against the
+disposable PostgreSQL server. This compatibility copy did not change branch
+history.
+PR #4 then reported a conflict and requested changes. Shared changed paths since
+the merge base are `.gitignore`, `README.md`, `pyproject.toml`, and `uv.lock`.
+The branch update was subsequently authorized and completed as recorded above.
+
+## First PR review follow-up: 2026-10-17
+
+Hassan's requested privacy and credential-comparison fixes are implemented in
+the working tree. Public report creation/lookup responses now omit `triage`;
+organizer report routes and trusted Person 3 snapshots retain it. Completion
+photo access uses constant-time resident token-hash comparison. The separate
+automated review finding is also addressed: assigned blocked work remains fixed
+through a new plan and can resume when the current plan and crew constraints
+allow it. Focused tests cover both blocked entry states, cross-report photo
+access, and denial of planner assignment for unassigned blocked work.
+
+`scripts/verify_backend.sh` passed on the review working tree: **82 Python
+tests**, contract export, flake8/Black/isort, six migrations, Docker build, and
+11 HTTP smoke checks. A disposable copy combining this backend with latest
+`origin/main` `430a0172323c938e6ea927681f5372fd7e4eac74` passed **82 tests** and
+the generated contract check with a resolved combined lockfile. No live
+Supabase, Render, Chalk, or Photon exchange is claimed.
+
+At this checkpoint, the upstream CI workflow still needed integration:
+its `uv sync --locked --group dev` omitted the optional `backend` extra,
+and its Python job provided no `TEST_DATABASE_URL`. Replaying its commands in
+the disposable combined copy failed during collection with missing `psycopg`.
+Installing the backend extra and provisioning disposable PostgreSQL was required
+for CI to test the backend. At that checkpoint, the review changes were
+uncommitted and PR #4 conflicted with the advanced `main`.
+
+## Earlier dashboard-contract evidence
 
 Recorded 2026-10-17T03:43:06.641278+00:00. The approved incremental backend plan is
 implemented. The code is ready for teammate adapter integration and review;
@@ -63,10 +155,12 @@ ignore file preserved both sets of rules. The working `.gitignore` also retains
 `.data/` and environment exclusions. An actual Git update may still need conflict
 resolution; the user-run instructions are in [merge.md](merge.md).
 
-Working branch HEAD remains `a20a5a6c3ba030b523da0645be8124110d23893a` on
-`omer/backend-foundation`; index is empty. No commits, pushes, rebases or merges
-were performed. Teammate frontend/mobile/messaging implementation files were
-not changed. Frontend/mobile builds were not run.
+At this earlier checkpoint, working branch HEAD was
+`a20a5a6c3ba030b523da0645be8124110d23893a` on
+`omer/backend-foundation`, and the index was empty. No commits, pushes, rebases
+or merges were performed during that verification. Teammate frontend, mobile,
+and messaging implementation files were not changed. Frontend and mobile builds
+were not run.
 
 ## Evidence and remaining acceptance
 

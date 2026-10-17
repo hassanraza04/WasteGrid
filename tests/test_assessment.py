@@ -531,3 +531,113 @@ def test_photo_location_answers_and_note_reach_gateway(report_api, assessment_db
         assert len(calls) == 1
     finally:
         gateway.close()
+
+
+def ordinary_proposal(row, **changes):
+    from api.schemas import TriageRecommendation
+
+    return TriageRecommendation(
+        report_id=row.id,
+        command_id=uuid4(),
+        expected_version=row.version,
+        category="mixed",
+        proposed_equipment=["gloves", "trash_bags"],
+        missing_information=[],
+        evidence_sufficient=True,
+        decision_summary="Ordinary cleanup",
+        evidence_report_ids=[row.id],
+        estimated_service_minutes=20,
+        **{"next_action": "create_job", **changes},
+    )
+
+
+@pytest.mark.parametrize("action", ["create_job", "link_job"])
+@pytest.mark.parametrize("status", ["pending", "failed", "needs_review", "assessed"])
+def test_ineligible_assessment_blocks_ordinary_jobs(assessment_db, action, status):
+    from fastapi import HTTPException
+
+    from api.models import Job
+    from api.workflows import apply_triage
+
+    with Session(assessment_db) as db:
+        row = Report(
+            photo_id=uuid4(),
+            token_hash="test",
+            location={"latitude": 24.9, "longitude": 67.0},
+            assessment_status=status,
+        )
+        db.add(row)
+        db.flush()
+        with pytest.raises(HTTPException) as error:
+            apply_triage(db, ordinary_proposal(row, next_action=action))
+        assert error.value.status_code == 409
+        assert row.job_id is None
+        assert db.scalar(select(Job)) is None
+
+
+def test_completed_assessment_allows_job_then_duplicate_link(assessment_db):
+    from api.workflows import apply_triage
+
+    with Session(assessment_db) as db:
+        rows = [
+            Report(
+                photo_id=uuid4(),
+                token_hash="test",
+                location={"latitude": 24.9, "longitude": 67.0},
+                assessment_status="assessed",
+                priority="routine",
+                assessment=assessment().model_dump(),
+            )
+            for _ in range(2)
+        ]
+        db.add_all(rows)
+        db.flush()
+        first, second = rows
+        apply_triage(db, ordinary_proposal(first))
+        proposal = ordinary_proposal(
+            second,
+            next_action="link_job",
+            duplicate_candidate_id=first.id,
+            duplicate_confirmed=True,
+        )
+        proposal.evidence_report_ids.append(first.id)
+        apply_triage(db, proposal)
+        assert first.job_id is not None
+        assert second.job_id == first.job_id
+
+
+def test_pending_triage_race_cannot_leave_hazard_linked(report_api, assessment_db):
+    from fastapi import HTTPException
+
+    from api.models import Job
+    from api.workflows import apply_triage
+
+    client, png, _ = report_api
+    created = client.post(
+        "/reports",
+        files={"photo": ("a.png", png, "image/png")},
+        data={"latitude": "24.9", "longitude": "67.0"},
+    ).json()
+    from uuid import UUID
+
+    rid = UUID(created["report"]["id"])
+
+    def assess(*args):
+        with Session(assessment_db) as db:
+            row = db.get(Report, rid)
+            assert row.assessment_status == "pending"
+            with pytest.raises(HTTPException) as error:
+                apply_triage(db, ordinary_proposal(row))
+            assert error.value.status_code == 409
+            db.rollback()
+        return assessment(special_handling="suspected")
+
+    assert process_one(
+        assessment_db, None, client.app.state.cloud, SimpleNamespace(assess=assess)
+    )
+    with Session(assessment_db) as db:
+        row = db.get(Report, rid)
+        assert row.assessment_status == "needs_review"
+        assert row.needs_review
+        assert row.job_id is None
+        assert db.scalar(select(Job)) is None
