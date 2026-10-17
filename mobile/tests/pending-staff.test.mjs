@@ -77,3 +77,14 @@ test('two concurrent retries share one upload',async()=>{
  const first=app.service.submitStaff(command),second=app.service.submitStaff(command);assert.equal(first,second);
  gate.resolve(Response.json({...job,status:'completed'}));await first;assert.equal(posts,1);
 });
+test('a replacement account cannot borrow an in-flight action promise',async()=>{
+ const app=setup();const command=await app.service.prepareStaff('completion',job,'file:///camera/cleanup.jpg');
+ const started=deferred(),reply=deferred();
+ app.respond((_url,init)=>{if(init.method==='POST'){started.resolve();return reply.promise;}return Response.json({job,events:[]});});
+ const first=app.service.submitStaff(command);const settled=first.catch(()=>{});
+ try{
+  await started.promise;app.session({userId:'B',role:'crew',crewId:'crew'});
+  await assert.rejects(app.service.submitStaff(command),/account that saved/);
+ }finally{reply.resolve(Response.json({...job,status:'completed'}));await settled;}
+ assert.equal(app.files.has(command.photoUri),true);assert.deepEqual(await app.service.pendingStaff(),[]);
+});

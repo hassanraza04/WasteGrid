@@ -88,6 +88,8 @@ function remove(command: StaffCommand) {
 }
 const running = new Map<string, Promise<unknown>>();
 export function submitStaff(command: StaffCommand): Promise<unknown> {
+  // A cached in-flight promise is still private to the account that initiated it.
+  try { authorised(command); } catch (error) { return Promise.reject(error); }
   const existing = running.get(command.command_id);
   if (existing) return existing;
   const work = (async () => {
