@@ -1,5 +1,85 @@
 # Dashboard and messaging handoff: proposed v0.2
 
+## Local demo status
+
+Supabase migrations, Auth roles, private Storage and the illustrative dataset
+are configured. The backend runs locally at `http://127.0.0.1:8000` after the
+[startup command](setup.md#current-local-demo). Its Supabase project URL is
+`https://einjnvlhdogzdxafauyr.supabase.co`. There is no shared hosted API yet:
+`localhost` on a teammate's computer refers to their own computer.
+
+Run `uv run --extra backend python -m scripts.verify_live_backend` for live
+authentication/read/privacy checks. It preserves the ten reports, six jobs,
+two crews, ten photos and five assignments, and saves secret-free evidence
+under `.data/`. Full write workflows are tested against disposable local
+PostgreSQL. Synthetic images and decisions remain illustrative fixtures.
+
+## Owner checklist
+
+| Owner | Inputs and next action |
+| --- | --- |
+| Frontend/mobile | Use the API base URL and Supabase project URL above. Obtain the **publishable** key from project Settings → API Keys. Use `signInWithPassword`, send the resulting user access JWT to FastAPI, and check `/auth/me`. Replace local demo adapters with asynchronous requests, required photo upload, private resident-token storage, and the tracking/history mappings below. |
+| Person 3 | Implement HTTP `POST /triage`, `/plan`, `/followup` with the generated schemas and fixtures, or provide the documented Python factory. Supply `PERSON3_BASE_URL` and any `PERSON3_API_KEY` privately to the backend owner. Optional snapshot tools use the separate `AGENT_API_KEY` in `X-Agent-Key`. Configure and start the worker only after the provider is ready; inspect `/tasks` and retry failed tasks explicitly. |
+| Person 4 | Obtain `MESSAGING_API_KEY` privately for server-side `X-Integration-Key`. Implement opt-in linking, conversation resolution after restart, stable inbound message IDs, outgoing leases/retries, and delivery acknowledgements with the exact `sent_text`. The Photon echo agent must be replaced by this adapter before claiming integrated delivery. |
+
+The common contract is [contracts.md](contracts.md); the generated
+[OpenAPI](openapi.json), [schemas](schemas/) and [fixtures](fixtures/) are the
+implementation reference. Provider recommendations pass through backend
+validation and must not write the database directly. Messaging delivery uses
+the existing transport ledger plus backend outgoing IDs for deduplication.
+Coordinate v0.2 with the other owners before claiming their adapters are ready.
+
+The private `.env.supabase-demo` file contains the three account passwords and
+IDs. Give teammates only the accounts they need through a private channel.
+Database, Storage secret, agent and messaging keys are server credentials; they
+do not belong in browser/mobile configuration or shared example payloads.
+
+## Local Swagger walkthrough
+
+1. Start the API with the command in [setup.md](setup.md#current-local-demo),
+   then open `http://127.0.0.1:8000/docs`. Execute `GET /health` and `GET /ready`.
+2. Obtain a user access JWT for the organizer. The local Python snippet below
+   reads the saved demo credentials and prints only that short-lived user token
+   for copying into Swagger. Run it privately; omit its output from recordings,
+   logs and shared handoffs. The automated verifier never prints tokens.
+
+   ```bash
+   uv run --extra backend python - <<'PY'
+   from dotenv import dotenv_values
+   from api.config import Settings
+   from api.storage import SupabaseCloud
+
+   values = dotenv_values('.env.supabase-demo', interpolate=False)
+   label = 'ORGANIZER'  # Change to CREW_A or CREW_B for the crew walkthrough.
+   cloud = SupabaseCloud(Settings())
+   try:
+       result = cloud.call('POST', '/auth/v1/token?grant_type=password', json={
+           'email': values[f'DEMO_{label}_EMAIL'],
+           'password': values[f'DEMO_{label}_PASSWORD'],
+       }).json()
+       print(result['access_token'])
+   finally:
+       cloud.close()
+   PY
+   ```
+
+3. Click **Authorize**, use **ReportOrStaffBearer**, and paste the JWT value
+   without adding `Bearer`. Execute `GET /auth/me`; expect `organizer`.
+4. Execute `GET /organizer/reports`; expect ten illustrative reports. Use a
+   returned report UUID with `GET /organizer/reports/{report_id}` to inspect its
+   stored decision and audit history. `GET /plans/current` shows the fixture plan.
+5. Repeat the snippet with `CREW_A`, replace the Swagger authorization, and
+   confirm `/auth/me` returns that crew. `GET /jobs` returns three assignments;
+   Crew B returns two. A crew receives 403 on organizer listings and 404 for the
+   other crew's job UUID. `GET /jobs/{job_id}` provides accessible photo UUIDs.
+6. Use an accessible photo UUID with `GET /photos/{photo_id}/access`. Open the
+   returned signed URL within 300 seconds; it shows a labeled synthetic image.
+   Other crews cannot obtain that URL. The automated verifier also confirms
+   that the public Storage URL fails.
+7. Log out of Swagger's authorization when finished. Keep this walkthrough to
+   GET operations. New report submission and lifecycle mutations belong to the
+   later integrated demo; the current fixtures have no published resident tokens.
+
 The backend now supports the requested report identity, authorized tracking,
 organizer reads, update history and conversation history. The routes below are
 implemented and covered by PostgreSQL tests. Teammates still need to connect

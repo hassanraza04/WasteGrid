@@ -4,5 +4,6 @@
   "basedpyright.disableLanguageServices": true,
   "ty.disableLanguageServices": true,
   "ty.diagnosticMode": "off",
-  "ruff.enable": false
+  "ruff.enable": false,
+  "python.terminal.useEnvFile": true
 }
