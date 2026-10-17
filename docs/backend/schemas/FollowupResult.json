@@ -1,0 +1,195 @@
+{
+  "$defs": {
+    "Clarification": {
+      "additionalProperties": false,
+      "properties": {
+        "command_id": {
+          "format": "uuid",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "expected_version": {
+          "minimum": 1,
+          "title": "Expected Version",
+          "type": "integer"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Location"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "note": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command_id",
+        "expected_version",
+        "note"
+      ],
+      "title": "Clarification",
+      "type": "object"
+    },
+    "ClarifyAction": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/Clarification"
+        },
+        "kind": {
+          "const": "clarification",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "data"
+      ],
+      "title": "ClarifyAction",
+      "type": "object"
+    },
+    "Location": {
+      "additionalProperties": false,
+      "properties": {
+        "landmark": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Landmark"
+        },
+        "latitude": {
+          "maximum": 90,
+          "minimum": -90,
+          "title": "Latitude",
+          "type": "number"
+        },
+        "longitude": {
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Longitude",
+          "type": "number"
+        }
+      },
+      "required": [
+        "latitude",
+        "longitude"
+      ],
+      "title": "Location",
+      "type": "object"
+    },
+    "NoAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "none",
+          "default": "none",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "NoAction",
+      "type": "object"
+    },
+    "Recheck": {
+      "additionalProperties": false,
+      "properties": {
+        "command_id": {
+          "format": "uuid",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "expected_version": {
+          "minimum": 1,
+          "title": "Expected Version",
+          "type": "integer"
+        },
+        "reason": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command_id",
+        "expected_version",
+        "reason"
+      ],
+      "title": "Recheck",
+      "type": "object"
+    },
+    "RecheckAction": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/Recheck"
+        },
+        "kind": {
+          "const": "recheck",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "data"
+      ],
+      "title": "RecheckAction",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "discriminator": {
+        "mapping": {
+          "clarification": "#/$defs/ClarifyAction",
+          "none": "#/$defs/NoAction",
+          "recheck": "#/$defs/RecheckAction"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NoAction"
+        },
+        {
+          "$ref": "#/$defs/ClarifyAction"
+        },
+        {
+          "$ref": "#/$defs/RecheckAction"
+        }
+      ],
+      "title": "Action"
+    },
+    "reply_text": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Reply Text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "reply_text",
+    "action"
+  ],
+  "title": "FollowupResult",
+  "type": "object"
+}

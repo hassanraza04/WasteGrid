@@ -10,10 +10,13 @@ __pycache__
 dist
 .coverage
 .pytest_cache/
+htmlcov/
 
 # Local configuration
 .env
 .data/
+.env.*
+!.env.example
 
 # Intellij
 *.iml

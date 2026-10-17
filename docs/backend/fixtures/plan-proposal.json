@@ -1,0 +1,14 @@
+{
+  "assignments": [
+    {
+      "crew_id": "30000000-0000-4000-8000-000000000001",
+      "job_id": "20000000-0000-4000-8000-000000000001",
+      "position": 0,
+      "service_minutes": 15,
+      "travel_minutes": 0.0
+    }
+  ],
+  "revision": "EXAMPLE_REVISION_REPLACE_WITH_CURRENT_INPUT",
+  "travel_estimates_label": "Illustrative estimate: straight-line distance × 1.3 at 20 km/h; no live traffic",
+  "unassigned": []
+}

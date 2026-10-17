@@ -11,12 +11,25 @@ dependencies = [
   "photonhq-api>=0.5.0",
 ]
 
+[project.optional-dependencies]
+backend = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.34,<1",
+  "sqlalchemy>=2.0,<3",
+  "psycopg[binary]>=3.2,<4",
+  "pydantic-settings>=2.7,<3",
+  "httpx>=0.28,<1",
+  "python-multipart>=0.0.20,<1",
+  "pillow>=11,<13",
+]
+
 [dependency-groups]
 dev = [
   "pytest>=7.0",
   "pytest-cov>=4.0",
   "black>=23.0",
   "isort>=5.0",
+  "flake8>=6.0",
   "ipython>=8.37.0",
   "jupyter>=1.1.1",
   "ipykernel>=6.29.5",

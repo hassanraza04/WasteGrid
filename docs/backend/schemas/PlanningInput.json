@@ -1,0 +1,331 @@
+{
+  "$defs": {
+    "CrewView": {
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "equipment": {
+          "items": {
+            "$ref": "#/$defs/Equipment"
+          },
+          "title": "Equipment",
+          "type": "array"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "illustrative": {
+          "title": "Illustrative",
+          "type": "boolean"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "shift_minutes": {
+          "title": "Shift Minutes",
+          "type": "integer"
+        },
+        "start_location": {
+          "$ref": "#/$defs/Location"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "equipment",
+        "shift_minutes",
+        "available",
+        "start_location",
+        "illustrative",
+        "version"
+      ],
+      "title": "CrewView",
+      "type": "object"
+    },
+    "Equipment": {
+      "enum": [
+        "gloves",
+        "trash_bags",
+        "broom",
+        "shovel",
+        "wheelbarrow",
+        "pickup_truck"
+      ],
+      "title": "Equipment",
+      "type": "string"
+    },
+    "JobState": {
+      "enum": [
+        "unassigned",
+        "assigned",
+        "in_progress",
+        "blocked",
+        "completed",
+        "recheck_requested"
+      ],
+      "title": "JobState",
+      "type": "string"
+    },
+    "JobView": {
+      "additionalProperties": false,
+      "properties": {
+        "assigned_crew_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Assigned Crew Id"
+        },
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "decision_summary": {
+          "title": "Decision Summary",
+          "type": "string"
+        },
+        "estimated_service_minutes": {
+          "title": "Estimated Service Minutes",
+          "type": "integer"
+        },
+        "held": {
+          "title": "Held",
+          "type": "boolean"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "illustrative": {
+          "title": "Illustrative",
+          "type": "boolean"
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "locked": {
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "required_equipment": {
+          "items": {
+            "$ref": "#/$defs/Equipment"
+          },
+          "title": "Required Equipment",
+          "type": "array"
+        },
+        "route_position": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Route Position"
+        },
+        "status": {
+          "$ref": "#/$defs/JobState"
+        },
+        "travel_minutes": {
+          "title": "Travel Minutes",
+          "type": "number"
+        },
+        "unassigned_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Unassigned Reason"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "location",
+        "category",
+        "required_equipment",
+        "estimated_service_minutes",
+        "assigned_crew_id",
+        "locked",
+        "held",
+        "route_position",
+        "travel_minutes",
+        "decision_summary",
+        "unassigned_reason",
+        "version",
+        "illustrative"
+      ],
+      "title": "JobView",
+      "type": "object"
+    },
+    "Location": {
+      "additionalProperties": false,
+      "properties": {
+        "landmark": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Landmark"
+        },
+        "latitude": {
+          "maximum": 90,
+          "minimum": -90,
+          "title": "Latitude",
+          "type": "number"
+        },
+        "longitude": {
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Longitude",
+          "type": "number"
+        }
+      },
+      "required": [
+        "latitude",
+        "longitude"
+      ],
+      "title": "Location",
+      "type": "object"
+    },
+    "PlanStop": {
+      "additionalProperties": false,
+      "properties": {
+        "crew_id": {
+          "format": "uuid",
+          "title": "Crew Id",
+          "type": "string"
+        },
+        "job_id": {
+          "format": "uuid",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "position": {
+          "minimum": 0,
+          "title": "Position",
+          "type": "integer"
+        },
+        "service_minutes": {
+          "exclusiveMinimum": 0,
+          "title": "Service Minutes",
+          "type": "integer"
+        },
+        "travel_minutes": {
+          "minimum": 0,
+          "title": "Travel Minutes",
+          "type": "number"
+        }
+      },
+      "required": [
+        "job_id",
+        "crew_id",
+        "position",
+        "travel_minutes",
+        "service_minutes"
+      ],
+      "title": "PlanStop",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "completed_minutes": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Completed Minutes",
+      "type": "object"
+    },
+    "crews": {
+      "items": {
+        "$ref": "#/$defs/CrewView"
+      },
+      "title": "Crews",
+      "type": "array"
+    },
+    "fixed_assignments": {
+      "items": {
+        "$ref": "#/$defs/PlanStop"
+      },
+      "title": "Fixed Assignments",
+      "type": "array"
+    },
+    "jobs": {
+      "items": {
+        "$ref": "#/$defs/JobView"
+      },
+      "title": "Jobs",
+      "type": "array"
+    },
+    "node_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Node Ids",
+      "type": "array"
+    },
+    "revision": {
+      "title": "Revision",
+      "type": "string"
+    },
+    "travel_estimates_label": {
+      "title": "Travel Estimates Label",
+      "type": "string"
+    },
+    "travel_minutes": {
+      "items": {
+        "items": {
+          "type": "number"
+        },
+        "type": "array"
+      },
+      "title": "Travel Minutes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "jobs",
+    "crews",
+    "fixed_assignments",
+    "completed_minutes",
+    "node_ids",
+    "travel_minutes",
+    "travel_estimates_label",
+    "revision"
+  ],
+  "title": "PlanningInput",
+  "type": "object"
+}
