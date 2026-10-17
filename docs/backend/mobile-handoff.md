@@ -48,7 +48,7 @@ The shared development API passed hosted acceptance on 17 October 2026. Use its
 verified HTTPS URL for device integration; coordinate state-changing tests with
 Omer so they do not alter the illustrative Supabase fixture unexpectedly.
 
-Proposed mobile configuration, for example in `mobile/.env.local`:
+Mobile configuration, for example in `mobile/.env.local`:
 
 ```dotenv
 EXPO_PUBLIC_API_BASE_URL=https://wastegrid-api-dev.onrender.com
@@ -56,10 +56,11 @@ EXPO_PUBLIC_SUPABASE_URL=https://einjnvlhdogzdxafauyr.supabase.co
 EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=REPLACE_WITH_PUBLISHABLE_KEY
 ```
 
-The native resident adapter now reads `EXPO_PUBLIC_API_BASE_URL`. The two
-Supabase settings remain reserved for future mobile staff sign-in. API paths below are relative to the base URL, with no
-extra `/api` prefix. Resident-only screens need just the API base URL. The two
-Supabase values are needed when implementing staff sign-in.
+The native resident adapter reads `EXPO_PUBLIC_API_BASE_URL`; mobile sign-in now
+uses the two public Supabase settings. Staff roles come from `/auth/me`. API paths
+below are relative to the base URL, with no extra `/api` prefix. Anonymous report
+submission needs just the API base URL. The two
+Supabase values are needed for account sign-in and the login-gated history screen.
 
 Omer can retrieve the project's publishable key in Supabase **Project Settings →
 API Keys**. Request the publishable key (`sb_publishable_…`), never the secret or

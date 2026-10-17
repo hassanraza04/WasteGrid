@@ -49,3 +49,66 @@ test('encodes all 32 random bytes into the backend token format', () => {
  assert.equal(residentToken(bytes), 'wg_r_' + Buffer.from(bytes).toString('base64url'));
  assert.match(residentToken(bytes), /^wg_r_[A-Za-z0-9_-]{43}$/);
 });
+
+const { reportFields, ReportRejectedError, sendSavedDraft, discardRejectedDraft } = await import('../src/services/report-client.ts');
+test('address-only submissions omit coordinates and unanswered safety questions', async () => {
+ const fields = reportFields(' Bags outside ', { coords: null, address: ' 12 Main Street ' });
+ const { request, calls } = transport(new Response(null, { status: 404 }), Response.json({ report }));
+ await uploadReport({ ...draft, fields }, 'token', photo, request);
+ const body = calls[1][1].body;
+ assert.equal(body.get('address'), '12 Main Street');
+ for (const key of ['latitude', 'longitude', 'resident_fire', 'resident_sharp_objects']) assert.equal(body.has(key), false);
+});
+test('form validation accepts GPS without an address and rejects missing or oversized addresses', () => {
+ assert.equal(reportFields('Bags', { coords: { latitude: 0, longitude: 0 }, address: '' }).latitude, '0');
+ assert.throws(() => reportFields('Bags', { coords: null, address: ' ' }), /address/);
+ assert.throws(() => reportFields('Bags', { coords: null, address: 'x'.repeat(501) }), /500/);
+ assert.throws(() => reportFields(' ', { coords: null, address: 'Street' }), /caption/);
+});
+for (const status of [413, 415, 422]) {
+ test(`persists rejection after POST ${status} so it survives app restart`, async () => {
+  const { request } = transport(new Response(null, { status: 404 }), new Response(null, { status }));
+  let saved;
+  await assert.rejects(sendSavedDraft(draft, 'token', photo, request, async value => { saved = value; }), ReportRejectedError);
+  assert.ok(saved.rejection);
+  assert.deepEqual(saved.fields, draft.fields);
+  assert.equal(saved.id, draft.id);
+ });
+ test(`a GET ${status} is not evidence that an upload was rejected`, async () => {
+  const { request } = transport(new Response(null, { status }));
+  let saved = false;
+  await assert.rejects(sendSavedDraft(draft, 'token', photo, request, async () => { saved = true; }));
+  assert.equal(saved, false);
+ });
+}
+test('ambiguous upload failures retain the immutable identity without allowing discard', async () => {
+ for (const failure of [new Error('lost response'), new Response(null, { status: 500 }), new Response(null, { status: 409 })]) {
+  const { request } = transport(new Response(null, { status: 404 }), failure);
+  let saved = false;
+  await assert.rejects(sendSavedDraft(draft, 'token', photo, request, async () => { saved = true; }));
+  assert.equal(saved, false);
+ }
+});
+test('discard removes only a rejected draft with a successful server absence check', async () => {
+ let removed = 0;
+ const rejected = { ...draft, rejection: 'Rejected' };
+ for (const guarded of [draft, { ...rejected, reference: 'WG-REAL' }]) {
+  await assert.rejects(discardRejectedDraft(guarded, 'token', async () => { throw Error('should not request'); }, async () => { removed++; }));
+ }
+ for (const response of [Response.json(report), new Error('offline'), new Response(null, { status: 503 })]) {
+  const { request } = transport(response);
+  await assert.rejects(discardRejectedDraft(rejected, 'token', request, async () => { removed++; }));
+ }
+ assert.equal(removed, 0);
+ const { request } = transport(new Response(null, { status: 404 }));
+ await discardRejectedDraft(rejected, 'token', request, async () => { removed++; });
+ assert.equal(removed, 1);
+});
+test('recovering an accepted report clears an older rejection without deleting credentials', async () => {
+ const { request } = transport(Response.json(report));
+ let saved;
+ await sendSavedDraft({ ...draft, rejection: 'Old rejection', ownerId: 'owner' }, 'token', photo, request, async value => { saved = value; });
+ assert.equal(saved.reference, report.public_reference);
+ assert.equal(saved.ownerId, 'owner');
+ assert.equal(saved.rejection, undefined);
+});

@@ -6,6 +6,8 @@ export interface ReportDraft {
   mime: string;
   fields: Record<string, string>;
   reference?: string;
+  ownerId?: string;
+  rejection?: string;
 }
 
 export interface SavedReport {
@@ -23,16 +25,17 @@ export class ReportApiError extends Error {
   constructor(message: string, status: number) { super(message); this.status = status; }
 }
 
-function failed(response: Response): never {
+function failed(response: Response, upload = false): never {
   const messages: Record<number, string> = {
     401: "This device cannot access this report.",
     403: "This device cannot access this report.",
     409: "This report was already submitted with different details. Keep this draft and check its status.",
-    413: "The photo is too large. The limit is 8 MiB.",
+    413: "Use a photo smaller than 8 MiB and no larger than 25 megapixels.",
     415: "Use a JPEG, PNG or WebP photo.",
     422: "The report could not be accepted. Check the photo and report details.",
   };
-  throw new ReportApiError(messages[response.status] ?? "WasteGrid is unavailable. Keep this draft and retry shortly.", response.status);
+  const ErrorType = upload && [413, 415, 422].includes(response.status) ? ReportRejectedError : ReportApiError;
+  throw new ErrorType(messages[response.status] ?? "WasteGrid is unavailable. Keep this draft and retry shortly.", response.status);
 }
 
 export async function readReport(draft: ReportDraft, token: string, request: Transport): Promise<SavedReport | null> {
@@ -61,7 +64,7 @@ export async function uploadReport(
     method: "POST", headers: { "X-Report-Token": token }, body,
     signal: AbortSignal.timeout(90_000), redirect: "error",
   });
-  if (!response.ok) failed(response);
+  if (!response.ok) failed(response, true);
   const result: { report: SavedReport } = await response.json();
   if (result.report.id !== draft.id) throw new Error("Unexpected report response. Keep your saved draft.");
   return result.report;
@@ -76,4 +79,45 @@ export function residentToken(bytes: Uint8Array): string {
   }
   if (bits) output += alphabet[(buffer << (6 - bits)) & 63];
   return output;
+}
+
+export function reportFields(caption: string, location: { coords: { latitude: number; longitude: number } | null; address: string } | null): Record<string, string> {
+  const note = caption.trim();
+  const address = location?.address.trim() ?? "";
+  if (!note) throw new Error("Add a caption before submitting.");
+  if (address.length > 500) throw new Error("Keep the address to 500 characters or fewer.");
+  if (!location?.coords && !address) throw new Error("Enter an address or use your current location.");
+  return {
+    title: note.slice(0, 160), note,
+    ...(address ? { address } : {}),
+    ...(location?.coords ? { latitude: String(location.coords.latitude), longitude: String(location.coords.longitude) } : {}),
+  };
+}
+
+// Only validation failures from POST establish that these bytes were rejected.
+// Errors from the recovery GET, conflicts and timeouts must preserve the draft.
+export class ReportRejectedError extends ReportApiError {}
+
+export async function sendSavedDraft(
+  draft: ReportDraft, token: string, photo: Blob, request: Transport,
+  save: (draft: ReportDraft) => Promise<void>,
+): Promise<SavedReport> {
+  try {
+    const report = await uploadReport(draft, token, photo, request);
+    const { rejection: _rejection, ...saved } = draft;
+    await save({ ...saved, reference: report.public_reference });
+    return report;
+  } catch (error) {
+    if (error instanceof ReportRejectedError) await save({ ...draft, rejection: error.message });
+    throw error;
+  }
+}
+
+export async function discardRejectedDraft(
+  draft: ReportDraft, token: string, request: Transport, remove: () => Promise<void>,
+): Promise<void> {
+  if (!draft.rejection || draft.reference) throw new Error("Only a rejected upload can be discarded. Check this report's status first.");
+  const existing = await readReport(draft, token, request);
+  if (existing) throw new Error("WasteGrid has accepted this report. Refresh its status instead of discarding it.");
+  await remove();
 }

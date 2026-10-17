@@ -38,11 +38,24 @@ are ignored by Git. Never commit `.env`.
 
 ## Connected resident and organiser flow
 
-The native mobile app uploads photos, GPS coordinates and resident answers to
-FastAPI. It saves the report UUID, private token and an immutable upload draft
-before submission. **My reports** recovers interrupted uploads and reads status
-with that report's token. Native credentials use Expo SecureStore; Expo web
+The native mobile app uploads photos, a caption and either GPS coordinates or a
+manual address to FastAPI. The form omits fire/sharp-object questions; missing
+answers remain unknown to the backend. It saves the report UUID, private token
+and an immutable upload draft before submission. **My reports** recovers interrupted uploads and reads status
+with that report's token. Definitively rejected uploads can be edited in the form
+or discarded from My reports after checking that the server has not accepted them. Timeouts
+and other uncertain outcomes retain their original identity and bytes.
+Native credentials use Expo SecureStore; Expo web
 report submission is not supported by this storage adapter.
+
+The mobile app includes the new map, report, account, crew, dispatch and statistics
+screens. Mobile sign-in uses Supabase Auth; staff roles and crew IDs come from
+`/auth/me`, and verified accounts without a staff role are residents. Sessions stay
+in memory. Report history requires login and is filtered by account on this device;
+it is not yet synced across devices. Anonymous reports remain supported, and a
+signed-in user can explicitly import earlier anonymous drafts from their device.
+New accounts must already be provisioned in Supabase; this milestone does not add
+sign-up. Private report tokens remain the backend's report-access mechanism.
 
 The web entry point is the live organiser dashboard at `/admin`. Sign-in uses
 Supabase Auth and checks the backend `/auth/me` role before reading reports.
@@ -52,8 +65,8 @@ The previous browser-local prototype remains in source for its existing tests,
 but is not mounted by the application entry point.
 
 Copy `mobile/.env.example` to `mobile/.env.local`, and `web/.env.example` to
-`web/.env.local`. Supply the project's **publishable** Supabase key in the web
-configuration. No backend secret, staff password or resident token belongs in
+`web/.env.local`. Supply the project's **publishable** Supabase key in both
+configurations. No backend secret, staff password or resident token belongs in
 these public settings. Restart development servers after configuration changes.
 
 ```bash
@@ -73,12 +86,12 @@ npm start
 ```
 
 Use a native development build or compatible Expo Go. Capture a photo, allow GPS,
-answer the fire/sharp-object questions, and submit. Wait for backend confirmation;
+enter a caption and submit. If GPS is denied, enter an address manually. Wait for backend confirmation;
 a failed upload remains available under **My reports**. Keep this device's app
 storage: the public reference cannot recover a lost resident token.
 
 The first connection milestone does not enable the assessment worker, Photon,
-crew completion screens, or the proposed routing preview/dispatch workflow.
+live crew completion, or the proposed routing preview/dispatch workflow.
 New reports can remain assessment-pending while the worker is inactive. Do not
 connect a preview button to the current `/plans/generate` endpoint: its worker
 applies assignments immediately.
@@ -90,9 +103,13 @@ Run checks with Node 22.18 or newer (CI uses the current Node 22 release):
 (cd mobile && npm test && npx tsc --noEmit && npm run lint && npm run audit:ci)
 ```
 
-The integration is based on merged `main`. Nikolas's unmerged UI branch can reuse
-`mobile/src/services/reports.ts` and `report-client.ts`; its placeholder login,
-report arrays and route calculator still require separate integration.
+The integration includes Nikolas's UI branch and keeps resident uploads in
+`mobile/src/services/reports.ts` and `report-client.ts`. Crew dispatch and city
+statistics are explicitly labelled previews with demo data. Their API connections
+remain separate work. The intended routing controls now include time available,
+maximum stops and return-to-start; cleanup is intended to support a reversible
+cleaned toggle. Those backend contract changes are pending, so prototype cleanup
+changes are local and do not call the current photo-required completion endpoint.
 
 See [repository safety](docs/repository-safety.md) for backend checks and
 [the mobile contract](docs/backend/mobile-handoff.md) for API details.
