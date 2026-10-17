@@ -3,9 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, test } from "vitest";
 
-import { App } from "../app/App";
 import { BrowserReportRepository } from "../data/browserReportRepository";
 import type { ReportRepository } from "../data/reportRepository";
+import { LiveApp } from "../live/LiveApp";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -14,7 +14,7 @@ beforeEach(() => {
 function renderAppAt(path: string, repository: ReportRepository): void {
   render(
     <MemoryRouter initialEntries={[path]}>
-      <App repository={repository} />
+      <LiveApp repository={repository} />
     </MemoryRouter>,
   );
 }

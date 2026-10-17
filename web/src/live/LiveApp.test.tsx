@@ -62,7 +62,14 @@ test("public home links to real staff login and unmatched routes show a fallback
  const { user } = setup("/"); expect(screen.getByRole("heading", { name: "WasteGrid" })).toBeInTheDocument();
  await user.click(screen.getByRole("link", { name: "Organiser sign in" })); expect(screen.getByLabelText("Password")).toBeInTheDocument();
 });
-test("unknown route does not expose the old local demo", () => { setup("/report/WG-DEMO"); expect(screen.getByRole("heading", { name: "Page not found" })).toBeInTheDocument(); });
+test("unknown routes show a fallback", () => { setup("/not-a-route"); expect(screen.getByRole("heading", { name: "Page not found" })).toBeInTheDocument(); });
+test("keeps customer report routes available beside the hosted dashboard", async () => {
+ const { user } = setup("/report/new");
+ await user.type(screen.getByLabelText("What needs attention?"), "Overflowing bin");
+ await user.type(screen.getByLabelText("Address"), "14 Market Street");
+ await user.click(screen.getByRole("button", { name: "Create report" }));
+ expect(await screen.findByRole("heading", { name: /Report WG-/ })).toBeInTheDocument();
+});
 test("missing public configuration fails closed", () => {
  vi.stubEnv("VITE_API_BASE_URL", "");
  render(<MemoryRouter initialEntries={["/admin"]}><LiveApp /></MemoryRouter>);

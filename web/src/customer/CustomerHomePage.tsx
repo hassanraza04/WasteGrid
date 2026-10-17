@@ -19,6 +19,7 @@ export function CustomerHomePage({ repository }: CustomerHomePageProperties) {
       <nav aria-label="Customer actions">
         <Link to="/report/new">Create a report</Link>
         <Link to="/report/track">Track a report</Link>
+        <Link to="/admin">Organiser sign in</Link>
       </nav>
     </main>
   );
