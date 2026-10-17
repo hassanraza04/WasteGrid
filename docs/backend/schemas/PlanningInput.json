@@ -272,7 +272,7 @@
         "service_minutes": {
           "exclusiveMinimum": 0,
           "title": "Service Minutes",
-          "type": "integer"
+          "type": "number"
         },
         "travel_minutes": {
           "minimum": 0,

@@ -305,7 +305,7 @@ class PlanStop(Contract):
     crew_id: UUID
     position: int = Field(ge=0)
     travel_minutes: float = Field(ge=0, allow_inf_nan=False)
-    service_minutes: int = Field(gt=0)
+    service_minutes: float = Field(gt=0, allow_inf_nan=False)
 
 
 class UnassignedJob(Contract):
@@ -347,10 +347,16 @@ class PlanProposal(Contract):
     travel_estimates_label: str = Field(min_length=1)
 
 
+class AssignmentExecution(Contract):
+    mode: Literal["legacy", "organizer"]
+    source_plan_id: UUID | None
+
+
 class StoredPlan(PlanProposal):
     id: UUID
     stale: bool
     created_at: datetime
+    execution_rules: dict[UUID, AssignmentExecution] = Field(default_factory=dict)
 
 
 class CurrentPlan(Contract):

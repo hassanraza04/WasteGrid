@@ -638,3 +638,144 @@ def test_organizer_priority_choice_is_audited_without_clearing_review(
             assert (str(jobs[0]) in {j["id"] for j in snap["jobs"]}) == (
                 state == "approved"
             )
+
+
+def seed_valid_legacy_assignment(engine):
+    from api.models import Event
+    from api.schemas import PlanProposal, PlanStop, UnassignedJob
+    from api.workflows import apply_plan, build_planning_input
+
+    ids, jobs = seed_routing(engine)
+    with Session(engine) as db:
+        crew = db.get(Crew, ids[2])
+        crew.equipment, crew.shift_minutes = ["pickup_truck"], 55
+        report = db.scalar(select(Report).where(Report.job_id == jobs[2]))
+        report.priority = None
+        report.assessment_status = "needs_review"
+        report.assessment = assessment(
+            obstruction="unknown", obstruction_level="unknown"
+        ).model_dump(mode="json")
+        db.add(
+            Event(
+                report_id=report.id,
+                kind="report.triaged",
+                details={
+                    "organizer_override": True,
+                    "job_id": str(jobs[2]),
+                    "reason": "Manual legacy approval",
+                },
+            )
+        )
+        db.flush()
+        request = build_planning_input(db)
+        plan = apply_plan(
+            db,
+            PlanProposal(
+                revision=request.revision,
+                travel_estimates_label=request.travel_estimates_label,
+                assignments=[
+                    PlanStop(
+                        job_id=jobs[2],
+                        crew_id=ids[2],
+                        position=0,
+                        service_minutes=50,
+                        travel_minutes=1,
+                    )
+                ],
+                unassigned=[
+                    UnassignedJob(job_id=jid, reason_code="shift_limit")
+                    for jid in jobs[:2]
+                ],
+            ),
+        )
+        db.commit()
+        ensure_can_start(db, db.get(Job, jobs[2]))
+        return ids, jobs, plan.id
+
+
+def verify_preserved_legacy_start(engine):
+    ids, jobs, legacy_id = seed_valid_legacy_assignment(engine)
+    actor, settings = uuid4(), config()
+    with Session(engine) as db:
+        view = compute_preview(db, ids[:2], settings, FakeRoads(), str(actor))
+        result = dispatch_preview(
+            db, db.get(RoutingPreview, view.id), uuid4(), actor, settings
+        )
+        rule = db.get(Plan, result["plan_id"]).payload["execution_rules"][str(jobs[2])]
+        assert rule == {"mode": "legacy", "source_plan_id": str(legacy_id)}
+        assert (
+            db.scalar(select(Report).where(Report.job_id == jobs[2])).priority is None
+        )
+        ensure_can_start(db, db.get(Job, jobs[2]))
+        # Keep the original execution rules, rather than dropping all checks.
+        db.get(Crew, ids[2]).shift_minutes = 1
+        db.flush()
+        with pytest.raises(HTTPException) as exc:
+            ensure_can_start(db, db.get(Job, jobs[2]))
+        assert exc.value.status_code == 409
+
+
+def test_unselected_legacy_null_priority_remains_startable(assessment_db, monkeypatch):
+    monkeypatch.setattr("api.routing.mutation_lock", lambda db: None)
+    verify_preserved_legacy_start(assessment_db)
+
+
+def verify_preserved_preview_durations(engine):
+    from api.schemas import StoredPlan
+
+    ids, jobs = seed_routing(engine)
+    actor, settings = uuid4(), config()
+    with Session(engine) as db:
+        ongoing = db.get(Job, jobs[0])
+        ongoing.status, ongoing.assigned_crew_id, ongoing.route_position = (
+            "in_progress",
+            ids[0],
+            0,
+        )
+        ongoing.collection_started_at = now() - timedelta(minutes=3)
+        db.commit()
+        preview = compute_preview(db, ids[:1], settings, FakeRoads(), str(actor))
+        approved = {
+            str(s.job_id): s.model_dump(mode="json")
+            for r in preview.routes
+            for s in r.stops
+        }
+        assert 1.9 < approved[str(jobs[0])]["service_minutes"] < 2.01
+        result = dispatch_preview(
+            db, db.get(RoutingPreview, preview.id), uuid4(), actor, settings
+        )
+        first = db.get(Plan, result["plan_id"])
+        saved = {s["job_id"]: s for s in first.payload["assignments"]}
+        for jid, stop in approved.items():
+            assert saved[jid]["service_minutes"] == stop["service_minutes"]
+            assert saved[jid]["travel_minutes"] == stop["travel_minutes"]
+        StoredPlan.model_validate(
+            {
+                **first.payload,
+                "id": first.id,
+                "created_at": first.created_at,
+                "stale": first.stale,
+            }
+        )
+        # Select a different crew; neither prior stop belongs to this new scope.
+        next_preview = compute_preview(db, ids[1:2], settings, FakeRoads(), str(actor))
+        second_result = dispatch_preview(
+            db, db.get(RoutingPreview, next_preview.id), uuid4(), actor, settings
+        )
+        second = db.get(Plan, second_result["plan_id"])
+        next_saved = {s["job_id"]: s for s in second.payload["assignments"]}
+        for jid in approved:
+            assert next_saved[jid] == saved[jid]
+            assert (
+                second.payload["execution_rules"][jid]
+                == first.payload["execution_rules"][jid]
+            )
+        assert db.get(Job, jobs[1]).estimated_service_minutes == 50
+        assert next_saved[str(jobs[1])]["service_minutes"] == 5
+
+
+def test_ongoing_preview_duration_survives_disjoint_dispatch(
+    assessment_db, monkeypatch
+):
+    monkeypatch.setattr("api.routing.mutation_lock", lambda db: None)
+    verify_preserved_preview_durations(assessment_db)

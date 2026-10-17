@@ -1,6 +1,37 @@
 {
   "components": {
     "schemas": {
+      "AssignmentExecution": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "legacy",
+              "organizer"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "source_plan_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Plan Id"
+          }
+        },
+        "required": [
+          "mode",
+          "source_plan_id"
+        ],
+        "title": "AssignmentExecution",
+        "type": "object"
+      },
       "AuditEvent": {
         "additionalProperties": false,
         "properties": {
@@ -1555,7 +1586,7 @@
           "service_minutes": {
             "exclusiveMinimum": 0.0,
             "title": "Service Minutes",
-            "type": "integer"
+            "type": "number"
           },
           "travel_minutes": {
             "minimum": 0.0,
@@ -2388,6 +2419,16 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "execution_rules": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AssignmentExecution"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Execution Rules",
+            "type": "object"
           },
           "id": {
             "format": "uuid",

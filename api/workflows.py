@@ -3,7 +3,7 @@
 import hashlib
 import json
 import math
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -454,7 +454,9 @@ def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
 def ensure_can_start(db: Session, job: Job):
     crew = db.get(Crew, job.assigned_crew_id) if job.assigned_crew_id else None
     plan = db.scalar(select(Plan).order_by(Plan.created_at.desc(), Plan.id).limit(1))
-    if plan is not None and plan.routing_mode == "organizer":
+    rule = plan.payload.get("execution_rules", {}).get(str(job.id)) if plan else None
+    mode = rule["mode"] if rule else plan.routing_mode if plan else "legacy"
+    if mode == "organizer":
         reports = list(db.scalars(select(Report).where(Report.job_id == job.id)))
         assigned = db.scalar(
             select(Assignment.id).where(
@@ -497,7 +499,14 @@ def ensure_can_start(db: Session, job: Job):
         return
     if not eligible(job, crew) or job.held:
         raise HTTPException(409, "Crew or job is no longer eligible; replan required")
-    plan = db.scalar(select(Plan).order_by(Plan.created_at.desc(), Plan.id).limit(1))
+    if rule:
+        # Preserved legacy work keeps its original validated plan, including its
+        # availability/equipment/shift/staleness checks; no new priority gate.
+        plan = (
+            db.get(Plan, UUID(rule["source_plan_id"]))
+            if rule["source_plan_id"]
+            else None
+        )
     if (
         plan is None
         or plan.stale

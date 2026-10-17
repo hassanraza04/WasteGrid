@@ -87,3 +87,15 @@ def test_organizer_mode_worker_consumes_invalidation_without_auto_dispatch(engin
         assert task.status == "succeeded"
         assert task.result == {"organizer_dispatch_required": True}
         assert not list(db.scalars(select(Plan)))
+
+
+def test_postgres_preserves_unselected_legacy_execution(engine):
+    from tests.test_routing import verify_preserved_legacy_start
+
+    verify_preserved_legacy_start(engine)
+
+
+def test_postgres_preserves_preview_durations_across_disjoint_dispatch(engine):
+    from tests.test_routing import verify_preserved_preview_durations
+
+    verify_preserved_preview_durations(engine)

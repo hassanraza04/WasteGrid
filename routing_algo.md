@@ -159,7 +159,10 @@ The MVP has one global operational scope: all eligible unassigned jobs, plus
 eligible unfinished jobs assigned to selected crews. Geographic-area selection is
 out of scope. Every assignment belonging to an unselected crew is outside the
 mutable scope: preserve its owner, order and status without assigning it again.
-Unselected crews' routes do not contribute to this preview's score.
+Unselected crews' routes do not contribute to this preview's score. Preserve
+stored service/travel durations and per-assignment execution rules as well as
+owner/order. A global organiser plan must not impose a new priority requirement
+on an unselected, previously validated legacy assignment.
 
 For each selected crew, preserve a fixed prefix:
 
@@ -468,3 +471,12 @@ still a separate gate.
 The branch implements backend routing with these starting defaults. Frontend
 integration, live road-service configuration and live crew GPS observations are
 still required; no hosted deployment is changed here.
+
+### Dispatch persistence clarification
+
+Save the exact preview service duration for each selected stop, including
+fractional remaining service for ongoing collection. For unselected assignments,
+carry forward saved durations and execution provenance. The current-plan API
+exposes per-job `execution_rules` (`mode`, `source_plan_id`); the plan header's
+mode does not change the policy of preserved legacy jobs. Legacy work retains its
+original validated-plan checks until explicitly selected for organiser routing.

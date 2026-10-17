@@ -365,11 +365,14 @@ def dispatch_preview(db, preview, command_id, actor, settings):
     db.add(plan)
     db.flush()
     proposed = {str(s.job_id): (r.crew_id, s) for r in view.routes for s in r.stops}
-    assignments, unassigned = [], []
+    assignments, unassigned, execution_rules = [], [], {}
     selected = set(old["crews"])
     excluded = {str(i.job_id): i.reason for i in view.exclusions}
     for job in unfinished:
         jid = str(job.id)
+        saved_stop, saved_rule = (
+            preserved_assignment(db, job) if jid not in proposed else (None, None)
+        )
         if jid in proposed:
             cid, stop = proposed[jid]
             previous = (job.assigned_crew_id, job.route_position)
@@ -414,11 +417,22 @@ def dispatch_preview(db, preview, command_id, actor, settings):
                     position=position,
                     travel_minutes=job.travel_minutes,
                     service_minutes=(
-                        settings.routing_service_minutes
+                        proposed[jid][1].service_minutes
                         if jid in proposed
-                        else job.estimated_service_minutes
+                        else (
+                            saved_stop["service_minutes"]
+                            if saved_stop
+                            else job.estimated_service_minutes
+                        )
                     ),
                 )
+            )
+            if jid not in proposed and saved_stop:
+                assignments[-1]["travel_minutes"] = saved_stop["travel_minutes"]
+            execution_rules[jid] = (
+                {"mode": "organizer", "source_plan_id": str(plan.id)}
+                if jid in proposed
+                else saved_rule
             )
         else:
             reason = (
@@ -436,6 +450,7 @@ def dispatch_preview(db, preview, command_id, actor, settings):
         assignments=assignments,
         unassigned=unassigned,
         travel_estimates_label=view.travel_label,
+        execution_rules=execution_rules,
     )
     preview.dispatched_plan_id, preview.dispatch_command_id, preview.dispatched_by = (
         plan.id,
@@ -451,6 +466,55 @@ def dispatch_preview(db, preview, command_id, actor, settings):
     )
     db.commit()
     return dict(preview_id=preview.id, plan_id=plan.id)
+
+
+def preserved_assignment(db, job):
+    """Keep the last assignment's terms and authority, not the global plan mode.
+
+    Older draft organiser plans have no per-assignment rules. Their previews tell
+    us which jobs they actually routed; walk past copied rows to their origin.
+    """
+    plans = db.scalars(
+        select(Plan)
+        .join(Assignment, Assignment.plan_id == Plan.id)
+        .where(
+            Assignment.job_id == job.id,
+            Assignment.crew_id == job.assigned_crew_id,
+            Assignment.position == job.route_position,
+        )
+        .order_by(Plan.created_at.desc(), Plan.id)
+    )
+    for previous in plans:
+        stop = next(
+            (
+                s
+                for s in previous.payload["assignments"]
+                if s["job_id"] == str(job.id)
+                and s["crew_id"] == str(job.assigned_crew_id)
+                and s["position"] == job.route_position
+            ),
+            None,
+        )
+        if stop is None:
+            continue
+        rule = previous.payload.get("execution_rules", {}).get(str(job.id))
+        if rule:
+            return stop, rule
+        if previous.routing_mode == "legacy":
+            return stop, {"mode": "legacy", "source_plan_id": str(previous.id)}
+        source = db.scalar(
+            select(RoutingPreview).where(
+                RoutingPreview.dispatched_plan_id == previous.id
+            )
+        )
+        if source and any(
+            s["job_id"] == str(job.id)
+            for r in source.payload["view"]["routes"]
+            for s in r["stops"]
+        ):
+            return stop, {"mode": "organizer", "source_plan_id": str(previous.id)}
+    # Do not turn an assignment with no validated origin into an approved one.
+    return None, {"mode": "legacy", "source_plan_id": None}
 
 
 def routing_router(settings):

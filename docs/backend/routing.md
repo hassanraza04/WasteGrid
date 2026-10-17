@@ -102,7 +102,10 @@ set priority. Replay of the same command is idempotent.
 4. Crews use existing `GET /jobs` for ordered, crew-scoped assignments. Start the
    next stop using the existing job PATCH command, which records collection start
    time. In organiser plans, starting respects route order and current approved
-   assignment; legacy equipment and shift budgets are not applied. Ownership edits
+   assignment; legacy equipment and shift budgets are not applied to newly routed
+   organiser assignments. Unselected legacy assignments retain their original
+   validated plan and execution checks, including equipment/shift checks, without
+   gaining a new priority requirement. Ownership edits
    through the legacy job PATCH are rejected in organiser mode; use dispatch.
    Editing legacy equipment/shift values does not clear organiser assignments. Completing work
    uses existing `POST /jobs/{id}/completion` with the required cleanup photo.
@@ -146,3 +149,21 @@ versions invalidate the preview. No road provider call happens under dispatch lo
 
 The 10-metre intake hard-block change and mandatory resident GPS enforcement remain
 separate work. Existing PR #6 intake behaviour is unchanged.
+
+## Preserved assignment terms
+
+Dispatched plans expose `execution_rules` keyed by job UUID, with `mode` and
+`source_plan_id`. Each newly routed stop uses organiser execution rules; an
+unselected stop inherits its validated origin instead of the global plan mode.
+A missing validated origin does not grant permission to start work. Historical
+legacy availability, equipment, shift and stale-plan checks continue to apply to
+preserved legacy work. Selecting that crew and routing its jobs explicitly is
+the migration to organiser rules.
+
+`service_minutes` in plan stops supports positive finite fractional minutes.
+Selected stops store exactly the approved preview's remaining service duration.
+Unselected stops copy their previous stored service and travel durations, not
+current defaults or `Job.estimated_service_minutes`. This remains true across
+repeated dispatches for other crews. Earlier draft organiser plans without
+execution metadata are traced through their previews/assignment history to the
+origin that actually planned the job. No new database migration is required.
