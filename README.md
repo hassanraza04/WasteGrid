@@ -7,7 +7,13 @@ instructions are in [docs/backend](docs/backend/README.md). Start with
 [setup](docs/backend/setup.md) and share the [contracts](docs/backend/contracts.md)
 with the frontend, Chalk and Photon owners.
 
-## Photon iMessage backend adapter
+## Photon–Chalk supervised pilot
+
+The bounded multi-report resident pilot and activation sequence are documented in
+[the pilot runbook](docs/backend/photon-chalk-pilot.md). Keep it disabled until the
+reviewed API revision, migrations and fixed scope pass preflight.
+
+## Legacy Photon iMessage backend adapter
 
 The agent polls Photon for new iMessages and submits them to the WasteGrid
 backend. It sends replies that the backend has prepared. There is no local echo

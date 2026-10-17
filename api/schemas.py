@@ -265,6 +265,8 @@ class Recheck(Command):
 class LinkCreated(Contract):
     link_code: str = Field(repr=False)
     expires_at: datetime
+    recipient: str | None = None
+    channel: Channel = "imessage"
 
 
 class BindConversation(Contract):

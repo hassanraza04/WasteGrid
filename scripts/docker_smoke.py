@@ -90,6 +90,8 @@ def inside():
             "/reports",
             data={
                 "note": "Docker smoke report",
+                "latitude": 24.92,
+                "longitude": 67.09,
                 "title": "Illustrative overflowing bin",
                 "address": "Illustrative park gate, Gulshan-e-Iqbal",
             },
@@ -101,7 +103,11 @@ def inside():
         pid = created["report"]["photo_id"]
         resident = {"Authorization": "Bearer " + created["access_token"]}
         reference = created["report"]["public_reference"]
-        assert created["report"]["location"] is None
+        assert created["report"]["location"] == {
+            "latitude": 24.92,
+            "longitude": 67.09,
+            "landmark": None,
+        }
         assert created["report"]["address"] == "Illustrative park gate, Gulshan-e-Iqbal"
         assert client.get("/reports/by-reference/" + reference).status_code == 401
         assert (

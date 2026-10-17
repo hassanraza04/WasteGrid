@@ -1,0 +1,10 @@
+{
+  "agent_sender_id": "example-bot",
+  "created_at": "2026-10-16T22:00:00Z",
+  "external_id": "example-private-chat",
+  "message_id": "example-inbound-1",
+  "peer_id": "example-resident",
+  "project_id": "example-project",
+  "space_kind": "direct",
+  "text": "What is the status?"
+}

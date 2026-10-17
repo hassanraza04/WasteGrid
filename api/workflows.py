@@ -544,6 +544,7 @@ def change_job(
     if seen:
         return job
     assert_version(job.version, body.expected_version)
+    previous_status = job.status
     override_fields = body.model_fields_set & {"assigned_crew_id", "locked", "held"}
     if not is_organizer and override_fields:
         raise HTTPException(403, "Only organizers can override assignments")
@@ -643,7 +644,7 @@ def change_job(
         command_id=body.command_id,
         request_hash=fingerprint,
         actor=actor,
-        details=body.model_dump(mode="json"),
+        details={**body.model_dump(mode="json"), "previous_status": previous_status},
     )
     invalidate_plan(db)
     return job

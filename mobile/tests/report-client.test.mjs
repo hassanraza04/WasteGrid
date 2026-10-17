@@ -51,8 +51,12 @@ test('encodes all 32 random bytes into the backend token format', () => {
 });
 
 const { reportFields, ReportRejectedError, sendSavedDraft, discardRejectedDraft } = await import('../src/services/report-client.ts');
-test('address-only submissions omit coordinates and unanswered safety questions', async () => {
- const fields = reportFields(' Bags outside ', { coords: null, address: ' 12 Main Street ' });
+test('fresh address-only submissions require coordinates while accepted legacy uploads recover', async () => {
+ assert.throws(() => reportFields(' Bags outside ', { coords: null, address: ' 12 Main Street ' }), /confirm a pin/);
+ const fields = { title: 'Bags outside', note: 'Bags outside', address: '12 Main Street' };
+ const recovered = transport(Response.json(report));
+ await uploadReport({ ...draft, fields }, 'token', photo, recovered.request);
+ assert.equal(recovered.calls.length, 1);
  const { request, calls } = transport(new Response(null, { status: 404 }), Response.json({ report }));
  await uploadReport({ ...draft, fields }, 'token', photo, request);
  const body = calls[1][1].body;
@@ -61,7 +65,9 @@ test('address-only submissions omit coordinates and unanswered safety questions'
 });
 test('form validation accepts GPS without an address and rejects missing or oversized addresses', () => {
  assert.equal(reportFields('Bags', { coords: { latitude: 0, longitude: 0 }, address: '' }).latitude, '0');
- assert.throws(() => reportFields('Bags', { coords: null, address: ' ' }), /address/);
+ assert.throws(() => reportFields('Bags', { coords: null, address: ' ' }), /confirm a pin/);
+ assert.throws(() => reportFields('Bags', { coords: { latitude: NaN, longitude: 0 }, address: '' }), /confirm a pin/);
+ assert.throws(() => reportFields('Bags', { coords: { latitude: 24, longitude: 181 }, address: '' }), /confirm a pin/);
  assert.throws(() => reportFields('Bags', { coords: null, address: 'x'.repeat(501) }), /500/);
  assert.throws(() => reportFields(' ', { coords: null, address: 'Street' }), /caption/);
 });

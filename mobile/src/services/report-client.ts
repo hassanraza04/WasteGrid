@@ -88,11 +88,15 @@ export function reportFields(caption: string, location: { coords: { latitude: nu
   const address = location?.address.trim() ?? "";
   if (!note) throw new Error("Add a caption before submitting.");
   if (address.length > 500) throw new Error("Keep the address to 500 characters or fewer.");
-  if (!location?.coords && !address) throw new Error("Enter an address or use your current location.");
+  const coords = location?.coords;
+  if (!coords || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude) ||
+      Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180) {
+    throw new Error("Use your current location or confirm a pin on the map before submitting.");
+  }
   return {
     title: note.slice(0, 160), note,
     ...(address ? { address } : {}),
-    ...(location?.coords ? { latitude: String(location.coords.latitude), longitude: String(location.coords.longitude) } : {}),
+    latitude: String(coords.latitude), longitude: String(coords.longitude),
   };
 }
 
@@ -156,4 +160,51 @@ export async function readPhotoAccess(draft: ReportDraft, token: string, photoId
   if (typeof access.url !== "string" || !access.url.startsWith("https://") ||
       !Number.isFinite(access.expires_in) || access.expires_in <= 0) throw new Error("Unable to load this private photo.");
   return { url: access.url, expiresAt: requestedAt + access.expires_in * 1000 };
+}
+
+export interface MessagingLink { id: string; channel: "imessage"; active: boolean; paused: boolean }
+export interface MessagingLinks { enabled: boolean; links: MessagingLink[]; recipient: string | null }
+export interface FollowupLink { link_code: string; expires_at: string; recipient: string; channel: "imessage" }
+export interface ReportMessage { id: string; direction: "inbound" | "outbound"; body: string; created_at: string }
+export interface MessagePage { items: ReportMessage[]; limit: number; offset: number; total: number }
+
+async function reportRequest(draft: ReportDraft, token: string, path: string, request: Transport, method = "GET") {
+  const response = await request(`${draft.apiUrl}/reports/${draft.id}/${path}`, {
+    method, headers: { Authorization: `Bearer ${token}`, ...(method === "POST" ? { "Content-Type": "application/json" } : {}) },
+    ...(method === "POST" ? { body: "{}" } : {}), signal: AbortSignal.timeout(60_000), redirect: "error",
+  });
+  if (!response.ok) failed(response);
+  return response;
+}
+export async function createFollowupLink(draft: ReportDraft, token: string, request: Transport): Promise<FollowupLink> {
+  const value = await (await reportRequest(draft, token, "followup-link", request, "POST")).json();
+  if (typeof value.link_code !== "string" || !/^[A-Za-z0-9_-]{4,128}$/.test(value.link_code) ||
+      !Number.isFinite(Date.parse(value.expires_at)) || Date.parse(value.expires_at) <= Date.now() ||
+      typeof value.recipient !== "string" || !value.recipient.trim() || value.channel !== "imessage") {
+    throw new Error("Messaging is not ready. Please retry later.");
+  }
+  return value;
+}
+export async function readMessagingLinks(draft: ReportDraft, token: string, request: Transport): Promise<MessagingLinks> {
+  const value = await (await reportRequest(draft, token, "messaging-links", request)).json();
+  if (typeof value.enabled !== "boolean" || !Array.isArray(value.links) ||
+      !(value.recipient === null || typeof value.recipient === "string") ||
+      !value.links.every((link: MessagingLink) => typeof link.id === "string" && link.channel === "imessage" &&
+        typeof link.active === "boolean" && typeof link.paused === "boolean")) {
+    throw new Error("Unable to read messaging status. Please retry.");
+  }
+  return value;
+}
+export async function unlinkMessaging(draft: ReportDraft, token: string, linkId: string, request: Transport): Promise<void> {
+  await reportRequest(draft, token, `messaging-links/${encodeURIComponent(linkId)}/unlink`, request, "POST");
+}
+export async function readReportMessages(draft: ReportDraft, token: string, offset: number, request: Transport): Promise<MessagePage> {
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Invalid conversation page.");
+  const value = await (await reportRequest(draft, token, `messages?limit=50&offset=${offset}`, request)).json();
+  if (!Array.isArray(value.items) || value.offset !== offset || value.limit !== 50 || !Number.isSafeInteger(value.total) || value.total < 0 ||
+      !value.items.every((item: ReportMessage) => typeof item.id === "string" && ["inbound", "outbound"].includes(item.direction) &&
+        typeof item.body === "string" && Number.isFinite(Date.parse(item.created_at)))) {
+    throw new Error("Unable to read the conversation. Please retry.");
+  }
+  return value;
 }

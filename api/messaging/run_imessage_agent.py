@@ -12,6 +12,10 @@ from api.messaging.config import load_photon_config
 from api.messaging.delivery_ledger import DeliveryLedger
 from api.messaging.messages import extract_inbound_text
 from api.messaging.photon_gateway import PhotonGateway
+from api.messaging.pilot_backend_client import PilotBackendClient
+from api.messaging.pilot_coordinator import PilotCoordinator
+from api.messaging.pilot_ledger import PilotLedger
+from api.messaging.pilot_runner import run_pilot_once
 
 logger = logging.getLogger(__name__)
 
@@ -50,18 +54,29 @@ def run_forever() -> None:
     """Poll Photon until the operator stops the process."""
     config = load_photon_config(os.environ)
     gateway = PhotonGateway(config)
-    backend = WasteGridBackendClient(config.backend)
-    ledger = DeliveryLedger(config.delivery_db_path)
-    coordinator = BackendCoordinator(
-        backend, gateway, config.backend.agent_sender_id, ledger
-    )
+    if config.pilot_enabled:
+        backend = PilotBackendClient(config.backend)
+        ledger = PilotLedger(config.delivery_db_path)
+        coordinator = PilotCoordinator(backend, gateway, ledger, config)
+    else:
+        backend = WasteGridBackendClient(config.backend)
+        ledger = DeliveryLedger(config.delivery_db_path)
+        coordinator = BackendCoordinator(
+            backend, gateway, config.backend.agent_sender_id, ledger
+        )
     logger.info("Photon iMessage agent is polling for new messages")
 
     try:
         while True:
             try:
                 poll_started_at = datetime.now(UTC)
-                submitted = run_once(gateway, coordinator, ledger, poll_started_at)
+                submitted = (
+                    run_pilot_once(
+                        gateway, coordinator, ledger, config, poll_started_at
+                    )
+                    if config.pilot_enabled
+                    else run_once(gateway, coordinator, ledger, poll_started_at)
+                )
                 if submitted:
                     logger.info("Submitted %d inbound message(s)", len(submitted))
             except Exception as error:
@@ -71,6 +86,10 @@ def run_forever() -> None:
             time.sleep(config.poll_interval_seconds)
     except KeyboardInterrupt:
         logger.info("Photon iMessage agent stopped")
+    finally:
+        close = getattr(gateway, "close", None)
+        if callable(close):
+            close()
 
 
 if __name__ == "__main__":

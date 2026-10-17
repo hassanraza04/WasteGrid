@@ -10,6 +10,7 @@ function setup(services) {
   'react-native': { ...native, AppState: { addEventListener: (_event, fn) => { onState = fn; return { remove() { onState = undefined; } }; } } },
   'expo-image': { Image: props => { images.push(props); return React.createElement('div', null, 'Private image'); } },
   '@/components/ui': ui, '@/theme': theme, '@/services/reports': services,
+  './report-messaging': { ReportMessaging: () => null },
  });
  return { ...components, images, state: value => onState?.(value) };
 }

@@ -142,6 +142,10 @@ class Conversation(Base):
     channel: Mapped[str] = mapped_column(String(30))
     external_id: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    thread_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("wastegrid.messaging_threads.id")
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class ConversationMessage(Base):
@@ -155,6 +159,9 @@ class ConversationMessage(Base):
     provider_message_id: Mapped[str | None] = mapped_column(String(200))
     outgoing_message_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("wastegrid.outgoing_messages.id"), unique=True
+    )
+    pilot_outgoing_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("wastegrid.messaging_outgoing.id"), unique=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
@@ -239,4 +246,96 @@ class Task(Base):
     )
     last_error: Mapped[str | None] = mapped_column(Text)
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class MessagingPilot(Base):
+    __tablename__ = "messaging_pilots"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(200))
+    sender_id: Mapped[str] = mapped_column(String(200))
+    report_ids: Mapped[list] = mapped_column(JSON, default=list)
+    chat_ids: Mapped[list] = mapped_column(JSON, default=list)
+    image_calls: Mapped[int] = mapped_column(Integer, default=0)
+    followup_calls: Mapped[int] = mapped_column(Integer, default=0)
+    send_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class MessagingThread(Base):
+    __tablename__ = "messaging_threads"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    pilot_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("wastegrid.messaging_pilots.id")
+    )
+    channel: Mapped[str] = mapped_column(String(30), default="imessage")
+    external_id: Mapped[str] = mapped_column(String(200))
+    project_id: Mapped[str] = mapped_column(String(200), default="")
+    sender_id: Mapped[str] = mapped_column(String(200), default="")
+    peer_id: Mapped[str] = mapped_column(String(200), default="")
+    paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    consent_revision: Mapped[int] = mapped_column(Integer, default=1)
+    selected_link_id: Mapped[UUID | None] = mapped_column(Uuid)
+    selection_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    pending_text: Mapped[str | None] = mapped_column(Text)
+    pending_inbound_id: Mapped[UUID | None] = mapped_column(Uuid)
+    pending_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_input_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_control_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class MessagingInbound(Base):
+    __tablename__ = "messaging_inbound"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    thread_id: Mapped[UUID] = mapped_column(
+        ForeignKey("wastegrid.messaging_threads.id")
+    )
+    project_id: Mapped[str] = mapped_column(String(200))
+    provider_message_id: Mapped[str] = mapped_column(String(200))
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    body: Mapped[str] = mapped_column(Text)
+    provider_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    conversation_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("wastegrid.conversations.id")
+    )
+    report_id: Mapped[UUID | None] = mapped_column(ForeignKey("wastegrid.reports.id"))
+    consent_revision: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30), default="received")
+    model_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
+    interpretation: Mapped[dict | None] = mapped_column(JSON)
+    last_error: Mapped[str | None] = mapped_column(String(100))
+
+
+class MessagingOutgoing(Base):
+    __tablename__ = "messaging_outgoing"
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    thread_id: Mapped[UUID] = mapped_column(
+        ForeignKey("wastegrid.messaging_threads.id")
+    )
+    conversation_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("wastegrid.conversations.id")
+    )
+    event_id: Mapped[UUID | None] = mapped_column(ForeignKey("wastegrid.events.id"))
+    kind: Mapped[str] = mapped_column(String(50))
+    text: Mapped[str] = mapped_column(Text)
+    external_id: Mapped[str] = mapped_column(String(200))
+    sender_id: Mapped[str] = mapped_column(String(200))
+    consent_revision: Mapped[int] = mapped_column(Integer)
+    allow_paused: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(30), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    lease_id: Mapped[UUID | None] = mapped_column(Uuid)
+    leased_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=now
+    )
+    provider_message_id: Mapped[str | None] = mapped_column(String(200))
+    provider_status: Mapped[str | None] = mapped_column(String(30))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

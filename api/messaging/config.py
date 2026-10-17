@@ -1,6 +1,7 @@
 """Local configuration for the Photon Beta integration."""
 
 import ipaddress
+import json
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -23,6 +24,8 @@ class PhotonConfig:
     backend: "BackendConfig"
     poll_interval_seconds: float
     delivery_db_path: Path
+    pilot_enabled: bool = False
+    pilot_chat_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -122,9 +125,35 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
     if invalid_interval:
         raise ConfigurationError("PHOTON_POLL_INTERVAL_SECONDS must be a number")
 
-    if poll_interval_seconds <= 0:
+    if not isfinite(poll_interval_seconds) or poll_interval_seconds <= 0:
         raise ConfigurationError(
             "PHOTON_POLL_INTERVAL_SECONDS must be greater than zero"
+        )
+
+    pilot_flag = environ.get("MESSAGING_PILOT_ENABLED", "false").lower()
+    if pilot_flag not in {"true", "false"}:
+        raise ConfigurationError("MESSAGING_PILOT_ENABLED must be true or false")
+    pilot_enabled = pilot_flag == "true"
+    pilot_chat_ids: tuple[str, ...] = ()
+    invalid_chat_ids = False
+    if pilot_enabled:
+        try:
+            chat_ids = json.loads(environ.get("MESSAGING_PILOT_CHAT_IDS", "[]"))
+            if (
+                not isinstance(chat_ids, list)
+                or len(chat_ids) > 1
+                or any(
+                    not isinstance(item, str) or not item.strip() for item in chat_ids
+                )
+            ):
+                invalid_chat_ids = True
+            else:
+                pilot_chat_ids = tuple(chat_ids)
+        except (ValueError, TypeError):
+            invalid_chat_ids = True
+    if invalid_chat_ids:
+        raise ConfigurationError(
+            "MESSAGING_PILOT_CHAT_IDS must be a JSON list of at most one space ID"
         )
 
     return PhotonConfig(
@@ -140,4 +169,6 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
         delivery_db_path=Path(
             environ.get("PHOTON_DELIVERY_DB_PATH", ".data/photon-delivery.db")
         ).expanduser(),
+        pilot_enabled=pilot_enabled,
+        pilot_chat_ids=pilot_chat_ids,
     )

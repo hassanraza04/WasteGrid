@@ -14,7 +14,7 @@ from tests.backend.conftest import INTERNAL, auth, bind, report
 from tests.backend.test_backend import drain
 
 
-def test_report_identity_without_coordinates_and_retry(client, png):
+def test_report_identity_requires_coordinates_and_preserves_retry(client, png):
     token = "wg_r_" + token_urlsafe(32)
     data = {
         "client_report_id": str(uuid4()),
@@ -30,10 +30,18 @@ def test_report_identity_without_coordinates_and_retry(client, png):
             files={"photo": ("photo.png", png, "image/png")},
         )
 
+    rejected = submit()
+    assert rejected.status_code == 422
+    assert "coordinates" in rejected.json()["detail"]
+    data.update({"latitude": 24.92, "longitude": 67.09})
     first = submit()
     assert first.status_code == 201, first.text
     value = first.json()["report"]
-    assert value["location"] is None
+    assert value["location"] == {
+        "latitude": 24.92,
+        "longitude": 67.09,
+        "landmark": None,
+    }
     assert value["address"] == data["address"]
     assert value["title"] == data["title"]
     assert re.fullmatch(r"WG-[0-9A-F]{12}", value["public_reference"])

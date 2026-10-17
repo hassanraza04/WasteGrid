@@ -156,7 +156,7 @@ def test_gateway_one_request(body, status):
 
 @pytest.fixture
 def assessment_db(monkeypatch):
-    # Use real transactions locally; PostgreSQL schema/migration checks stay in backend tests.
+    # Use real local transactions; PostgreSQL migration checks stay in backend tests.
     engine = create_engine(
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
@@ -279,7 +279,7 @@ def test_report_api_returns_pending_then_assessment(assessment_db):
         response = client.post(
             "/reports",
             files={"photo": ("waste.png", image.getvalue(), "image/png")},
-            data={"note": "Mixed waste"},
+            data={"note": "Mixed waste", "latitude": 24.92, "longitude": 67.09},
         )
         assert response.status_code == 201, response.text
         created = response.json()
@@ -885,15 +885,17 @@ def test_clarification_applies_authoritative_proximity_review(
     created = client.post(
         "/reports",
         files={"photo": ("a.png", image, "image/png")},
-        data=(
-            {}
-            if initial_latitude is None
-            else {"latitude": initial_latitude, "longitude": 67.09}
-        ),
+        data={
+            "latitude": initial_latitude if initial_latitude is not None else 25.5,
+            "longitude": 67.09,
+        },
     ).json()
     rid = UUID(created["report"]["id"])
     with Session(assessment_db) as db:
         row = db.get(Report, rid)
+        if initial_latitude is None:
+            # Exercise retained legacy recovery without creating a new GPS-free report.
+            row.location = None
         row.assessment = assessment().model_dump()
         row.assessment_status = "assessed"
         row.priority = "routine"

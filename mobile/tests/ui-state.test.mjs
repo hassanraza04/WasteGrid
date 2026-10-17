@@ -82,7 +82,7 @@ test('statistics never expose old-city data under a new city or period while loa
  } finally { await view.close(); }
 });
 
-test('report screen accepts a manual address and unlocks rejected drafts for correction', async () => {
+test('report screen requires a confirmed pin and unlocks rejected drafts for correction', async () => {
  const { ReportRejectedError } = await import('../src/services/report-client.ts');
  const client = await import('../src/services/report-client.ts');
  let form, camera, sentFields, discarded = false;
@@ -103,9 +103,11 @@ test('report screen accepts a manual address and unlocks rejected drafts for cor
  try {
   await view.render(); await act(async () => camera.onCapture('file:///photo.jpg'));
   await act(() => { form.onCaptionChange('Overflowing bin'); form.onAddressChange('12 Main Street'); });
+  assert.equal(form.canSubmit, false);
+  await act(() => form.onConfirmPin({ latitude: 24.8, longitude: 67 }));
   assert.equal(form.canSubmit, true);
   await act(async () => form.onSubmit());
-  assert.equal(sentFields.address, '12 Main Street'); assert.equal('latitude' in sentFields, false);
+  assert.equal(sentFields.address, '12 Main Street'); assert.equal(sentFields.latitude, '24.8');
   assert.equal(form.frozen, true); assert.equal(form.canSubmit, false); assert.equal(typeof form.onEditRejected, 'function');
   await act(async () => form.onEditRejected());
   assert.equal(discarded, true); assert.equal(form.frozen, false); assert.equal(form.canSubmit, true);
@@ -114,7 +116,7 @@ test('report screen accepts a manual address and unlocks rejected drafts for cor
 });
 
 
-test('retaking clears the first photo location and requires a fresh fix or explicit address', async () => {
+test('retaking clears the first photo location and requires a fresh fix or confirmed map pin', async () => {
  const client = await import('../src/services/report-client.ts');
  const requests = []; let form, camera, submitted;
  const Report = load('app/report.tsx', {
@@ -142,9 +144,10 @@ test('retaking clears the first photo location and requires a fresh fix or expli
   await act(async () => requests[1].resolve({ coords: { latitude: 25, longitude: 68 }, address: 'Late old location' }));
   assert.equal(form.location, null); assert.equal(form.canSubmit, false);
   await act(async () => form.onSubmit()); assert.equal(submitted, undefined);
-  await act(() => form.onAddressChange('Explicit new address')); assert.equal(form.canSubmit, true);
+  await act(() => form.onAddressChange('Explicit new address')); assert.equal(form.canSubmit, false);
+  await act(() => form.onConfirmPin({ latitude: 24.1, longitude: 67.1 })); assert.equal(form.canSubmit, true);
   await act(async () => form.onSubmit());
   assert.equal(submitted.photoUri, 'file:///second.jpg'); assert.equal(submitted.fields.address, 'Explicit new address');
-  assert.equal('latitude' in submitted.fields, false); assert.equal('longitude' in submitted.fields, false);
+  assert.equal(submitted.fields.latitude, '24.1'); assert.equal(submitted.fields.longitude, '67.1');
  } finally { await view.close(); }
 });

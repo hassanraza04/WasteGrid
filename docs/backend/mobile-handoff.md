@@ -140,15 +140,17 @@ No Supabase login is required.
 | `photo` | Required binary image file; send actual bytes with filename and matching MIME type |
 | `title` | Supply a meaningful title, trimmed, 1–160 characters; legacy omission defaults to `Cleanup report` |
 | `address` | Optional human-readable address, trimmed, 1–500 characters if present; omit when blank |
-| `latitude`, `longitude` | Optional pair: both or neither; ranges −90…90 and −180…180 |
+| `latitude`, `longitude` | Required pair for new submissions: GPS or an explicitly confirmed map pin; ranges −90…90 and −180…180 |
 | `landmark` | Optional, at most 300 characters; stored as part of a supplied coordinate location |
 | `note` | Optional description, at most 2,000 characters |
 | `client_report_id` | UUID generated once for this logical submission; use with `X-Report-Token` |
 
-Address and coordinates are separate fields. A manually entered address without
-GPS is accepted. Omit unknown coordinates; never substitute `(0, 0)`. The backend
-does not infer coordinates from the address, and later processing may need more
-location information.
+Address and coordinates are separate fields. A typed address adds context; new
+reports require GPS coordinates or an explicitly confirmed map pin. Never invent
+coordinates from prose or substitute `(0, 0)` for an unknown location. Successful
+identical retries of previously accepted address-only reports remain valid. For an
+older unsubmitted draft, resolve the original upload first; only a definite 404
+permits correcting its capture and creating a fresh submission identity.
 
 Photo limits: **8 MiB (8,388,608 bytes)**, JPEG/PNG/WebP, at most **25 million pixels**.
 The server checks image bytes and MIME agreement. Convert unsupported camera formats
@@ -452,3 +454,19 @@ Source contracts and further detail in the shared repository:
 This handoff and the accompanying verifier/documentation updates are delivered on
 the milestone PR branch. Until that PR is merged, use its branch for those updates;
 do not assume they are already available on `main`.
+
+
+## Supervised iMessage pilot
+
+See [pilot contracts and activation](photon-chalk-pilot.md). Report details expose
+opt-in only when the report is in the configured pilot. `POST /reports/{id}/followup-link`
+requires that report's bearer token and returns a ten-minute `link_code`,
+`expires_at`, `recipient`, and `channel: imessage`. Explain consent before the
+resident sends `LINK <code>` to the verified recipient. A composed message does
+not establish a link. Poll `GET /reports/{id}/messaging-links` for backend-confirmed
+active/paused links; its response never exposes transport identities. Unlink with
+`POST /reports/{id}/messaging-links/{link_id}/unlink` and the same report token.
+On devices without iMessage show the code/contact instructions and retain in-app
+tracking. `GET /reports/{id}/messages` remains report-scoped, including when the
+same private chat links several reports. Login-required device history and explicit
+anonymous-draft import remain the approved app policy above.

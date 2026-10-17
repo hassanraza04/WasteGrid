@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { router } from "expo-router";
 
 import { createDraft, discardDraft, sendDraft } from "@/services/reports";
@@ -12,6 +12,7 @@ export default function Report() {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [location, setLocation] = useState<PhotoLocation | null>(null);
   const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState("");
   const [caption, setCaption] = useState("");
   const [describing, setDescribing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -20,14 +21,17 @@ export default function Report() {
   const submitting = useRef(false);
   const locationRequest = useRef(0);
   const photoRevision = useRef(0);
+  useEffect(() => () => { locationRequest.current++; photoRevision.current++; }, []);
 
   const locate = async (keepTyped: boolean) => {
     const revision = ++locationRequest.current;
     setLocating(true);
+    setLocationError("");
     const result = await getPhotoLocation();
     if (revision !== locationRequest.current) return;
     setLocating(false);
     if (result) setLocation(prev => keepTyped && prev?.address ? { ...result, address: prev.address } : result);
+    else setLocationError("Your location is unavailable. Retry GPS or choose and confirm a map pin.");
   };
 
   const onCapture = (uri: string) => {
@@ -83,13 +87,17 @@ export default function Report() {
   if (!photoUri) return <CameraStep onCapture={onCapture} onClose={() => router.back()} />;
 
   return <ReportForm
-    photoUri={photoUri} location={location} locating={locating}
+    photoUri={photoUri} location={location} locating={locating} locationError={locationError}
     onAddressChange={address => setLocation(prev => ({ coords: prev?.coords ?? null, address }))}
     onRelocate={() => void locate(false)} caption={caption} onCaptionChange={setCaption}
+    onConfirmPin={coords => {
+      locationRequest.current++; setLocating(false); setLocationError("");
+      setLocation(prev => ({ coords, address: prev?.address ?? "" }));
+    }}
     describing={describing} onGenerateCaption={generateCaption}
     canSubmit={canSubmit} busy={busy} frozen={busy || !!draft} error={error}
     onEditRejected={draft?.rejection ? editRejected : undefined}
-    onRetake={() => { photoRevision.current++; locationRequest.current++; setPhotoUri(null); setLocation(null); setLocating(false); setError(""); }}
+    onRetake={() => { photoRevision.current++; locationRequest.current++; setPhotoUri(null); setLocation(null); setLocating(false); setLocationError(""); setError(""); }}
     onSubmit={onSubmit} onClose={() => router.back()}
   />;
 }
