@@ -693,6 +693,24 @@ def test_contract_exports_match_source():
         assert json.loads((DEST / relative).read_text()) == value, relative
 
 
+@pytest.mark.parametrize("phrase", ["Request Entity Too Large", "Content Too Large"])
+def test_openapi_413_description_is_independent_of_python_version(monkeypatch, phrase):
+    import http.client
+
+    from scripts.export_contracts import artifacts
+
+    monkeypatch.setitem(http.client.responses, 413, phrase)
+    spec = artifacts()["openapi.json"]
+    responses = [
+        operation["responses"]["413"]
+        for path in spec["paths"].values()
+        for operation in path.values()
+        if isinstance(operation, dict) and "413" in operation.get("responses", {})
+    ]
+    assert responses
+    assert all(response["description"] == "Content Too Large" for response in responses)
+
+
 def test_commit_acknowledgement_loss_preserves_committed_photo(
     client, png, engine, monkeypatch
 ):

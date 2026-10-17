@@ -185,7 +185,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="0.2.0",
         lifespan=lifespan,
         responses={
-            code: {"model": ErrorResponse}
+            code: {
+                "model": ErrorResponse,
+                # Python versions use different default phrases for HTTP 413.
+                **({"description": "Content Too Large"} if code == 413 else {}),
+            }
             for code in (401, 403, 404, 409, 413, 415, 503)
         },
     )
