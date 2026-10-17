@@ -1,7 +1,7 @@
 """HTTP contract tests for the narrow WasteGrid messaging client."""
 
-from dataclasses import FrozenInstanceError
 import json
+from dataclasses import FrozenInstanceError
 
 import httpx
 import pytest
@@ -30,7 +30,9 @@ def client_for(handler) -> WasteGridBackendClient:
         assert "authorization" not in request.headers
         return handler(request)
 
-    return WasteGridBackendClient(backend_config(), transport=httpx.MockTransport(check_auth))
+    return WasteGridBackendClient(
+        backend_config(), transport=httpx.MockTransport(check_auth)
+    )
 
 
 def test_resolve_conversation_uses_integration_key_and_required_fields() -> None:
@@ -39,13 +41,19 @@ def test_resolve_conversation_uses_integration_key_and_required_fields() -> None
         assert request.url.path == "/api/internal/conversations/resolve"
         assert request.headers["x-integration-key"] == "private-key"
         assert json.loads(request.content) == {
-            "channel": "imessage", "external_id": "pho-user-1"
+            "channel": "imessage",
+            "external_id": "pho-user-1",
         }
         assert request.extensions["timeout"]["read"] == 3.5
-        return httpx.Response(200, json={
-            "id": "conversation-1", "channel": "imessage",
-            "external_id": "pho-user-1", "report_id": "unused",
-        })
+        return httpx.Response(
+            200,
+            json={
+                "id": "conversation-1",
+                "channel": "imessage",
+                "external_id": "pho-user-1",
+                "report_id": "unused",
+            },
+        )
 
     result = client_for(respond).resolve_conversation("imessage", "pho-user-1")
 
@@ -64,13 +72,17 @@ def test_submit_followup_posts_message_without_parsing_unused_response() -> None
         assert request.method == "POST"
         assert request.url.path == "/api/internal/conversations/conversation-1/followup"
         assert json.loads(request.content) == {
-            "message_id": "pho-message-1", "text": "private followup"
+            "message_id": "pho-message-1",
+            "text": "private followup",
         }
         return httpx.Response(202, text="not JSON")
 
-    assert client_for(respond).submit_followup(
-        "conversation-1", "pho-message-1", "private followup"
-    ) is None
+    assert (
+        client_for(respond).submit_followup(
+            "conversation-1", "pho-message-1", "private followup"
+        )
+        is None
+    )
 
 
 def test_claim_outgoing_reads_only_required_nested_fields() -> None:
@@ -78,21 +90,30 @@ def test_claim_outgoing_reads_only_required_nested_fields() -> None:
         assert request.method == "POST"
         assert request.url.path == "/api/internal/outgoing-messages/claim"
         assert json.loads(request.content) == {"limit": 5}
-        return httpx.Response(200, json=[{
-            "id": "outgoing-1", "lease_id": "lease-1",
-            "conversation": {
-                "channel": "imessage", "external_id": "pho-user-1",
-                "report_id": "unused",
-            },
-            "payload": {"reply_text": "Send this", "unused": "ignored"},
-            "attempts": 1,
-        }])
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "outgoing-1",
+                    "lease_id": "lease-1",
+                    "conversation": {
+                        "channel": "imessage",
+                        "external_id": "pho-user-1",
+                        "report_id": "unused",
+                    },
+                    "payload": {"reply_text": "Send this", "unused": "ignored"},
+                    "attempts": 1,
+                }
+            ],
+        )
 
     result = client_for(respond).claim_outgoing(5)
 
-    assert result == [ClaimedOutgoingMessage(
-        "outgoing-1", "lease-1", "imessage", "pho-user-1", "Send this"
-    )]
+    assert result == [
+        ClaimedOutgoingMessage(
+            "outgoing-1", "lease-1", "imessage", "pho-user-1", "Send this"
+        )
+    ]
     with pytest.raises(FrozenInstanceError):
         result[0].text = "changed"
 
@@ -100,16 +121,22 @@ def test_claim_outgoing_reads_only_required_nested_fields() -> None:
 def test_acknowledge_delivery_posts_exact_contract_fields() -> None:
     def respond(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
-        assert request.url.path == "/api/internal/outgoing-messages/outgoing-1/delivered"
+        assert (
+            request.url.path == "/api/internal/outgoing-messages/outgoing-1/delivered"
+        )
         assert json.loads(request.content) == {
-            "lease_id": "lease-1", "provider_message_id": None,
+            "lease_id": "lease-1",
+            "provider_message_id": None,
             "sent_text": "private reply",
         }
         return httpx.Response(200, text="not JSON")
 
-    assert client_for(respond).acknowledge_delivery(
-        "outgoing-1", "lease-1", None, "private reply"
-    ) is None
+    assert (
+        client_for(respond).acknowledge_delivery(
+            "outgoing-1", "lease-1", None, "private reply"
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize("operation", ["followup", "claim", "delivered"])
@@ -130,11 +157,14 @@ def test_non_resolve_404_is_sanitized_error(operation: str) -> None:
     assert caught.value.__context__ is None
 
 
-@pytest.mark.parametrize("body", [
-    "not JSON",
-    '{}',
-    '{"id":"conversation-1","channel":"imessage","external_id":42}',
-])
+@pytest.mark.parametrize(
+    "body",
+    [
+        "not JSON",
+        "{}",
+        '{"id":"conversation-1","channel":"imessage","external_id":42}',
+    ],
+)
 def test_resolve_rejects_invalid_response_without_exposing_body(body: str) -> None:
     client = client_for(lambda request: httpx.Response(200, text=body + " private-key"))
 
@@ -148,12 +178,20 @@ def test_resolve_rejects_invalid_response_without_exposing_body(body: str) -> No
     assert caught.value.__context__ is None
 
 
-@pytest.mark.parametrize("response", [
-    {},
-    [{"id": "outgoing-1", "lease_id": None,
-      "conversation": {"channel": "imessage", "external_id": "pho-user-1"},
-      "payload": {"reply_text": "private reply"}}],
-])
+@pytest.mark.parametrize(
+    "response",
+    [
+        {},
+        [
+            {
+                "id": "outgoing-1",
+                "lease_id": None,
+                "conversation": {"channel": "imessage", "external_id": "pho-user-1"},
+                "payload": {"reply_text": "private reply"},
+            }
+        ],
+    ],
+)
 def test_claim_rejects_invalid_schema_without_exposing_body(response) -> None:
     client = client_for(lambda request: httpx.Response(200, json=response))
 
@@ -168,7 +206,9 @@ def test_claim_rejects_invalid_schema_without_exposing_body(response) -> None:
 
 def test_network_failure_does_not_expose_url_or_secret() -> None:
     def fail(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("private-key private reply https://secret.example/path", request=request)
+        raise httpx.ConnectError(
+            "private-key private reply https://secret.example/path", request=request
+        )
 
     with pytest.raises(BackendClientError) as caught:
         client_for(fail).claim_outgoing(1)

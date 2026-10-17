@@ -72,8 +72,6 @@ class PhotonGateway:
                     spaceId=space_id,
                 ),
                 path=SendMessagePath(id=self._config.project_id),
-                headers=SendMessageHeader(
-                    idempotency_key=idempotency_key
-                ),
+                headers=SendMessageHeader(idempotency_key=idempotency_key),
             )
         )

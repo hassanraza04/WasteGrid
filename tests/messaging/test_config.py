@@ -1,5 +1,5 @@
-from pathlib import Path
 import traceback
+from pathlib import Path
 
 import pytest
 
@@ -99,7 +99,9 @@ def test_load_photon_config_rejects_backend_url_with_path_whitespace() -> None:
         )
 
 
-def test_load_photon_config_rejects_backend_url_with_unicode_control_character() -> None:
+def test_load_photon_config_rejects_backend_url_with_unicode_control_character() -> (
+    None
+):
     with pytest.raises(ConfigurationError, match="WASTEGRID_BACKEND_URL"):
         load_photon_config(
             {

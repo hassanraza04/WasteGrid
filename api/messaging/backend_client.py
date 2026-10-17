@@ -43,7 +43,12 @@ class WasteGridBackendClient:
         self._transport = transport
 
     def _post(
-        self, operation: str, path: str, payload: dict[str, object], *, missing_ok: bool = False
+        self,
+        operation: str,
+        path: str,
+        payload: dict[str, object],
+        *,
+        missing_ok: bool = False,
     ) -> httpx.Response | None:
         failed = False
         try:
@@ -99,9 +104,7 @@ class WasteGridBackendClient:
             raise BackendClientError(f"{operation} failed (schema)")
         return Conversation(identity, resolved_channel, resolved_external_id)
 
-    def submit_followup(
-        self, conversation_id: str, message_id: str, text: str
-    ) -> None:
+    def submit_followup(self, conversation_id: str, message_id: str, text: str) -> None:
         self._post(
             "submit_followup",
             f"/internal/conversations/{quote(str(conversation_id), safe='')}/followup",

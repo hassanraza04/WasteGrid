@@ -1,12 +1,12 @@
 """Local configuration for the Photon Beta integration."""
 
-from dataclasses import dataclass
 import ipaddress
+import re
+import unicodedata
+from dataclasses import dataclass
 from math import isfinite
 from pathlib import Path
-import re
 from typing import Mapping
-import unicodedata
 from urllib.parse import urlsplit
 
 
@@ -111,9 +111,7 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
     if invalid_timeout:
         raise ConfigurationError("WASTEGRID_TIMEOUT_SECONDS must be a number")
     if not isfinite(timeout_seconds) or timeout_seconds <= 0:
-        raise ConfigurationError(
-            "WASTEGRID_TIMEOUT_SECONDS must be greater than zero"
-        )
+        raise ConfigurationError("WASTEGRID_TIMEOUT_SECONDS must be greater than zero")
 
     interval_text = environ.get("PHOTON_POLL_INTERVAL_SECONDS", "2")
     invalid_interval = False
@@ -122,9 +120,7 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
     except ValueError:
         invalid_interval = True
     if invalid_interval:
-        raise ConfigurationError(
-            "PHOTON_POLL_INTERVAL_SECONDS must be a number"
-        )
+        raise ConfigurationError("PHOTON_POLL_INTERVAL_SECONDS must be a number")
 
     if poll_interval_seconds <= 0:
         raise ConfigurationError(
