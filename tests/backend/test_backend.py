@@ -1524,8 +1524,9 @@ def test_upgrade_backfills_legacy_reports_without_replaying_assessments(
         linked.job_id, linked.state = job.id, "linked_to_job"
         original_job = job.id
         missing = Report(
-            photo_id=uuid4(),
-            token_hash="legacy-missing-photo",
+            # A valid FK but mismatched ownership makes photo metadata unusable.
+            photo_id=linked.photo_id,
+            token_hash="a" * 64,
             location={"latitude": 24.92, "longitude": 67.09},
         )
         db.add(missing)
