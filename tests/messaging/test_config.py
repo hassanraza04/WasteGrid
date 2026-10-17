@@ -6,6 +6,13 @@ import pytest
 from api.messaging.config import ConfigurationError, load_photon_config
 
 
+def test_env_example_lists_required_backend_mode_settings() -> None:
+    example = Path(".env.example").read_text()
+    assert "WASTEGRID_BACKEND_URL=" in example
+    assert "WASTEGRID_MESSAGING_API_KEY=" in example
+    assert "PHOTON_AGENT_SENDER_ID=" in example
+
+
 def test_load_photon_config_requires_project_id() -> None:
     with pytest.raises(ConfigurationError, match="PHOTON_PROJECT_ID"):
         load_photon_config({"PHOTON_API_KEY": "pho_sk_test"})

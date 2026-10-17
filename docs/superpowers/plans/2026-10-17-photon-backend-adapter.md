@@ -12,7 +12,7 @@
 
 - Require `WASTEGRID_BACKEND_URL`, `WASTEGRID_MESSAGING_API_KEY`, and `PHOTON_AGENT_SENDER_ID` before polling starts. No local echo fallback.
 - The backend URL must be an absolute `http` or `https` URL with no credentials, query, or fragment.
-- Send all backend requests with `Authorization: Bearer <messaging key>` and bounded timeouts.
+- Send Person 4 backend messaging requests with `X-Integration-Key: <messaging key>` and bounded timeouts. Photon API requests separately use `Authorization: Bearer <Photon API key>`.
 - Do not log credentials, message text, response bodies, or signed URLs.
 - The backend owns outgoing retries, leases, and delivery state. `DeliveryLedger` stores only the polling checkpoint in backend mode.
 - Preserve the Photon gateway as the only Photon SDK boundary and use fake transports only in tests.
@@ -100,7 +100,7 @@ def test_submit_followup_preserves_photon_message_id() -> None:
     client, requests = client_with_recording_transport()
     client.submit_followup(conversation_id="11111111-1111-1111-1111-111111111111", message_id="pho_msg_1", text="Please send an update")
     request = requests[-1]
-    assert request.headers["Authorization"] == "Bearer backend-key"
+    assert request.headers["X-Integration-Key"] == "backend-key"
     assert request.url.path.endswith("/followup")
     assert json.loads(request.content) == {"message_id": "pho_msg_1", "text": "Please send an update"}
 
@@ -125,7 +125,7 @@ def resolve_conversation(self, *, channel: str, external_id: str) -> Conversatio
 def submit_followup(self, *, conversation_id: str, message_id: str, text: str) -> None: ...
 def claim_outgoing(self, *, limit: int) -> list[ClaimedOutgoingMessage]: ...
 def acknowledge_delivery(self, *, message_id: str, lease_id: str,
-                         provider_message_id: str, sent_text: str) -> None: ...
+                         provider_message_id: str | None, sent_text: str) -> None: ...
 ```
 
 Use one private `httpx.Client` request helper. Map only a 404 resolve result to `None`; all malformed or other failed responses raise a sanitized `BackendClientError` that retains operation/status, never response text. Parse only contract fields and `payload.reply_text`.
@@ -234,15 +234,18 @@ sender.send_to_space(
     space_id=claim.external_id,
     sender_id=self._agent_sender_id,
     text=claim.text,
-    idempotency_key=f"wastegrid-outgoing-{claim.id}",
+    idempotency_key=claim.id,
 )
 backend.acknowledge_delivery(
     message_id=claim.id,
     lease_id=claim.lease_id,
-    provider_message_id=f"wastegrid-outgoing-{claim.id}",
+    provider_message_id=None,
     sent_text=claim.text,
 )
 ```
+
+Photon currently returns no provider message ID. The backend accepts
+`provider_message_id=None`; do not substitute a Photon idempotency key for it.
 
 Catch only operational errors, logging class/name and stable message IDs. Never acknowledge after a Photon send error.
 

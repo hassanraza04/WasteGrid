@@ -12,7 +12,8 @@ mock-tested until Person 2's backend pull request is merged and deployed.
 - Resolve a Photon sender to a backend conversation and enqueue each inbound
   message by its stable Photon message ID.
 - Claim backend-owned outgoing messages, send them through Photon, and
-  acknowledge the exact sent text and provider message ID.
+  acknowledge the exact sent text. Photon currently returns no provider message
+  ID, so acknowledgements use `provider_message_id=None`.
 - Use short bounded HTTP timeouts and avoid logging credentials, request bodies,
   response bodies, or signed URLs.
 - Preserve the existing Photon polling gateway as the transport boundary.
@@ -34,7 +35,7 @@ the existing Photon settings and contains:
 
 - `WASTEGRID_BACKEND_URL`, an absolute HTTP(S) URL without query, fragment, or
   credentials.
-- `WASTEGRID_MESSAGING_API_KEY`, a non-empty bearer credential.
+- `WASTEGRID_MESSAGING_API_KEY`, a non-empty backend integration key.
 - `PHOTON_AGENT_SENDER_ID`, the stable Photon sender used for every claimed
   outgoing iMessage. The backend stores the conversation `space_id`, but does
   not store this transport-specific sender identity.
@@ -57,16 +58,19 @@ The implementation targets Person 2's documented proposed-v0.2 endpoints:
 4. `POST /internal/outgoing-messages/{id}/delivered` with
    `{lease_id, provider_message_id, sent_text}`.
 
-All requests carry `Authorization: Bearer <messaging key>`. An unknown or
-unlinked sender is skipped with a message-ID-only warning. Other backend
-failures leave the inbound item unacknowledged by the backend so its idempotency
-rules remain authoritative on a later poll.
+Person 4 backend messaging requests carry `X-Integration-Key: <messaging key>`.
+Photon API requests separately use `Authorization: Bearer <Photon API key>`.
+An unknown or unlinked sender is skipped. Other backend failures leave the
+inbound item unacknowledged by the backend so its idempotency rules remain
+authoritative on a later poll.
 
 Only claimed outgoing messages whose conversation channel is `imessage` are
 eligible for sending. The conversation external ID becomes the Photon `spaceId`;
 the required configured sender ID becomes Photon `senderId`. The adapter
-acknowledges only after Photon succeeds. If Photon sending fails, it does not
-acknowledge; the backend lease expiry controls the retry.
+acknowledges only after Photon succeeds, with `provider_message_id=None`. The
+backend accepts this value because Photon currently returns no provider message
+ID. If Photon sending fails, it does not acknowledge; the backend lease expiry
+controls the retry.
 
 ## Error handling
 
@@ -85,12 +89,13 @@ Tests use a recording fake HTTP transport and Photon sender double. They prove:
 - backend configuration is mandatory and valid;
 - the configured Photon sender ID is used for claimed outbound messages after a
   process restart;
-- each backend request has the bearer header and expected payload;
+- each backend request has the integration key header and expected payload;
 - inbound messages retain their Photon IDs for backend idempotency;
 - unlinked senders do not enqueue follow-ups;
 - only matching iMessage outgoing records are delivered;
 - a failed Photon send produces no delivery acknowledgement;
-- acknowledgements contain the exact delivered text and Photon provider ID.
+- acknowledgements contain the exact delivered text and
+  `provider_message_id=None`, which the backend supports.
 
 ## Acceptance criteria
 
