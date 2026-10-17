@@ -36,7 +36,9 @@ and fresh crew observations are required for live acceptance. No provider/server
 is deployed by this change. OSRM protocol reference:
 https://project-osrm.org/docs/v5.24.0/api/#table-service
 
-The mode defaults off for coordinated deployment. In organiser mode, legacy
+The mode defaults off for coordinated deployment. All new routing writes,
+including organiser priority decisions and crew GPS updates, return 503 while
+it is off. Historical previews remain readable by authorised organisers. In organiser mode, legacy
 `POST /plans/generate` returns a conflict directing clients to previews. Workers
 consume invalidation tasks without generating/dispatching automatic plans.
 Existing automatic decision providers remain available for legacy deployments.
@@ -107,6 +109,9 @@ set priority. Replay of the same command is idempotent.
    validated plan and execution checks, including equipment/shift checks, without
    gaining a new priority requirement. Ownership edits
    through the legacy job PATCH are rejected in organiser mode; use dispatch.
+   This includes `assigned_crew_id`, `status: "unassigned"`, and `held: true`.
+   Availability changes pause a crew but retain its ownership; they do not release
+   jobs through the crew PATCH either.
    Editing legacy equipment/shift values does not clear organiser assignments. Completing work
    uses existing `POST /jobs/{id}/completion` with the required cleanup photo.
    No AI analysis of completion evidence is performed.
@@ -119,8 +124,8 @@ location endpoint requires a crew account. Residents retain private report token
 Road times are directional, in minutes; OSRM seconds are converted without
 straight-line fallback. Explicit null durations represent missing road routes.
 Provider errors/malformed tables are unknown data, not proof of unreachable roads.
-The matrix is requested once and frozen with the preview. Maximum 25 scoped
-unfinished jobs plus five selected crew origins (30 matrix locations).
+The matrix is requested once and frozen with the preview. Maximum 25 eligible scoped
+jobs plus five selected crew origins (30 matrix locations).
 
 Scope is all eligible unassigned jobs plus eligible jobs owned by selected crews.
 Unselected assignments remain unchanged. Current collection and the prefix through
@@ -144,8 +149,12 @@ Dispatch stores a regular active Plan and Assignment records for existing crew A
 including preserved unselected assignments. Its business revision is separate from
 matrix identity and GPS revision. Fresh GPS within 100 metres does not automatically
 invalidate business state; old locations, displacement or expired previews do.
-New eligible jobs, status/priority changes, assignment changes and resource business
-versions invalidate the preview. No road provider call happens under dispatch locks.
+New eligible jobs, changes within eligible work, selected assignment changes and
+selected crew business versions invalidate the preview. Excluded unassigned jobs
+are diagnostic only: changes while they remain excluded do not invalidate a
+preview. Becoming eligible changes membership and requires recomputation.
+Excluded jobs already assigned to selected crews remain in the revision because
+they can block a dispatch or fixed prefix. No road provider call happens under dispatch locks.
 
 The 10-metre intake hard-block change and mandatory resident GPS enforcement remain
 separate work. Existing PR #6 intake behaviour is unchanged.
@@ -167,3 +176,19 @@ current defaults or `Job.estimated_service_minutes`. This remains true across
 repeated dispatches for other crews. Earlier draft organiser plans without
 execution metadata are traced through their previews/assignment history to the
 origin that actually planned the job. No new database migration is required.
+
+## Bounded read-query counts under the mutation lock
+
+Snapshots select candidate jobs in SQL, excluding completed jobs and assignments
+belonging to unselected crews. Reports and fallback organiser approvals are read
+in batches, rather than queried for each job/report. The 25-stop limit applies
+to eligible solver inputs, not excluded unassigned diagnostics.
+
+Dispatch loads unselected provenance once from the latest plan payload. Only
+unresolved older draft metadata needs a batched assignment-history read and a
+batched preview read. Unassigned jobs do not request provenance at all. Read-query
+counts do not grow per unselected job; copying the global plan's preserved rows
+still requires processing those rows. Provider calls remain outside the lock.
+
+A crew-role principal with a null crew link receives 403; a missing referenced
+crew receives 404. Neither reaches location-field access or modifies data.

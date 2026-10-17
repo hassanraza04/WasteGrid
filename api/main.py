@@ -562,7 +562,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if (
             settings.organizer_routing_enabled
             and staff.role == "organizer"
-            and "assigned_crew_id" in body.model_fields_set
+            and (
+                "assigned_crew_id" in body.model_fields_set
+                or body.status == "unassigned"
+                or body.held is True
+            )
         ):
             raise HTTPException(
                 409, "Use route preview and dispatch to change assignment ownership"

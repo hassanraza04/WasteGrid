@@ -99,3 +99,15 @@ def test_postgres_preserves_preview_durations_across_disjoint_dispatch(engine):
     from tests.test_routing import verify_preserved_preview_durations
 
     verify_preserved_preview_durations(engine)
+
+
+def test_postgres_batches_approval_reads(engine):
+    from tests.test_routing import verify_batched_approval_reads
+
+    verify_batched_approval_reads(engine, 4)
+
+
+def test_postgres_batches_unselected_provenance_reads(engine):
+    from tests.test_routing import verify_batched_dispatch_reads
+
+    verify_batched_dispatch_reads(engine, 30)

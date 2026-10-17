@@ -506,8 +506,11 @@ def test_ongoing_work_does_not_prevent_other_crew_starting_after_invalidation(
         ensure_can_start(db, second)
 
 
+@pytest.mark.parametrize(
+    "edit", [{"shift_minutes": 1, "equipment": []}, {"available": False}]
+)
 def test_legacy_resource_edits_preserve_organizer_assignments(
-    assessment_db, monkeypatch
+    assessment_db, monkeypatch, edit
 ):
     from api.schemas import CrewPatch
     from api.workflows import change_crew
@@ -527,8 +530,7 @@ def test_legacy_resource_edits_preserve_organizer_assignments(
             CrewPatch(
                 command_id=uuid4(),
                 expected_version=crew.version,
-                shift_minutes=1,
-                equipment=[],
+                **edit,
             ),
             str(actor),
             organizer_routing=True,
@@ -779,3 +781,268 @@ def test_ongoing_preview_duration_survives_disjoint_dispatch(
 ):
     monkeypatch.setattr("api.routing.mutation_lock", lambda db: None)
     verify_preserved_preview_durations(assessment_db)
+
+
+@pytest.fixture
+def routing_api(assessment_db):
+    ids, jobs = seed_routing(assessment_db)
+    org, crew = uuid4(), uuid4()
+    with Session(assessment_db) as db:
+        db.add_all(
+            [
+                StaffRole(user_id=org, role="organizer"),
+                StaffRole(user_id=crew, role="crew", crew_id=ids[0]),
+            ]
+        )
+        db.commit()
+    app = create_app(config())
+    app.state.engine = assessment_db
+    app.state.cloud.close()
+    app.state.cloud = SimpleNamespace(
+        user_id=lambda token: {"org": org, "crew": crew}[token], close=lambda: None
+    )
+    with TestClient(app) as client:
+        yield client, ids, jobs
+
+
+@pytest.mark.parametrize(
+    "mutation", [{"assigned_crew_id": None}, {"status": "unassigned"}, {"held": True}]
+)
+def test_organizer_patch_cannot_release_route_ownership(
+    routing_api, assessment_db, mutation
+):
+    client, ids, jobs = routing_api
+    with Session(assessment_db) as db:
+        original = db.get(Job, jobs[2])
+        before = (
+            original.assigned_crew_id,
+            original.route_position,
+            original.travel_minutes,
+            original.version,
+            original.held,
+            original.status,
+        )
+    response = client.patch(
+        f"/jobs/{jobs[2]}",
+        headers={"Authorization": "Bearer org"},
+        json={
+            "command_id": str(uuid4()),
+            "expected_version": 1,
+            "reason": "Legacy ownership bypass",
+            **mutation,
+        },
+    )
+    assert response.status_code == 409, response.text
+    with Session(assessment_db) as db:
+        after = db.get(Job, jobs[2])
+        assert (
+            after.assigned_crew_id,
+            after.route_position,
+            after.travel_minutes,
+            after.version,
+            after.held,
+            after.status,
+        ) == before
+
+
+def test_disabled_routing_blocks_new_priority_and_location_writes(
+    routing_api, assessment_db
+):
+    client, ids, jobs = routing_api
+    client.app.state.settings.organizer_routing_enabled = False
+    with Session(assessment_db) as db:
+        report = db.scalar(select(Report).where(Report.job_id == jobs[0]))
+        rid, version, priority = report.id, report.version, report.priority
+        crew = db.get(Crew, ids[0])
+        location, revision = crew.start_location, crew.location_revision
+    assert (
+        client.post(
+            f"/organizer/reports/{rid}/priority",
+            headers={"Authorization": "Bearer org"},
+            json={
+                "command_id": str(uuid4()),
+                "expected_version": version,
+                "priority": "high",
+                "reason": "Disabled mode",
+            },
+        ).status_code
+        == 503
+    )
+    assert (
+        client.post(
+            "/crews/me/location",
+            headers={"Authorization": "Bearer crew"},
+            json={
+                "location": {"latitude": 25, "longitude": 68},
+                "recorded_at": now().isoformat(),
+            },
+        ).status_code
+        == 503
+    )
+    with Session(assessment_db) as db:
+        assert db.get(Report, rid).priority == priority
+        assert db.get(Report, rid).version == version
+        assert db.get(Crew, ids[0]).start_location == location
+        assert db.get(Crew, ids[0]).location_revision == revision
+
+
+@pytest.mark.parametrize("crew_id,status", [(None, 403), (uuid4(), 404)])
+def test_location_with_missing_crew_link_is_controlled(routing_api, crew_id, status):
+    from api.auth import Principal, get_staff
+
+    client, _, _ = routing_api
+    client.app.dependency_overrides[get_staff] = lambda: Principal(
+        uuid4(), "crew", crew_id
+    )
+    response = client.post(
+        "/crews/me/location",
+        json={
+            "location": {"latitude": 24.92, "longitude": 67.09},
+            "recorded_at": now().isoformat(),
+        },
+    )
+    assert response.status_code == status, response.text
+
+
+@pytest.mark.parametrize(
+    "kind,promote",
+    [
+        ("pending", False),
+        ("held", False),
+        ("blocked", False),
+        ("review", False),
+        ("review", True),
+    ],
+)
+def test_excluded_unassigned_changes_only_invalidate_on_eligibility(
+    assessment_db, monkeypatch, kind, promote
+):
+    monkeypatch.setattr("api.routing.mutation_lock", lambda db: None)
+    ids, jobs = seed_routing(assessment_db)
+    actor, settings = uuid4(), config()
+    with Session(assessment_db) as db:
+        job = db.get(Job, jobs[0])
+        report = db.scalar(select(Report).where(Report.job_id == job.id))
+        if kind == "pending":
+            report.assessment_status = "pending"
+        elif kind == "held":
+            job.held = True
+        elif kind == "blocked":
+            job.status = "blocked"
+        else:
+            report.needs_review = True
+        db.commit()
+        view = compute_preview(db, ids[:2], settings, FakeRoads(), str(actor))
+        assert str(jobs[0]) in {str(i.job_id) for i in view.exclusions}
+        job.version += 1
+        report.version += 1
+        if promote:
+            report.needs_review = False
+        db.commit()
+        if promote:
+            with pytest.raises(HTTPException) as exc:
+                dispatch_preview(
+                    db, db.get(RoutingPreview, view.id), uuid4(), actor, settings
+                )
+            assert exc.value.status_code == 409
+        else:
+            assert dispatch_preview(
+                db, db.get(RoutingPreview, view.id), uuid4(), actor, settings
+            )["plan_id"]
+            assert db.get(Job, jobs[0]).assigned_crew_id is None
+
+
+def count_selects(engine, run):
+    from sqlalchemy import event as sa_event
+
+    statements = []
+
+    def capture(connection, cursor, statement, params, context, many):
+        if statement.lstrip().upper().startswith("SELECT"):
+            statements.append(statement)
+
+    sa_event.listen(engine, "before_cursor_execute", capture)
+    try:
+        run()
+    finally:
+        sa_event.remove(engine, "before_cursor_execute", capture)
+    return statements
+
+
+def verify_batched_approval_reads(engine, extra):
+    from api.models import Event
+
+    ids, _ = seed_routing(engine)
+    for _ in range(extra):
+        seed_routing(engine)
+    with Session(engine) as db:
+        for row in db.scalars(
+            select(Report)
+            .join(Job, Job.id == Report.job_id)
+            .where(Job.assigned_crew_id.is_(None))
+        ):
+            row.assessment_status = "needs_review"
+            row.assessment = assessment(
+                obstruction="unknown", obstruction_level="unknown"
+            ).model_dump(mode="json")
+            db.add(
+                Event(
+                    report_id=row.id,
+                    kind="report.triaged",
+                    details={"organizer_override": True, "job_id": str(row.job_id)},
+                )
+            )
+        db.commit()
+
+    def run():
+        with Session(engine) as db:
+            value = snapshot(db, ids[:2], config(), now())
+            assert len(value["jobs"]) == 2 * (extra + 1)
+
+    statements = count_selects(engine, run)
+    # Crews, scoped jobs, reports, and all fallback approvals: four reads total.
+    assert len(statements) == 4, statements
+
+
+@pytest.mark.parametrize("extra", [0, 4])
+def test_snapshot_batches_report_and_approval_reads(assessment_db, extra):
+    verify_batched_approval_reads(assessment_db, extra)
+
+
+def verify_batched_dispatch_reads(engine, extra):
+    ids, jobs = seed_routing(engine)
+    with Session(engine) as db:
+        for position in range(1, extra + 1):
+            db.add(
+                Job(
+                    status="assigned",
+                    assigned_crew_id=ids[2],
+                    route_position=position,
+                    location=dict(latitude=24.92, longitude=67.09),
+                    category="legacy",
+                    estimated_service_minutes=50,
+                    required_equipment=[],
+                )
+            )
+        db.commit()
+        actor, settings = uuid4(), config()
+        view = compute_preview(db, ids[:2], settings, FakeRoads(), str(actor))
+        preview = db.get(RoutingPreview, view.id)
+        reads = count_selects(
+            engine, lambda: dispatch_preview(db, preview, uuid4(), actor, settings)
+        )
+        provenance_reads = [
+            s
+            for s in reads
+            if "wastegrid.plans" in s or "wastegrid.routing_previews" in s
+        ]
+        assert len(provenance_reads) <= 6, provenance_reads
+        assert db.get(Job, jobs[2]).assigned_crew_id == ids[2]
+
+
+@pytest.mark.parametrize("extra", [0, 30])
+def test_dispatch_provenance_reads_do_not_scale_per_unselected_job(
+    assessment_db, monkeypatch, extra
+):
+    monkeypatch.setattr("api.routing.mutation_lock", lambda db: None)
+    verify_batched_dispatch_reads(assessment_db, extra)

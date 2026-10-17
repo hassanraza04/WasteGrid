@@ -2,16 +2,17 @@
 
 import hashlib
 import json
+from collections import defaultdict
 from datetime import timedelta, timezone
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from api.auth import Principal, get_staff, organizer
 from api.db import get_db, mutation_lock
-from api.models import Assignment, Crew, Job, Plan, Report, RoutingPreview, now
+from api.models import Assignment, Crew, Event, Job, Plan, Report, RoutingPreview, now
 from api.road_times import OSRMRoadTimes, TravelDataUnavailable
 from api.route_solver import PRIORITY_WEIGHTS, evaluate, solve
 from api.routing_schemas import (
@@ -31,7 +32,7 @@ from api.services import (
     invalidate_plan,
     organizer_report_view,
 )
-from api.workflows import distance_km, job_assessment_approved
+from api.workflows import assessment_allows_job, distance_km, job_assessment_approved
 
 
 def utc(value):
@@ -72,25 +73,55 @@ def snapshot(db, crew_ids, settings, at):
         if not crew.available:
             raise HTTPException(409, f"Crew {crew.id} is not available")
         fresh_location(crew, settings, at)
-    candidates = [
-        j
-        for j in db.scalars(select(Job).order_by(Job.id))
-        if j.status != "completed"
-        and (j.assigned_crew_id is None or str(j.assigned_crew_id) in crews)
-    ]
-    # Bound all planning inputs before a quadratic provider request.
-    if len(candidates) > 25:
-        raise HTTPException(422, "MVP supports at most 25 scoped unfinished jobs")
-    prefixes, jobs, exclusions, business = {cid: [] for cid in crew_ids}, [], [], []
-    for job in candidates:
-        reports = list(
+    candidates = list(
+        db.scalars(
+            select(Job)
+            .where(
+                Job.status != "completed",
+                or_(
+                    Job.assigned_crew_id.is_(None),
+                    Job.assigned_crew_id.in_([UUID(c) for c in crew_ids]),
+                ),
+            )
+            .order_by(Job.id)
+        )
+    )
+    reports_by_job, approvals = defaultdict(list), defaultdict(list)
+    reports = (
+        list(
             db.scalars(
-                select(Report).where(Report.job_id == job.id).order_by(Report.id)
+                select(Report)
+                .where(Report.job_id.in_([j.id for j in candidates]))
+                .order_by(Report.id)
             )
         )
+        if candidates
+        else []
+    )
+    for report in reports:
+        reports_by_job[report.job_id].append(report)
+    needs_audit = [
+        r.id
+        for r in reports
+        if r.priority in PRIORITY_WEIGHTS
+        and not r.needs_review
+        and not r.organizer_review_required
+        and not assessment_allows_job(r)
+    ]
+    if needs_audit:
+        for record in db.scalars(
+            select(Event).where(
+                Event.report_id.in_(needs_audit), Event.kind == "report.triaged"
+            )
+        ):
+            approvals[record.report_id].append(record)
+    prefixes, jobs, exclusions, business = {cid: [] for cid in crew_ids}, [], [], []
+    for job in candidates:
+        reports = reports_by_job[job.id]
         priorities = [r.priority for r in reports if r.priority in PRIORITY_WEIGHTS]
         approved = bool(reports) and all(
-            job_assessment_approved(db, r) and r.priority in PRIORITY_WEIGHTS
+            job_assessment_approved(db, r, approval_events=approvals[r.id])
+            and r.priority in PRIORITY_WEIGHTS
             for r in reports
         )
         reason = (
@@ -102,37 +133,38 @@ def snapshot(db, crew_ids, settings, at):
                 else "assessment_or_priority_review" if not approved else None
             )
         )
-        business.append(
-            {
-                "job": {
-                    k: str(getattr(job, k))
-                    for k in (
-                        "id",
-                        "version",
-                        "status",
-                        "assigned_crew_id",
-                        "locked",
-                        "held",
-                        "route_position",
-                        "collection_started_at",
-                    )
-                },
-                "location": job.location,
-                "eligibility_reason": reason,
-                "reports": [
-                    (
-                        str(r.id),
-                        r.version,
-                        r.priority,
-                        r.needs_review,
-                        r.organizer_review_required,
-                        r.assessment_status,
-                        digest(r.assessment),
-                    )
-                    for r in reports
-                ],
-            }
-        )
+        if reason is None or job.assigned_crew_id is not None:
+            business.append(
+                {
+                    "job": {
+                        k: str(getattr(job, k))
+                        for k in (
+                            "id",
+                            "version",
+                            "status",
+                            "assigned_crew_id",
+                            "locked",
+                            "held",
+                            "route_position",
+                            "collection_started_at",
+                        )
+                    },
+                    "location": job.location,
+                    "eligibility_reason": reason,
+                    "reports": [
+                        (
+                            str(r.id),
+                            r.version,
+                            r.priority,
+                            r.needs_review,
+                            r.organizer_review_required,
+                            r.assessment_status,
+                            digest(r.assessment),
+                        )
+                        for r in reports
+                    ],
+                }
+            )
         if reason:
             exclusions.append(dict(job_id=str(job.id), reason=reason))
             continue
@@ -162,6 +194,8 @@ def snapshot(db, crew_ids, settings, at):
                 previous_position=job.route_position,
             )
         )
+    if len(jobs) > 25:
+        raise HTTPException(422, "MVP supports at most 25 eligible scoped jobs")
     eligible_ids = {j["id"] for j in jobs}
     for cid in crew_ids:
         assigned = sorted(
@@ -361,18 +395,24 @@ def dispatch_preview(db, preview, command_id, actor, settings):
     unfinished = list(
         db.scalars(select(Job).where(Job.status != "completed").order_by(Job.id))
     )
+    proposed = {str(s.job_id): (r.crew_id, s) for r in view.routes for s in r.stops}
+    preserved = preserved_assignments(
+        db,
+        [
+            j
+            for j in unfinished
+            if j.assigned_crew_id is not None and str(j.id) not in proposed
+        ],
+    )
     plan = Plan(id=uuid4(), routing_mode="organizer", payload={})
     db.add(plan)
     db.flush()
-    proposed = {str(s.job_id): (r.crew_id, s) for r in view.routes for s in r.stops}
     assignments, unassigned, execution_rules = [], [], {}
     selected = set(old["crews"])
     excluded = {str(i.job_id): i.reason for i in view.exclusions}
     for job in unfinished:
         jid = str(job.id)
-        saved_stop, saved_rule = (
-            preserved_assignment(db, job) if jid not in proposed else (None, None)
-        )
+        saved_stop, saved_rule = preserved.get(jid, (None, None))
         if jid in proposed:
             cid, stop = proposed[jid]
             previous = (job.assigned_crew_id, job.route_position)
@@ -468,60 +508,89 @@ def dispatch_preview(db, preview, command_id, actor, settings):
     return dict(preview_id=preview.id, plan_id=plan.id)
 
 
-def preserved_assignment(db, job):
-    """Keep the last assignment's terms and authority, not the global plan mode.
+def preserved_assignments(db, jobs):
+    """Batch provenance reads. Normal plans resolve from the latest payload once.
 
-    Older draft organiser plans have no per-assignment rules. Their previews tell
-    us which jobs they actually routed; walk past copied rows to their origin.
+    Only old draft rows missing execution metadata require historical fallback;
+    those histories and their previews are also loaded together, never per job.
     """
-    plans = db.scalars(
-        select(Plan)
-        .join(Assignment, Assignment.plan_id == Plan.id)
-        .where(
-            Assignment.job_id == job.id,
-            Assignment.crew_id == job.assigned_crew_id,
-            Assignment.position == job.route_position,
+    if not jobs:
+        return {}
+    pending = {str(j.id): j for j in jobs}
+    result = {}
+    latest = db.scalar(select(Plan).order_by(Plan.created_at.desc(), Plan.id).limit(1))
+
+    def read_plan(previous, sources):
+        terms = {s["job_id"]: s for s in previous.payload["assignments"]}
+        rules = previous.payload.get("execution_rules", {})
+        for jid in list(pending):
+            job, stop = pending[jid], terms.get(jid)
+            if stop is None or (stop["crew_id"], stop["position"]) != (
+                str(job.assigned_crew_id),
+                job.route_position,
+            ):
+                continue
+            rule = rules.get(jid)
+            if rule is None and previous.routing_mode == "legacy":
+                rule = {"mode": "legacy", "source_plan_id": str(previous.id)}
+            if rule is None and jid in sources.get(previous.id, set()):
+                rule = {"mode": "organizer", "source_plan_id": str(previous.id)}
+            if rule is not None:
+                result[jid] = (stop, rule)
+                del pending[jid]
+
+    # Common case: no assignment history or preview queries at all.
+    if latest:
+        read_plan(latest, {})
+    if pending:
+        plans = list(
+            db.scalars(
+                select(Plan)
+                .join(Assignment, Assignment.plan_id == Plan.id)
+                .where(Assignment.job_id.in_([UUID(jid) for jid in pending]))
+                .order_by(Plan.created_at.desc(), Plan.id)
+            ).unique()
         )
-        .order_by(Plan.created_at.desc(), Plan.id)
-    )
-    for previous in plans:
-        stop = next(
-            (
-                s
-                for s in previous.payload["assignments"]
-                if s["job_id"] == str(job.id)
-                and s["crew_id"] == str(job.assigned_crew_id)
-                and s["position"] == job.route_position
-            ),
-            None,
-        )
-        if stop is None:
-            continue
-        rule = previous.payload.get("execution_rules", {}).get(str(job.id))
-        if rule:
-            return stop, rule
-        if previous.routing_mode == "legacy":
-            return stop, {"mode": "legacy", "source_plan_id": str(previous.id)}
-        source = db.scalar(
-            select(RoutingPreview).where(
-                RoutingPreview.dispatched_plan_id == previous.id
-            )
-        )
-        if source and any(
-            s["job_id"] == str(job.id)
-            for r in source.payload["view"]["routes"]
-            for s in r["stops"]
-        ):
-            return stop, {"mode": "organizer", "source_plan_id": str(previous.id)}
-    # Do not turn an assignment with no validated origin into an approved one.
-    return None, {"mode": "legacy", "source_plan_id": None}
+        legacy_drafts = [
+            p.id
+            for p in plans
+            if p.routing_mode == "organizer"
+            and any(jid not in p.payload.get("execution_rules", {}) for jid in pending)
+        ]
+        sources = {}
+        if legacy_drafts:
+            for preview in db.scalars(
+                select(RoutingPreview).where(
+                    RoutingPreview.dispatched_plan_id.in_(legacy_drafts)
+                )
+            ):
+                sources[preview.dispatched_plan_id] = {
+                    s["job_id"]
+                    for r in preview.payload["view"]["routes"]
+                    for s in r["stops"]
+                }
+        for previous in plans:
+            read_plan(previous, sources)
+            if not pending:
+                break
+    for jid in pending:
+        result[jid] = (None, {"mode": "legacy", "source_plan_id": None})
+    return result
 
 
 def routing_router(settings):
     router = APIRouter()
 
+    def enabled():
+        if not settings.organizer_routing_enabled:
+            raise HTTPException(
+                503, "Enable ORGANIZER_ROUTING_ENABLED for organiser routing"
+            )
+
     @router.post(
-        "/organizer/reports/{report_id}/priority", response_model=OrganizerReportView
+        "/organizer/reports/{report_id}/priority",
+        response_model=OrganizerReportView,
+        dependencies=[Depends(enabled)],
     )
     def set_priority(
         report_id: UUID,
@@ -563,13 +632,11 @@ def routing_router(settings):
         db.commit()
         return organizer_report_view(db, report)
 
-    def enabled():
-        if not settings.organizer_routing_enabled:
-            raise HTTPException(
-                503, "Enable ORGANIZER_ROUTING_ENABLED for organiser routing"
-            )
-
-    @router.post("/crews/me/location", response_model=CrewLocationView)
+    @router.post(
+        "/crews/me/location",
+        response_model=CrewLocationView,
+        dependencies=[Depends(enabled)],
+    )
     def update_location(
         body: CrewLocationUpdate,
         db: Session = Depends(get_db),
@@ -577,7 +644,11 @@ def routing_router(settings):
     ):
         if staff.role != "crew":
             raise HTTPException(403, "Crew account required")
+        if staff.crew_id is None:
+            raise HTTPException(403, "Crew account requires a linked crew")
         crew = db.get(Crew, staff.crew_id)
+        if crew is None:
+            raise HTTPException(404, "Linked crew not found")
         at, recorded = now(), utc(body.recorded_at)
         if (
             recorded > at

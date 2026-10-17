@@ -480,3 +480,21 @@ carry forward saved durations and execution provenance. The current-plan API
 exposes per-job `execution_rules` (`mode`, `source_plan_id`); the plan header's
 mode does not change the policy of preserved legacy jobs. Legacy work retains its
 original validated-plan checks until explicitly selected for organiser routing.
+
+### Ownership, flag and invalidation boundaries
+
+When organiser routing is enabled, legacy job PATCH rejects `assigned_crew_id`,
+`status: "unassigned"` and `held: true` rather than clearing ownership outside
+dispatch. Marking a crew unavailable also retains its assignments and pauses
+execution. The new priority and GPS writes are disabled with the routing flag;
+read-only historical previews remain available to authorised organisers.
+
+The business revision covers eligible routing work and all selected crews'
+assigned work that can affect execution guards. Excluded unassigned diagnostics
+are outside the hash until they become eligible. Changes within an exclusion do
+not force recomputation; promotion into the solver scope does.
+
+Load reports, fallback approval events and preserved assignment provenance in
+batches. Filter unrelated jobs in SQL and avoid per-job history lookups under the
+mutation lock. The stop cap is 25 eligible jobs; query-count regressions include
+many unselected assignments and multiple manually approved reports.

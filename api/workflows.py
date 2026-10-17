@@ -107,7 +107,9 @@ def assessment_allows_job(report: Report) -> bool:
     return not result.needs_review and result.priority is not None
 
 
-def job_assessment_approved(db: Session, report: Report) -> bool:
+def job_assessment_approved(
+    db: Session, report: Report, *, approval_events=None
+) -> bool:
     if assessment_allows_job(report):
         return True
     if report.needs_review or report.organizer_review_required or report.job_id is None:
@@ -116,9 +118,13 @@ def job_assessment_approved(db: Session, report: Report) -> bool:
     return any(
         record.details.get("organizer_override") is True
         and record.details.get("job_id") == str(report.job_id)
-        for record in db.scalars(
-            select(Event).where(
-                Event.report_id == report.id, Event.kind == "report.triaged"
+        for record in (
+            approval_events
+            if approval_events is not None
+            else db.scalars(
+                select(Event).where(
+                    Event.report_id == report.id, Event.kind == "report.triaged"
+                )
             )
         )
     )
@@ -665,8 +671,9 @@ def change_crew(
             Job.assigned_crew_id == crew.id,
             Job.status == "assigned",
             Job.locked.is_(False),
-            # Ignored legacy equipment/shift edits must not erase organiser routes.
-            not organizer_routing or body.available is False,
+            # In organiser mode availability pauses execution; it must not
+            # release ownership outside atomic route dispatch either.
+            not organizer_routing,
         )
     ):
         job.assigned_crew_id = None
