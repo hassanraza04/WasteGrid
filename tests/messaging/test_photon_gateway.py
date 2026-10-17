@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
-from api.messaging.config import PhotonConfig
+from api.messaging.config import BackendConfig, PhotonConfig
 from api.messaging.messages import InboundMessage
 from api.messaging.photon_gateway import PhotonGateway
 
@@ -33,6 +33,12 @@ def gateway(client: FakeClient) -> PhotonGateway:
         PhotonConfig(
             project_id="pho_prj_test",
             api_key="pho_sk_test",
+            backend=BackendConfig(
+                base_url="https://backend.example.test/api",
+                messaging_api_key="backend-key",
+                agent_sender_id="pho_usr_agent",
+                timeout_seconds=10.0,
+            ),
             poll_interval_seconds=2.0,
             delivery_db_path=Path(".data/test-delivery.db"),
         ),

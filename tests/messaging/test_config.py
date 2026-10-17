@@ -35,6 +35,81 @@ def test_load_photon_config_rejects_unsafe_backend_url() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "url",
+    ["https://backend.example.test/api?", "https://backend.example.test/api#"],
+)
+def test_load_photon_config_rejects_empty_query_and_fragment(url: str) -> None:
+    with pytest.raises(ConfigurationError, match="WASTEGRID_BACKEND_URL"):
+        load_photon_config(
+            {
+                "PHOTON_PROJECT_ID": "pho_prj_test",
+                "PHOTON_API_KEY": "pho_sk_test",
+                "WASTEGRID_BACKEND_URL": url,
+                "WASTEGRID_MESSAGING_API_KEY": "backend-key",
+                "PHOTON_AGENT_SENDER_ID": "pho_usr_agent",
+            }
+        )
+
+
+def test_load_photon_config_rejects_malformed_backend_port() -> None:
+    with pytest.raises(ConfigurationError, match="WASTEGRID_BACKEND_URL"):
+        load_photon_config(
+            {
+                "PHOTON_PROJECT_ID": "pho_prj_test",
+                "PHOTON_API_KEY": "pho_sk_test",
+                "WASTEGRID_BACKEND_URL": "https://backend.example.test:bad/api",
+                "WASTEGRID_MESSAGING_API_KEY": "backend-key",
+                "PHOTON_AGENT_SENDER_ID": "pho_usr_agent",
+            }
+        )
+
+
+@pytest.mark.parametrize("timeout", ["nan", "inf", "-inf"])
+def test_load_photon_config_rejects_non_finite_timeout(timeout: str) -> None:
+    with pytest.raises(ConfigurationError, match="WASTEGRID_TIMEOUT_SECONDS"):
+        load_photon_config(
+            {
+                "PHOTON_PROJECT_ID": "pho_prj_test",
+                "PHOTON_API_KEY": "pho_sk_test",
+                "WASTEGRID_BACKEND_URL": "https://backend.example.test/api",
+                "WASTEGRID_MESSAGING_API_KEY": "backend-key",
+                "PHOTON_AGENT_SENDER_ID": "pho_usr_agent",
+                "WASTEGRID_TIMEOUT_SECONDS": timeout,
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "environment"),
+    [
+        ("WASTEGRID_BACKEND_URL", {}),
+        (
+            "WASTEGRID_MESSAGING_API_KEY",
+            {"WASTEGRID_BACKEND_URL": "https://backend.example.test/api"},
+        ),
+        (
+            "PHOTON_AGENT_SENDER_ID",
+            {
+                "WASTEGRID_BACKEND_URL": "https://backend.example.test/api",
+                "WASTEGRID_MESSAGING_API_KEY": "backend-key",
+            },
+        ),
+    ],
+)
+def test_load_photon_config_requires_backend_settings(
+    name: str, environment: dict[str, str]
+) -> None:
+    with pytest.raises(ConfigurationError, match=name):
+        load_photon_config(
+            {
+                "PHOTON_PROJECT_ID": "pho_prj_test",
+                "PHOTON_API_KEY": "pho_sk_test",
+                **environment,
+            }
+        )
+
+
 def test_load_photon_config_reads_values_and_default_interval() -> None:
     config = load_photon_config(
         {

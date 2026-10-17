@@ -1,6 +1,7 @@
 """Local configuration for the Photon Beta integration."""
 
 from dataclasses import dataclass
+from math import isfinite
 from pathlib import Path
 from typing import Mapping
 from urllib.parse import urlsplit
@@ -51,7 +52,10 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
             and parsed_backend_url.password is None
             and not parsed_backend_url.query
             and not parsed_backend_url.fragment
+            and "?" not in backend_url
+            and "#" not in backend_url
         )
+        parsed_backend_url.port
     except ValueError:
         valid_backend_url = False
     if not valid_backend_url:
@@ -70,7 +74,7 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
         timeout_seconds = float(timeout_text)
     except ValueError as error:
         raise ConfigurationError("WASTEGRID_TIMEOUT_SECONDS must be a number") from error
-    if timeout_seconds <= 0:
+    if not isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ConfigurationError(
             "WASTEGRID_TIMEOUT_SECONDS must be greater than zero"
         )

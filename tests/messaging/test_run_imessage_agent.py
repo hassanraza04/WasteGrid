@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from api.messaging import run_imessage_agent
-from api.messaging.config import PhotonConfig
+from api.messaging.config import BackendConfig, PhotonConfig
 from api.messaging.delivery_coordinator import DeliveryCoordinator
 from api.messaging.delivery_ledger import DeliveryLedger
 from api.messaging.messages import InboundMessage
@@ -144,6 +144,12 @@ def test_run_forever_stops_cleanly_when_interrupted(
     config = PhotonConfig(
         project_id="pho_prj_test",
         api_key="pho_sk_test",
+        backend=BackendConfig(
+            base_url="https://backend.example.test/api",
+            messaging_api_key="backend-key",
+            agent_sender_id="pho_usr_agent",
+            timeout_seconds=10.0,
+        ),
         poll_interval_seconds=2.0,
         delivery_db_path=tmp_path / "delivery.db",
     )
@@ -174,6 +180,12 @@ def test_run_forever_logs_no_fetch_error_details(
     config = PhotonConfig(
         project_id="pho_prj_test",
         api_key="pho_sk_test",
+        backend=BackendConfig(
+            base_url="https://backend.example.test/api",
+            messaging_api_key="backend-key",
+            agent_sender_id="pho_usr_agent",
+            timeout_seconds=10.0,
+        ),
         poll_interval_seconds=2.0,
         delivery_db_path=tmp_path / "delivery.db",
     )
