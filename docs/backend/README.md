@@ -11,6 +11,10 @@ Start with [setup.md](setup.md), then share [contracts.md](contracts.md).
 [example payloads](fixtures/) are generated from the Python models.
 [verification.md](verification.md) records what has actually been tested.
 
+For the mobile app owner, share the standalone [mobile integration handoff](mobile-handoff.md).
+It covers resident tokens, uploads, tracking, optional staff authentication and the
+connection details still needed for device integration.
+
 The dashboard contract increment is implemented: title/address, public reference
 lookup, latest updates and paginated update/conversation history. Share
 [dashboard-handoff.md](dashboard-handoff.md) for endpoint examples and the exact
@@ -45,8 +49,16 @@ calls and real authentication; a public reference alone grants no access.
 
 ## Integration status
 
-No live Supabase, Render or Person 3 credentials were supplied. Provider calls
-are tested using explicit doubles. The production worker **does not invent
+Supabase is configured: six migrations, private photo Storage, three confirmed
+staff accounts and the illustrative demo dataset. The local API uses this live
+project. Start it and run `python -m scripts.verify_live_backend` with the backend
+extra as described in [setup.md](setup.md#current-local-demo). Latest local live
+evidence is saved in `.data/backend-live-verification.json`; shareable acceptance
+results belong in [verification.md](verification.md). Credentials remain in the
+ignored `.env` and `.env.supabase-demo`, outside the documentation.
+
+Render deployment and real Person 3/Photon integration remain pending. Provider
+calls in the regression suite use explicit doubles. The worker **does not invent
 triage or planning output**: configure the real provider to drain queued work.
 The test-only provider is in `tests/backend/providers.py`, excluded from Docker.
 
