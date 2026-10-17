@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 from api.messaging.messages import InboundMessage
 from api.messaging import run_imessage_agent
@@ -89,6 +90,7 @@ def test_run_forever_stops_cleanly_when_interrupted(monkeypatch: object) -> None
         project_id="pho_prj_test",
         api_key="pho_sk_test",
         poll_interval_seconds=2.0,
+        delivery_db_path=Path(".data/test-delivery.db"),
     )
     monkeypatch.setattr(run_imessage_agent, "load_photon_config", lambda environ: config)
     monkeypatch.setattr(run_imessage_agent, "PhotonGateway", lambda _: gateway)

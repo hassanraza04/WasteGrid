@@ -13,6 +13,7 @@ dist
 
 # Local configuration
 .env
+.data/
 
 # Intellij
 *.iml

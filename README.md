@@ -25,6 +25,9 @@ Photon Spectrum is connected. You said: <your message>
 The process reads only fresh iMessages received after it starts. It ignores older
 messages, non-iMessage events, blank messages, and duplicate message IDs within
 one process lifetime. `.env` is ignored by Git and must never be committed.
+The delivery ledger defaults to `.data/photon-delivery.db`, a local retry
+spool for delivery state. It is ignored by Git and separate from the shared
+report database. Set `PHOTON_DELIVERY_DB_PATH` to change its local path.
 
 ## Dashboard foundation
 
