@@ -7,34 +7,34 @@ instructions are in [docs/backend](docs/backend/README.md). Start with
 [setup](docs/backend/setup.md) and share the [contracts](docs/backend/contracts.md)
 with the frontend, Chalk and Photon owners.
 
-## Photon iMessage smoke agent
+## Photon iMessage backend adapter
 
-The first messaging slice uses the Photon Beta API to reply to fresh iMessages.
-It is intentionally limited to a safe echo while the shared report and follow-up
-contracts are still being built.
+The agent polls Photon for new iMessages and submits them to the WasteGrid
+backend. It sends replies that the backend has prepared. There is no local echo
+fallback.
 
 1. Create a local `.env` from `.env.example`.
 2. Set `PHOTON_PROJECT_ID` and `PHOTON_API_KEY` with the values from Photon.
-3. Start the agent:
+   Set `PHOTON_AGENT_SENDER_ID` to the Photon sender used for replies.
+3. Set `WASTEGRID_BACKEND_URL` to the reachable WasteGrid backend URL and
+   `WASTEGRID_MESSAGING_API_KEY` to its Person 4 integration key. The backend
+   and all three backend mode settings must be ready before polling starts.
+4. Start the agent:
 
    ```bash
    uv run --env-file .env python -m api.messaging.run_imessage_agent
    ```
 
-4. Send a new iMessage to the Photon line after the process logs that it is polling.
+5. Send a new iMessage to the Photon line after the process logs that it is polling.
 
-The expected reply is:
-
-```text
-Photon Spectrum is connected. You said: <your message>
-```
-
-The process reads only fresh iMessages received after it starts. It ignores older
-messages, non-iMessage events, blank messages, and duplicate message IDs within
-one process lifetime. `.env` is ignored by Git and must never be committed.
-The delivery ledger defaults to `.data/photon-delivery.db`, a local retry
-spool for delivery state. It is ignored by Git and separate from the shared
-report database. Set `PHOTON_DELIVERY_DB_PATH` to change its local path.
+The first run starts at the current time. Later runs resume from the saved poll
+checkpoint. The agent ignores non-iMessage events and blank messages. The backend
+owns follow-up retries, delivery retries, idempotency, and leases. SQLite stores the
+Photon poll checkpoint plus immutable rendered text bound to each outgoing UUID in
+backend mode. It defaults to
+`.data/photon-delivery.db`; set
+`PHOTON_DELIVERY_DB_PATH` to change the path. `.env` and the checkpoint database
+are ignored by Git. Never commit `.env`.
 
 ## Dashboard foundation
 

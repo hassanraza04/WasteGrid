@@ -8,6 +8,7 @@ requires-python = ">=3.11,<3.15"
 dependencies = [
   "chalkcompute",
   "chalkpy[runtime]",
+  "httpx>=0.28,<1",
   "photonhq-api>=0.5.0",
 ]
 
@@ -18,7 +19,6 @@ backend = [
   "sqlalchemy>=2.0,<3",
   "psycopg[binary]>=3.2,<4",
   "pydantic-settings>=2.7,<3",
-  "httpx>=0.28,<1",
   "python-multipart>=0.0.20,<1",
   "pillow>=11,<13",
 ]
