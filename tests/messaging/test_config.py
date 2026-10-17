@@ -48,6 +48,36 @@ def test_load_photon_config_rejects_backend_url_with_malformed_host() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "url",
+    ["\thttps://backend.example.test/api", "https://backend.example.test/api\n"],
+)
+def test_load_photon_config_rejects_backend_url_with_edge_whitespace(url: str) -> None:
+    with pytest.raises(ConfigurationError, match="WASTEGRID_BACKEND_URL"):
+        load_photon_config(
+            {
+                "PHOTON_PROJECT_ID": "pho_prj_test",
+                "PHOTON_API_KEY": "pho_sk_test",
+                "WASTEGRID_BACKEND_URL": url,
+                "WASTEGRID_MESSAGING_API_KEY": "backend-key",
+                "PHOTON_AGENT_SENDER_ID": "pho_usr_agent",
+            }
+        )
+
+
+def test_load_photon_config_rejects_backend_url_with_path_whitespace() -> None:
+    with pytest.raises(ConfigurationError, match="WASTEGRID_BACKEND_URL"):
+        load_photon_config(
+            {
+                "PHOTON_PROJECT_ID": "pho_prj_test",
+                "PHOTON_API_KEY": "pho_sk_test",
+                "WASTEGRID_BACKEND_URL": "https://backend.example.test/api path",
+                "WASTEGRID_MESSAGING_API_KEY": "backend-key",
+                "PHOTON_AGENT_SENDER_ID": "pho_usr_agent",
+            }
+        )
+
+
 @pytest.mark.parametrize("control_character", ["\n", "\t"])
 def test_load_photon_config_rejects_backend_url_with_control_character(
     control_character: str,

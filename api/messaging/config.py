@@ -67,7 +67,10 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
     if not api_key:
         raise ConfigurationError("PHOTON_API_KEY must be set")
 
-    backend_url = environ.get("WASTEGRID_BACKEND_URL", "").strip()
+    raw_backend_url = environ.get("WASTEGRID_BACKEND_URL", "")
+    if any(character.isspace() for character in raw_backend_url):
+        raise ConfigurationError("WASTEGRID_BACKEND_URL must be a safe HTTP(S) URL")
+    backend_url = raw_backend_url.strip()
     if any(ord(character) < 32 or ord(character) == 127 for character in backend_url):
         raise ConfigurationError("WASTEGRID_BACKEND_URL must be a safe HTTP(S) URL")
     try:
