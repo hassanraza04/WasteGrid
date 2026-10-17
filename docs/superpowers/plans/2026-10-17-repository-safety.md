@@ -19,7 +19,7 @@
 
 ---
 
-### Task 1: Make Python quality tools reproducible and resolve the advisory
+### Task 1: Make Python quality tools reproducible and record the advisory exception
 
 **Files:**
 - Modify: `pyproject.toml:14-25`
@@ -60,27 +60,30 @@ dev = [
 
 This removes unused Flake8 and makes mypy and pip-audit explicit reproducible tools.
 
-- [ ] **Step 3: Upgrade only the vulnerable resolved package**
+- [ ] **Step 3: Confirm the upstream constraint and use the approved exception**
 
 Run:
 
 ```bash
-uv lock --upgrade-package requests
 uv sync --locked --group dev
+uv run pip-audit --ignore-vuln PYSEC-2026-2275
 ```
 
-Expected: `uv.lock` resolves `requests` to `2.33.0` or newer without editing the lockfile manually.
+Expected: the audit finds no non-excepted advisory. `chalkpy[runtime]` currently
+requires `requests>=2.31,<2.33`, which prevents the fixed `requests` release
+from resolving. The exact exception, owner (`hassanraza04`), expiry
+(`2026-11-17`), and removal condition are documented in Task 4.
 
 - [ ] **Step 4: Verify the green dependency and typing state**
 
 Run:
 
 ```bash
-uv run pip-audit
+uv run pip-audit --ignore-vuln PYSEC-2026-2275
 uv run mypy --strict api/messaging
 ```
 
-Expected: `No known vulnerabilities found` and `Success: no issues found`.
+Expected: `No known vulnerabilities found, 2 ignored` and `Success: no issues found`.
 
 - [ ] **Step 5: Commit the reproducible Python toolchain**
 
@@ -187,7 +190,7 @@ jobs:
       - run: uv run isort --check-only api tests
       - run: uv run mypy --strict api/messaging
       - run: uv run pytest -q
-      - run: uv run pip-audit
+      - run: uv run pip-audit --ignore-vuln PYSEC-2026-2275
 
   web:
     name: Web quality
@@ -253,12 +256,23 @@ uv run black --check api tests
 uv run isort --check-only api tests
 uv run mypy --strict api/messaging
 uv run pytest -q
-uv run pip-audit
+uv run pip-audit --ignore-vuln PYSEC-2026-2275
 (cd web && npm ci && npm audit --audit-level=high && npm run coverage && npm run build)
 ```
 
 GitHub Actions runs the same checks on pull requests and pushes to `main`.
 It has read-only repository permissions and does not receive project secrets.
+
+## Temporary dependency exception
+
+- Advisory: `PYSEC-2026-2275`
+- Package: `requests 2.32.5`
+- Reason: `chalkpy[runtime]` currently requires `requests>=2.31,<2.33`, so the
+  fixed release cannot resolve.
+- Owner: `hassanraza04`
+- Expires: `2026-11-17`
+- Removal: remove the ignore flag and upgrade Chalk and `requests` as soon as a
+  compatible Chalk release is available.
 
 ## Repository administrator checklist
 
