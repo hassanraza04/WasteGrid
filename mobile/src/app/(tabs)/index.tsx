@@ -5,8 +5,8 @@ import MapView, { PROVIDER_GOOGLE, Polygon, Marker } from "react-native-maps";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Location from "expo-location";
+import mapStyle from "../../theme/mapStyle.json";
 import { router } from "expo-router";
-import mapStyle from "@/theme/mapStyle.json";
 
 const DEFAULT_POS = { latitude: 24.8138, longitude: 67.03, latitudeDelta: 0.03, longitudeDelta: 0.03 };
 
@@ -52,8 +52,8 @@ export default function MapPage() {
 
       {/* Layer 2: overlays. box-none lets touches pass through to the map */}
       <SafeAreaView edges={["top"]} pointerEvents="box-none" style={s.header}>
-        <View style={s.brand}><Feather name="aperture" size={24} color="#2F6B55" /><Text style={s.title}>WasteGrid</Text></View>
-        <Pressable style={s.avatar}><Text style={s.avatarText}>AL</Text></Pressable>
+        <View style={s.brand}><Text style={s.title}>WasteGrid</Text></View>
+        <Pressable style={s.avatar}><Text style={s.avatarText}>P</Text></Pressable>
       </SafeAreaView>
 
       <View pointerEvents="box-none" style={s.fabs}>
@@ -61,8 +61,8 @@ export default function MapPage() {
         <Pressable style={s.fab} onPress={recenter}><Feather name="crosshair" size={22} color="#1E2B26" /></Pressable>
       </View>
 
-      <Pressable style={s.cta} onPress={() => router.push("/report")}>
-        <Feather name="camera" size={20} color="#fff" /><Text style={s.ctaText}>Take a photo</Text>
+      <Pressable style={s.cta} onPress={() => {router.push("/report")}}>
+        <Feather name="camera" size={20} color="#fff" /><Text style={s.ctaText}>Report waste</Text>
       </Pressable>
     </View>
   );
@@ -77,7 +77,7 @@ const s = StyleSheet.create({
   avatarText: { fontWeight: "700", fontSize: 13 },
   fabs: { position: "absolute", right: 16, bottom: 104, gap: 12 },
   fab: { width: 52, height: 52, borderRadius: 14, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", ...shadow },
-  cta: { position: "absolute", left: 24, right: 24, bottom: 20, height: 64, borderRadius: 16, backgroundColor: "#18a545",
+  cta: { position: "absolute", left: 24, right: 24, bottom: 20, height: 64, borderRadius: 16, backgroundColor: "#3A7A64",
          flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, ...shadow },
   ctaText: { color: "#fff", fontSize: 17, fontWeight: "600" },
 });
