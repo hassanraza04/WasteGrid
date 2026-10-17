@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sqlite3
+from contextlib import contextmanager
+from collections.abc import Iterator
 
 from api.messaging.messages import InboundMessage
 
@@ -27,7 +29,7 @@ class DeliveryLedger:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             connection.executescript("""
                 CREATE TABLE IF NOT EXISTS metadata (
                     key TEXT PRIMARY KEY,
@@ -54,9 +56,18 @@ class DeliveryLedger:
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.path)
 
+    @contextmanager
+    def _transaction(self) -> Iterator[sqlite3.Connection]:
+        connection = self._connect()
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
+
     def checkpoint_or_initialize(self, now: datetime) -> datetime:
         timestamp = _utc_iso(now)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             connection.execute(
                 "INSERT OR IGNORE INTO metadata (key, value) VALUES ('poll_checkpoint', ?)",
                 (timestamp,),
@@ -68,7 +79,7 @@ class DeliveryLedger:
         return datetime.fromisoformat(row[0])
 
     def advance_checkpoint(self, checkpoint: datetime) -> None:
-        with self._connect() as connection:
+        with self._transaction() as connection:
             connection.execute(
                 "INSERT INTO metadata (key, value) VALUES ('poll_checkpoint', ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -77,7 +88,7 @@ class DeliveryLedger:
 
     def enqueue_reply(self, message: InboundMessage, text: str, now: datetime) -> bool:
         timestamp = _utc_iso(now)
-        with self._connect() as connection:
+        with self._transaction() as connection:
             inserted = connection.execute(
                 "INSERT OR IGNORE INTO inbound_messages (message_id, received_at) VALUES (?, ?)",
                 (message.id, timestamp),
@@ -100,7 +111,7 @@ class DeliveryLedger:
         return bool(inserted)
 
     def due_replies(self, now: datetime) -> list[OutboundReply]:
-        with self._connect() as connection:
+        with self._transaction() as connection:
             rows = connection.execute(
                 "SELECT message_id, agent_sender_id, space_id, text, attempt_count "
                 "FROM outbound_replies WHERE state = 'pending' AND next_attempt_at <= ? "
@@ -113,7 +124,7 @@ class DeliveryLedger:
         ]
 
     def mark_sent(self, message_id: str, now: datetime) -> None:
-        with self._connect() as connection:
+        with self._transaction() as connection:
             connection.execute(
                 "UPDATE outbound_replies SET state = 'sent', sent_at = ?, next_attempt_at = NULL "
                 "WHERE message_id = ? AND state = 'pending'",
