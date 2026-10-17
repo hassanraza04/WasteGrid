@@ -1151,7 +1151,7 @@ def test_organizer_override_is_authorized_audited_and_idempotent(
     body = proposal.model_dump(mode="json")
     assert (
         client.post(path, headers=auth(second["access_token"]), json=body).status_code
-        == 401
+        == 403
     )
     assert client.post(path, headers=auth("a"), json=body).status_code == 403
     response = client.post(path, headers=auth("org"), json=body)

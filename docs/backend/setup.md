@@ -24,10 +24,10 @@ Keep `.env` ignored. Existing Photon settings remain in the example. Configure:
 | `CHALK_ENV_ID` | Chalk environment ID for the assessment worker. |
 | `CHALK_MODEL` | Default `groq/qwen/qwen3.8-27b`; use the configured connection prefix. |
 | `ASSESSMENT_TIMEOUT_SECONDS` | Default 30; one request and no automatic retries. |
-| `DUPLICATE_RADIUS_METERS` | API proximity policy for unresolved reports; default 10 metres. |
-| `PERSON3_BASE_URL` | Person 3 HTTP facade base URL, once available. |
+| `DUPLICATE_RADIUS_METERS` | Proximity review for real unresolved reports; default 10 metres, 0 disables. Photos are retained. |
+| `PERSON3_BASE_URL` | Optional external Person 3 HTTP facade; leave blank for the built-in decisions. |
 | `PERSON3_API_KEY` | Optional bearer credential for that facade. |
-| `INTEGRATION_FACTORY` | Alternative to HTTP: `package.module:create_provider`. Factory receives `Settings` and returns a `DecisionProvider`. Leave blank when using HTTP. |
+| `INTEGRATION_FACTORY` | Alternative to HTTP: `package.module:create_provider`. Factory receives `Settings` and returns a `DecisionProvider`. Leave blank for HTTP or the default built-in decisions. |
 
 Generate each integration secret independently:
 
@@ -95,7 +95,10 @@ analytics, organizer listings or model context.
 ## 3. Connect Persons 3 and 4
 
 Share `contracts.md`, `openapi.json` and the fixture directory first. Configure
-the Chalk gateway key/environment for assessments (or Person 3's facade/factory for legacy workflows), then start the worker:
+the Chalk gateway key/environment for photo assessment. The default built-in
+provider also processes triage, plan and followup tasks with those settings alone;
+no separate decision service is required. Explicit facade/factory settings take
+precedence for those decision methods. Then start the worker:
 
 ```bash
 uv run --extra backend python -m api.worker
@@ -121,7 +124,8 @@ the actual `sent_text` on successful delivery acknowledgements; see
    the reviewed changes. The prepared `render.yaml` defines the API Docker web
    service and worker. Choose the intended branch in Render.
 2. Put the variables above in Render environment settings. Give the worker
-   database/Storage/Person 3 settings; give the API database/Storage/integration
+   database/Storage/Chalk settings (and optional external decision settings); give
+   the API database/Storage/integration
    keys/CORS settings. Do not include `.env` in a build.
 3. Apply migrations from your local backend environment **before** the first
    service becomes healthy. Deployments intentionally do not run migrations at
