@@ -1,8 +1,8 @@
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, KeyboardAvoidingView, ActivityIndicator, Platform } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { Image } from "expo-image";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
 
+import { AppText, Button, IconButton, Screen, TextField } from "@/components/ui";
+import { Colors, Layout, Radius, Sizes, Spacing, Type } from "@/theme";
 import type { PhotoLocation } from "@/utils/location";
 
 const CAPTION_MAX = 280;
@@ -15,6 +15,8 @@ type Props = {
   onRelocate: () => void;
   caption: string;
   onCaptionChange: (caption: string) => void;
+  describing: boolean;
+  onGenerateCaption: () => void;
   canSubmit: boolean;
   onRetake: () => void;
   onSubmit: () => void;
@@ -23,85 +25,75 @@ type Props = {
 
 // Photo preview + location + caption, shown after the photo is taken.
 export function ReportForm(props: Props) {
-  const { photoUri, location, locating, caption, canSubmit } = props;
+  const { photoUri, location, locating, caption, describing, canSubmit } = props;
+  const coords = location?.coords;
 
   return (
-    <KeyboardAvoidingView style={s.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <SafeAreaView edges={["top", "bottom"]} style={s.flex}>
+    <Screen
+      tabBar={false}
+      keyboard
+      edges={["top", "bottom"]}
+      header={
         <View style={s.header}>
-          <Pressable onPress={props.onClose} hitSlop={8}><Feather name="x" size={24} color="#1E2B26" /></Pressable>
-          <Text style={s.title}>New report</Text>
-          <View style={{ width: 24 }} />
+          <IconButton icon="x" variant="sunken" size="sm" accessibilityLabel="Close" onPress={props.onClose} />
+          <AppText variant="title">New report</AppText>
+          <View style={s.headerSpacer} />
         </View>
+      }
+      footer={<Button label="Submit report" icon="send" onPress={props.onSubmit} disabled={!canSubmit} />}>
+      <View>
+        <Image source={{ uri: photoUri }} style={s.preview} contentFit="cover" />
+        <Button label="Retake" icon="refresh-ccw" variant="secondary" size="md" onPress={props.onRetake} style={s.retake} />
+      </View>
 
-        <ScrollView contentContainerStyle={s.body} keyboardShouldPersistTaps="handled">
-          <View>
-            <Image source={{ uri: photoUri }} style={s.preview} contentFit="cover" />
-            <Pressable style={s.retake} onPress={props.onRetake}>
-              <Feather name="refresh-ccw" size={16} color="#fff" />
-              <Text style={s.retakeText}>Retake</Text>
-            </Pressable>
-          </View>
+      <View style={s.locationRow}>
+        <TextField
+          label="Location"
+          style={s.flex}
+          value={location?.address ?? ""}
+          onChangeText={props.onAddressChange}
+          placeholder={locating ? "Finding your location…" : "Street, area or landmark"}
+          hint={coords ? `${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)}` : undefined}
+        />
+        <IconButton
+          icon="crosshair"
+          variant="surface"
+          accessibilityLabel="Use my current location"
+          onPress={props.onRelocate}
+          loading={locating}
+          style={s.locate}
+        />
+      </View>
 
-          <Text style={s.label}>Location</Text>
-          <View style={s.row}>
-            <TextInput
-              style={[s.input, s.flex]}
-              value={location?.address ?? ""}
-              onChangeText={props.onAddressChange}
-              placeholder={locating ? "Finding your location…" : "Street, area or landmark"}
-              placeholderTextColor="#8A9690"
-            />
-            <Pressable style={s.locate} onPress={props.onRelocate} disabled={locating} hitSlop={4}>
-              {locating ? <ActivityIndicator color="#2F6B55" /> : <Feather name="crosshair" size={20} color="#2F6B55" />}
-            </Pressable>
-          </View>
-          {location?.coords && (
-            <Text style={s.hint}>{location.coords.latitude.toFixed(5)}, {location.coords.longitude.toFixed(5)}</Text>
-          )}
-
-          <Text style={s.label}>Caption</Text>
-          <TextInput
-            style={[s.input, s.caption]}
-            value={caption}
-            onChangeText={props.onCaptionChange}
-            placeholder="What's the problem? e.g. overflowing bin, dumped bags"
-            placeholderTextColor="#8A9690"
-            multiline
-            maxLength={CAPTION_MAX}
-            textAlignVertical="top"
+      <TextField
+        label="Caption"
+        labelAction={
+          <Button
+            label={describing ? "Describing…" : "Describe photo"}
+            icon="zap"
+            variant="ghost"
+            onPress={props.onGenerateCaption}
+            loading={describing}
           />
-          <Text style={s.hint}>{caption.length}/{CAPTION_MAX}</Text>
-        </ScrollView>
-
-        <Pressable style={[s.submit, !canSubmit && s.disabled]} onPress={props.onSubmit} disabled={!canSubmit}>
-          <Text style={s.submitText}>Submit report</Text>
-        </Pressable>
-      </SafeAreaView>
-    </KeyboardAvoidingView>
+        }
+        value={caption}
+        onChangeText={props.onCaptionChange}
+        placeholder="What's the problem? e.g. overflowing bin, dumped bags"
+        multiline
+        maxLength={CAPTION_MAX}
+        hint={`${caption.length}/${CAPTION_MAX}`}
+      />
+    </Screen>
   );
 }
 
 const s = StyleSheet.create({
   flex: { flex: 1 },
-  container: { flex: 1, backgroundColor: "#F6F8F7" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12 },
-  title: { fontSize: 18, fontWeight: "600", color: "#1E2B26" },
-  body: { padding: 16, gap: 8 },
-  preview: { width: "100%", aspectRatio: 3 / 4, borderRadius: 16, backgroundColor: "#DDE3E0" },
-  retake: { position: "absolute", right: 12, bottom: 12, flexDirection: "row", alignItems: "center", gap: 6,
-            backgroundColor: "rgba(0,0,0,0.55)", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
-  retakeText: { color: "#fff", fontWeight: "600" },
-  label: { marginTop: 12, fontSize: 14, fontWeight: "600", color: "#1E2B26" },
-  row: { flexDirection: "row", alignItems: "center", gap: 8 },
-  input: { backgroundColor: "#fff", borderRadius: 12, borderWidth: 1, borderColor: "#DDE3E0",
-           paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: "#1E2B26" },
-  locate: { width: 48, height: 48, borderRadius: 12, backgroundColor: "#fff", borderWidth: 1, borderColor: "#DDE3E0",
-            alignItems: "center", justifyContent: "center" },
-  caption: { minHeight: 110 },
-  hint: { fontSize: 12, color: "#8A9690" },
-  submit: { marginHorizontal: 24, marginBottom: 12, height: 56, borderRadius: 16, backgroundColor: "#18a545",
-            alignItems: "center", justifyContent: "center" },
-  submitText: { color: "#fff", fontSize: 17, fontWeight: "600" },
-  disabled: { opacity: 0.5 },
+  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+            paddingHorizontal: Layout.screenPadding, paddingVertical: Spacing.md },
+  headerSpacer: { width: Sizes.iconButtonSm },
+  preview: { width: "100%", aspectRatio: 3 / 4, borderRadius: Radius.lg, backgroundColor: Colors.surfaceSunken },
+  retake: { position: "absolute", right: Spacing.md, bottom: Spacing.md },
+  locationRow: { flexDirection: "row", alignItems: "flex-start", gap: Spacing.sm },
+  locate: { width: Sizes.input, height: Sizes.input, marginTop: Type.label.lineHeight + Spacing.sm }, // lines up with the input, below its label
 });
