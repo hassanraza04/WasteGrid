@@ -953,3 +953,51 @@ def test_clarification_never_marks_itself_as_duplicate(report_api, assessment_db
             db.scalar(select(Event).where(Event.kind == "report.possible_duplicate"))
             is None
         )
+
+
+@pytest.mark.parametrize("external_provider", [False, True])
+def test_missing_chalk_defers_assessment_without_consuming_attempt(
+    report_api, assessment_db, external_provider
+):
+    from uuid import UUID
+
+    from tests.backend.providers import TestProvider
+
+    client, image, _ = report_api
+    rid = UUID(submit(client, image).json()["report"]["id"])
+    provider = TestProvider() if external_provider else None
+    assert not process_one(assessment_db, provider, client.app.state.cloud)
+    with Session(assessment_db) as db:
+        row = db.get(Report, rid)
+        task = db.scalar(select(Task).where(Task.kind == "assessment"))
+        assert row.assessment_status == "pending" and row.assessment is None
+        assert not row.needs_review
+        assert task.status == "pending" and task.attempts == 0
+        assert task.lease_id is None and task.last_error is None
+    calls = []
+    model = SimpleNamespace(assess=lambda *args: calls.append(args) or assessment())
+    assert process_one(assessment_db, provider, client.app.state.cloud, model)
+    with Session(assessment_db) as db:
+        assert db.get(Report, rid).assessment_status == "assessed"
+        task = db.scalar(select(Task).where(Task.kind == "assessment"))
+        assert task.status == "succeeded" and task.attempts == 1
+    assert len(calls) == 1
+
+
+def test_missing_chalk_does_not_starve_external_planning(report_api, assessment_db):
+    from api.decisions import AssessmentDecisionProvider
+    from api.models import Plan
+
+    client, image, _ = report_api
+    assert submit(client, image).status_code == 201
+    with Session(assessment_db) as db:
+        enqueue(db, "plan", "test:external-plan", {})
+        db.commit()
+    assert process_one(
+        assessment_db, AssessmentDecisionProvider(), client.app.state.cloud
+    )
+    with Session(assessment_db) as db:
+        photo_task = db.scalar(select(Task).where(Task.kind == "assessment"))
+        plan_task = db.scalar(select(Task).where(Task.kind == "plan"))
+        assert photo_task.status == "pending" and photo_task.attempts == 0
+        assert plan_task.status == "succeeded" and db.scalar(select(Plan)) is not None

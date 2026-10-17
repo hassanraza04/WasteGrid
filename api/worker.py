@@ -75,6 +75,11 @@ def process_one(
         from api.decisions import AssessmentDecisionProvider
 
         provider = AssessmentDecisionProvider(duplicate_radius_meters)
+    supported_kinds = []
+    if assessment_client is not None:
+        supported_kinds.append("assessment")
+    if provider is not None:
+        supported_kinds.extend(("triage", "plan", "followup"))
     with Session(engine) as db:
         mutation_lock(db)
         task = db.scalar(
@@ -85,7 +90,14 @@ def process_one(
                     and_(Task.status == "running", Task.leased_until < now()),
                 )
             )
-            .where(Task.kind == "assessment" if provider is None else True)
+            .where(
+                or_(
+                    Task.kind.in_(supported_kinds),
+                    # Recover interrupted one-call work even without credentials;
+                    # this branch terminalizes it below without invoking a model.
+                    and_(Task.kind == "assessment", Task.attempts > 0),
+                )
+            )
             .order_by(Task.created_at, Task.id)
             .with_for_update(skip_locked=True)
             .limit(1)
@@ -319,6 +331,10 @@ def main():
     if engine is None or (provider is None and assessment_client is None):
         raise SystemExit(
             "Configure DATABASE_URL and CHALK_ROUTER_API_KEY/CHALK_ENV_ID or a decision provider; queued work is preserved"
+        )
+    if assessment_client is None:
+        logger.warning(
+            "Chalk assessment is not configured; unattempted assessment tasks remain pending"
         )
     cloud = SupabaseCloud(settings)
     try:

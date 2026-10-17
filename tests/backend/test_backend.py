@@ -1470,3 +1470,169 @@ def test_clarification_entrypoints_apply_configured_proximity(
             assert row.job_id is None
         else:
             assert duplicate is None and triage is not None
+
+
+def test_upgrade_backfills_legacy_reports_without_replaying_assessments(
+    client, png, engine
+):
+    from types import SimpleNamespace
+
+    from api.decisions import AssessmentDecisionProvider
+    from api.models import Job
+    from api.services import enqueue
+    from tests.test_assessment import assessment, ordinary_proposal
+
+    names = ("legacy", "existing", "failed", "linked", "held", "assessed")
+    ids = {name: UUID(report(client, png)["report"]["id"]) for name in names}
+    original_tasks = {}
+    with Session(engine) as db:
+        for name, rid in ids.items():
+            task = db.scalar(
+                select(Task).where(
+                    Task.kind == "assessment",
+                    Task.payload["report_id"].as_string() == str(rid),
+                )
+            )
+            original_tasks[name] = task.id
+            if name in ("legacy", "linked", "held"):
+                db.delete(task)
+            elif name == "failed":
+                task.status, task.attempts = "failed", 1
+            elif name == "assessed":
+                task.status, task.attempts = "succeeded", 1
+                seed_eligible_assessment(db.get(Report, rid))
+            else:
+                task.next_attempt_at = now() + timedelta(days=1)
+        # Simulate a pre-assessment triage queue; it is not an assessment attempt.
+        old_triage = enqueue(
+            db, "triage", f"triage:{ids['legacy']}:1", {"report_id": str(ids["legacy"])}
+        )
+        old_triage.next_attempt_at = now() + timedelta(days=1)
+        held = db.get(Report, ids["held"])
+        held.organizer_review_required = True
+        held.needs_review = True
+        held.state = "needs_review"
+        linked = db.get(Report, ids["linked"])
+        job = Job(
+            location=linked.location,
+            category="legacy",
+            required_equipment=["gloves"],
+            estimated_service_minutes=10,
+        )
+        db.add(job)
+        db.flush()
+        linked.job_id, linked.state = job.id, "linked_to_job"
+        original_job = job.id
+        missing = Report(
+            photo_id=uuid4(),
+            token_hash="legacy-missing-photo",
+            location={"latitude": 24.92, "longitude": 67.09},
+        )
+        db.add(missing)
+        db.flush()
+        missing_id = missing.id
+        db.commit()
+    # Simulate upgrading from 0010; all prior checksums and data remain intact.
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "DELETE FROM wastegrid.schema_migrations WHERE name = '0011_legacy_assessment_backfill.sql'"
+            )
+        )
+    migrate(engine)
+    with Session(engine) as db:
+        for name in ("legacy", "held"):
+            tasks = list(
+                db.scalars(
+                    select(Task).where(
+                        Task.kind == "assessment",
+                        Task.payload["report_id"].as_string() == str(ids[name]),
+                    )
+                )
+            )
+            assert (
+                len(tasks) == 1
+                and tasks[0].status == "pending"
+                and tasks[0].attempts == 0
+            )
+        assert db.get(Task, original_tasks["existing"]).status == "pending"
+        assert db.get(Task, original_tasks["failed"]).status == "failed"
+        assert db.get(Task, original_tasks["failed"]).attempts == 1
+        assert db.get(Task, original_tasks["assessed"]).status == "succeeded"
+        assert db.get(Report, ids["linked"]).job_id == original_job
+        assert (
+            db.scalar(
+                select(Task).where(
+                    Task.kind == "assessment",
+                    Task.payload["report_id"].as_string() == str(ids["linked"]),
+                )
+            )
+            is None
+        )
+        for rid in (missing_id, ids["failed"]):
+            row = db.get(Report, rid)
+            assert row.assessment_status == "needs_review"
+            assert row.organizer_review_required and row.needs_review
+        approval = ordinary_proposal(db.get(Report, missing_id)).model_dump(mode="json")
+    response = client.post(
+        f"/organizer/reports/{missing_id}/decision", headers=auth("org"), json=approval
+    )
+    assert response.status_code == 200 and response.json()["job_id"], response.text
+    calls = []
+    model = SimpleNamespace(assess=lambda *args: calls.append(args) or assessment())
+    for _ in range(10):
+        if not process_one(
+            engine,
+            AssessmentDecisionProvider(0),
+            client.app.state.cloud,
+            model,
+            duplicate_radius_meters=0,
+        ):
+            break
+    with Session(engine) as db:
+        assert db.get(Report, ids["legacy"]).job_id is not None
+        assert db.get(Report, ids["held"]).organizer_review_required
+        assert db.get(Report, ids["held"]).job_id is None
+        before = db.scalar(
+            select(func.count()).select_from(Task).where(Task.kind == "assessment")
+        )
+    assert len(calls) == 2
+    migrate(engine)
+    with Session(engine) as db:
+        assert (
+            db.scalar(
+                select(func.count()).select_from(Task).where(Task.kind == "assessment")
+            )
+            == before
+        )
+
+
+def test_postgres_external_only_worker_defers_until_chalk_is_configured(
+    client, png, engine
+):
+    from types import SimpleNamespace
+
+    from api.decisions import AssessmentDecisionProvider
+    from api.services import enqueue
+    from tests.test_assessment import assessment
+
+    created = report(client, png)
+    rid = UUID(created["report"]["id"])
+    with Session(engine) as db:
+        enqueue(db, "plan", "test:legacy-plan-without-chalk", {})
+        db.commit()
+    provider = AssessmentDecisionProvider(0)
+    assert process_one(engine, provider, client.app.state.cloud)
+    assert not process_one(engine, provider, client.app.state.cloud)
+    with Session(engine) as db:
+        row = db.get(Report, rid)
+        task = db.scalar(select(Task).where(Task.kind == "assessment"))
+        assert row.assessment_status == "pending"
+        assert task.status == "pending" and task.attempts == 0
+        assert task.lease_id is None and task.last_error is None
+        assert db.scalar(select(Task).where(Task.kind == "plan")).status == "succeeded"
+    model = SimpleNamespace(assess=lambda *args: assessment())
+    assert process_one(engine, provider, client.app.state.cloud, model)
+    with Session(engine) as db:
+        assert db.get(Report, rid).assessment_status == "assessed"
+        assert db.scalar(select(Task).where(Task.kind == "assessment")).attempts == 1

@@ -1,5 +1,41 @@
 # Dashboard contract completion: verification evidence
 
+## Shared development API preparation: 2026-10-17
+
+Based on merged `main` at `b3dec0a`, branch `omer/shared-development-api` adds
+an API-only Render Blueprint, a deployment runbook and `.data` exclusion from
+Docker build context. API implementation, contracts and migrations are unchanged.
+
+| Check | Result |
+| --- | --- |
+| `render.dev.yaml` against Render's published JSON schema | Passed; one Free web service, manual deployment, no worker/database |
+| Private environment export | Seven allowlisted server variables; owner-only mode 0600; Git-ignored; dotenv round-trip passed; database TLS required |
+| Docker build / disposable PostgreSQL HTTP smoke | Passed all 11 checks; cloud services doubled |
+| Live local API / Supabase verifier | All 23 checks passed; application rows and Storage metadata preserved |
+| Fixture counts | 10 reports, 6 jobs, 2 crews, 10 photos, 5 assignments |
+| Contract export | Passed; no API v0.2 changes |
+| Documented unauthenticated / CORS behavior | 401 without credentials; configured preflight 200; unknown origin 400 without allow-origin header |
+| Hosted service / HTTPS acceptance | Pending Render connection and deployment |
+
+Docker image ID:
+`sha256:3dc975f4e77f97b9817b70ffb0ff9d7754bbe09fb6970d4aac9c3330fc86786b`.
+The live run's timestamped, secret-free report is
+`.data/backend-live-verification.json`. These are local preparation checks, not
+evidence of a deployed service. The existing full 116-test regression result
+below is historical; that suite was not rerun for this configuration/documentation
+change. No live migrations, reseed, worker or Photon execution occurred.
+
+Reproduce the Docker check with the existing disposable container:
+
+```bash
+docker build -t wastegrid-api:shared-dev .
+TEST_DATABASE_URL='postgresql://postgres:wastegrid-local-test@127.0.0.1:55432/wastegrid_test' \
+  uv run --extra backend python -m scripts.docker_smoke \
+  --image wastegrid-api:shared-dev --postgres-container wastegrid-backend-test
+uv run --extra backend python -m scripts.verify_live_backend
+uv run --extra backend python -m scripts.export_contracts --check
+```
+
 ## PR #8 review follow-up: 2026-10-17
 
 Hassan's two findings on `a09daea` were confirmed by inspection. The initial

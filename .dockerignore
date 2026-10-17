@@ -1,4 +1,5 @@
 .git
+.data
 .venv
 .env
 .env.*

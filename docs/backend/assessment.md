@@ -29,7 +29,7 @@ ASSESSMENT_TIMEOUT_SECONDS=30
 DUPLICATE_RADIUS_METERS=10
 ```
 
-Apply migrations 0007–0010, then start the existing worker alongside FastAPI:
+Apply migrations 0007–0011, then start the existing worker alongside FastAPI:
 
 ```sh
 uv run --extra backend python -m scripts.migrate
@@ -208,3 +208,23 @@ were unknown, so Python returned null priority and review required, as intended.
 This is one user-reported live photo request, not a latency benchmark or independent
 accuracy check. It did not create a database report or verify hosted worker flows.
 No API key or source photo is stored in this evidence.
+
+## Upgrade recovery and absent Chalk configuration
+
+Migration 0011 queues an assessment for each pre-existing unlinked pending report
+with matching photo metadata and no prior assessment task. Existing assessment
+attempts are never replayed. Existing linked jobs are not retrospectively assessed
+or changed. Organizer holds survive the backfill and any subsequent model result.
+Unlinked pending reports with missing photo metadata or only terminal old tasks
+move to `needs_review` with a durable hold so an audited organizer decision can
+resolve them instead of returning a permanent pending-assessment conflict.
+The migration ledger and task dedupe key make reruns idempotent.
+
+An external-only decision worker may still process triage, plan and followup tasks,
+but an unattempted assessment is not claimable until the Chalk client is configured.
+It retains pending status, zero attempts and no lease. Adding credentials and
+restarting the worker makes that same task available without a manual retry.
+Startup warns when assessments are disabled. Already-attempted interrupted work
+still terminalizes without another model call, preserving the one-call guarantee.
+Actual provider errors and malformed outputs remain failures requiring review;
+missing local configuration is not treated as a provider attempt.

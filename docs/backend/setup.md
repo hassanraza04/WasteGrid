@@ -121,7 +121,7 @@ analytics, organizer listings or model context.
    `wastegrid`, with client access revoked and RLS enabled. Keep it out of the
    Supabase exposed API schemas. Migration 0002 creates the private 8 MiB
    JPEG/PNG/WebP bucket. Do not add public Storage policies for this bucket.
-   Existing installations also apply additive migrations 0004–0010 for report
+   Existing installations also apply additive migrations 0004–0011 for report
    identity, event status snapshots and conversation history. Existing references
    are backfilled; unknown addresses/historical statuses stay null. No existing
    migration checksum changes are needed. Apply these before deploying API v0.2.
@@ -182,6 +182,11 @@ the actual `sent_text` on successful delivery acknowledgements; see
 `dashboard-handoff.md` before connecting or updating the adapter.
 
 ## 4. Render
+
+For the shared development milestone, follow the
+[API-only deployment runbook](shared-development-api.md) and select
+`render.dev.yaml`. It keeps the worker inactive and deployments manual. The
+API-plus-worker instructions below describe the later provider-integrated setup.
 
 1. Create/connect the Git repository in Render once you have committed/pushed
    the reviewed changes. The prepared `render.yaml` defines the API Docker web

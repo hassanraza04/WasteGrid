@@ -73,6 +73,11 @@ A user-run live Grok 4.3 photo check returned validated assessment JSON in 3.253
 seconds; see [assessment.md](assessment.md). Hosted assessment/job processing,
 Render deployment and real Photon delivery still need acceptance testing.
 
+The [shared development API runbook](shared-development-api.md) and
+[`render.dev.yaml`](../../render.dev.yaml) prepare an API-only service with manual
+deployments. Use this configuration while provider integration is pending; the
+shared HTTPS URL will be recorded after hosted acceptance.
+
 The upstream `web/` application currently uses browser-local storage, three
 presentation statuses and a development sign-in. Its owner must replace those
 adapters with async API/Supabase clients. Preserve the backend's report/job
