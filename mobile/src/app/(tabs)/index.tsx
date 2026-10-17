@@ -1,7 +1,7 @@
 // app/(tabs)/index.tsx — Explore screen
 import { useRef } from "react";
 import { View, Text, Pressable, StyleSheet } from "react-native";
-import MapView, { PROVIDER_GOOGLE, Polygon, Marker } from "react-native-maps";
+import MapView, { PROVIDER_GOOGLE } from "react-native-maps";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Location from "expo-location";
