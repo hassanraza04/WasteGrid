@@ -49,6 +49,19 @@ def test_load_photon_config_rejects_backend_url_with_malformed_host() -> None:
         )
 
 
+def test_load_photon_config_rejects_backend_url_with_repeated_trailing_dots() -> None:
+    with pytest.raises(ConfigurationError, match="WASTEGRID_BACKEND_URL"):
+        load_photon_config(
+            {
+                "PHOTON_PROJECT_ID": "pho_prj_test",
+                "PHOTON_API_KEY": "pho_sk_test",
+                "WASTEGRID_BACKEND_URL": "https://backend.example.test../api",
+                "WASTEGRID_MESSAGING_API_KEY": "backend-key",
+                "PHOTON_AGENT_SENDER_ID": "pho_usr_agent",
+            }
+        )
+
+
 @pytest.mark.parametrize(
     "url",
     ["\thttps://backend.example.test/api", "https://backend.example.test/api\n"],

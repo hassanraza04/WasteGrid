@@ -50,7 +50,7 @@ def _is_valid_host(hostname: str) -> bool:
 
     if len(ascii_hostname) > 253:
         return False
-    labels = ascii_hostname.rstrip(".").split(".")
+    labels = ascii_hostname.removesuffix(".").split(".")
     return bool(labels) and all(
         0 < len(label) <= 63
         and re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?", label)
