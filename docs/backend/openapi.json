@@ -1399,6 +1399,27 @@
             ],
             "title": "Address"
           },
+          "assessment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WasteAssessment"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assessment_status": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "assessed",
+              "needs_review",
+              "failed"
+            ],
+            "title": "Assessment Status",
+            "type": "string"
+          },
           "clarifications": {
             "items": {
               "$ref": "#/components/schemas/ClarificationRecord"
@@ -1473,6 +1494,11 @@
               }
             ]
           },
+          "needs_review": {
+            "default": false,
+            "title": "Needs Review",
+            "type": "boolean"
+          },
           "note": {
             "anyOf": [
               {
@@ -1488,6 +1514,33 @@
             "format": "uuid",
             "title": "Photo Id",
             "type": "string"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "high",
+                  "medium",
+                  "routine"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "priority_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority Reason"
           },
           "public_reference": {
             "pattern": "^WG-[0-9A-F]{12}$",
@@ -1883,6 +1936,86 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WasteAssessment": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Description",
+            "type": "string"
+          },
+          "forces_people_into_traffic": {
+            "enum": [
+              "yes",
+              "no",
+              "unknown"
+            ],
+            "title": "Forces People Into Traffic",
+            "type": "string"
+          },
+          "obstruction": {
+            "enum": [
+              "none_visible",
+              "walkway",
+              "road",
+              "drain",
+              "entrance",
+              "unknown"
+            ],
+            "title": "Obstruction",
+            "type": "string"
+          },
+          "obstruction_level": {
+            "enum": [
+              "none",
+              "partial",
+              "complete",
+              "unknown"
+            ],
+            "title": "Obstruction Level",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 400,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Reason",
+            "type": "string"
+          },
+          "size": {
+            "enum": [
+              "small",
+              "medium",
+              "large",
+              "unknown"
+            ],
+            "title": "Size",
+            "type": "string"
+          },
+          "special_handling": {
+            "enum": [
+              "suspected",
+              "none_identified",
+              "unknown"
+            ],
+            "title": "Special Handling",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "size",
+          "obstruction",
+          "obstruction_level",
+          "forces_people_into_traffic",
+          "special_handling",
+          "reason"
+        ],
+        "title": "WasteAssessment",
         "type": "object"
       }
     },

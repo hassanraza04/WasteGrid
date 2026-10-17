@@ -14,6 +14,18 @@ class Contract(BaseModel):
     )
 
 
+class WasteAssessment(Contract):
+    description: str = Field(min_length=1, max_length=200, pattern=r"\S")
+    size: Literal["small", "medium", "large", "unknown"]
+    obstruction: Literal[
+        "none_visible", "walkway", "road", "drain", "entrance", "unknown"
+    ]
+    obstruction_level: Literal["none", "partial", "complete", "unknown"]
+    forces_people_into_traffic: Literal["yes", "no", "unknown"]
+    special_handling: Literal["suspected", "none_identified", "unknown"]
+    reason: str = Field(min_length=1, max_length=400, pattern=r"\S")
+
+
 class Equipment(StrEnum):
     gloves = "gloves"
     trash_bags = "trash_bags"
@@ -140,6 +152,13 @@ class ReportView(Contract):
     latest_update: ReportUpdate | None
     timeline: list[EventView]
     triage: TriageRecommendation | None
+    assessment_status: Literal["pending", "assessed", "needs_review", "failed"] = (
+        "pending"
+    )
+    priority: Literal["high", "medium", "routine"] | None = None
+    needs_review: bool = False
+    priority_reason: str | None = None
+    assessment: WasteAssessment | None = None
 
 
 class ReportCreated(Contract):

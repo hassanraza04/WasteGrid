@@ -99,7 +99,11 @@ def apply_triage(db: Session, proposal: TriageRecommendation, actor="agent") -> 
     if evidence != set(proposal.evidence_report_ids):
         raise HTTPException(422, "Evidence references an unknown report")
     report.triage = proposal.model_dump(mode="json")
-    if proposal.hazard or proposal.next_action == "review":
+    if (
+        proposal.hazard
+        or proposal.next_action == "review"
+        or (report.assessment or {}).get("special_handling") == "suspected"
+    ):
         report.state = "needs_review"
     elif (
         report.location is None

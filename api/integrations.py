@@ -1,10 +1,12 @@
 """Person 3 owns these computations. Backend providers never write the database."""
 
+import json
 from importlib import import_module
 from typing import Protocol
 
 import httpx
 
+from api.assessment import INSTRUCTION
 from api.config import Settings
 from api.schemas import (
     FollowupInput,
@@ -13,6 +15,7 @@ from api.schemas import (
     PlanProposal,
     TriageInput,
     TriageRecommendation,
+    WasteAssessment,
 )
 
 
@@ -63,3 +66,56 @@ def load_provider(settings: Settings) -> DecisionProvider | None:
     if settings.person3_base_url:
         return HTTPDecisionProvider(settings)
     return None
+
+
+class ChalkAssessmentClient:
+    """One gateway request, no SDK retries, tool loop, or output repair."""
+
+    def __init__(self, settings: Settings):
+        if not settings.chalk_router_api_key or not settings.chalk_env_id:
+            raise ValueError("Configure CHALK_ROUTER_API_KEY and CHALK_ENV_ID")
+        self.model = settings.chalk_model
+        self.client = httpx.Client(
+            base_url=settings.chalk_router_base_url.rstrip("/") + "/",
+            headers={
+                "Authorization": "Bearer "
+                + settings.chalk_router_api_key.get_secret_value(),
+                "X-Chalk-Env-Id": settings.chalk_env_id,
+            },
+            timeout=settings.assessment_timeout_seconds,
+        )
+
+    def assess(self, photo_url: str, note: str | None) -> WasteAssessment:
+        response = self.client.post(
+            "chat/completions",
+            json={
+                "model": self.model,
+                "max_tokens": 600,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": INSTRUCTION
+                        + "\nJSON schema: "
+                        + json.dumps(WasteAssessment.model_json_schema()),
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": json.dumps({"resident_note": note}),
+                            },
+                            {"type": "image_url", "image_url": {"url": photo_url}},
+                        ],
+                    },
+                ],
+            },
+        )
+        response.raise_for_status()
+        return WasteAssessment.model_validate_json(
+            response.json()["choices"][0]["message"]["content"]
+        )
+
+    def close(self):
+        self.client.close()

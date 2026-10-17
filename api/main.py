@@ -332,7 +332,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         )
         event(db, "report.received", report_id=report_id)
-        enqueue(db, "triage", f"triage:{report_id}:1", {"report_id": str(report_id)})
+        enqueue(
+            db, "assessment", f"assessment:{report_id}", {"report_id": str(report_id)}
+        )
         upload_commit(request, db, path, content, mime)
         return ReportCreated(report=report_view(db, report), access_token=token)
 
@@ -715,6 +717,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Task not found")
         if task.status != "failed":
             raise HTTPException(409, "Only failed tasks can be retried")
+        if task.kind == "assessment":
+            raise HTTPException(
+                409, "One-call assessments require organizer review after failure"
+            )
         task.status, task.attempts, task.next_attempt_at = "pending", 0, now()
         db.commit()
         return task

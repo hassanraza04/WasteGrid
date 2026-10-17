@@ -87,6 +87,15 @@ class Report(Base):
     clarifications: Mapped[list] = mapped_column(JSON, default=list)
     triage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     request_hash: Mapped[str | None] = mapped_column(String(64))
+    assessment_status: Mapped[str] = mapped_column(
+        String(20), default="pending", server_default="pending"
+    )
+    priority: Mapped[str | None] = mapped_column(String(10))
+    needs_review: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    priority_reason: Mapped[str | None] = mapped_column(Text)
+    assessment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class Photo(Base):

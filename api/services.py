@@ -30,6 +30,8 @@ from api.schemas import (
 
 UPDATE_MESSAGES = {
     "report.received": "Your report has been received.",
+    "report.assessed": "Your report has been assessed for cleanup priority.",
+    "report.assessment_failed": "Automatic assessment failed; organizer review is required.",
     "report.clarified": "Additional report information was received.",
     "report.triaged": "Your report was reviewed for cleanup.",
     "job.created": "A cleanup job was created for this report.",
@@ -59,7 +61,7 @@ def report_event_condition(report: Report):
 def report_update(record: Event) -> ReportUpdate:
     # Never interpolate audit details, reasons, model text or actor identities.
     message = UPDATE_MESSAGES[record.kind]
-    if record.kind == "report.triaged":
+    if record.kind in ("report.triaged", "report.assessed"):
         message = {
             "needs_info": "More information is needed about your report.",
             "needs_review": "Your report needs organizer review.",
@@ -113,6 +115,11 @@ def report_view(db: Session, report: Report) -> ReportView:
         timeline=events,
         clarifications=report.clarifications,
         triage=report.triage,
+        assessment_status=report.assessment_status,
+        priority=report.priority,
+        needs_review=report.needs_review,
+        priority_reason=report.priority_reason,
+        assessment=report.assessment,
         completion_photo_ids=(
             list(db.scalars(select(Photo.id).where(Photo.job_id == report.job_id)))
             if job

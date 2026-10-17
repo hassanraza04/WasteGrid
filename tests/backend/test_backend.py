@@ -18,6 +18,14 @@ from tests.backend.providers import TestProvider
 
 def drain(client, engine, provider=None):
     provider = provider or TestProvider()
+    # Explicitly seed legacy triage work for these planning/messaging scenarios.
+    # New-report assessment processing is tested independently in test_assessment.py.
+    with Session(engine) as db:
+        for task in db.scalars(
+            select(Task).where(Task.kind == "assessment", Task.status == "pending")
+        ):
+            task.kind = "triage"
+        db.commit()
     for _ in range(50):
         if not process_one(engine, provider, client.app.state.cloud):
             break
@@ -380,6 +388,11 @@ def test_worker_failures_are_durable_and_retryable(
     client, png, engine, http_unavailable
 ):
     report(client, png)
+    # This regression checks retryable legacy tasks, not one-call assessments.
+    with Session(engine) as db:
+        task = db.scalar(select(Task).where(Task.kind == "assessment"))
+        task.kind = "triage"
+        db.commit()
 
     class Broken(TestProvider):
         def triage_report(self, request):
