@@ -1,0 +1,105 @@
+{
+  "$defs": {
+    "PlanStop": {
+      "additionalProperties": false,
+      "properties": {
+        "crew_id": {
+          "format": "uuid",
+          "title": "Crew Id",
+          "type": "string"
+        },
+        "job_id": {
+          "format": "uuid",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "position": {
+          "minimum": 0,
+          "title": "Position",
+          "type": "integer"
+        },
+        "service_minutes": {
+          "exclusiveMinimum": 0,
+          "title": "Service Minutes",
+          "type": "integer"
+        },
+        "travel_minutes": {
+          "minimum": 0,
+          "title": "Travel Minutes",
+          "type": "number"
+        }
+      },
+      "required": [
+        "job_id",
+        "crew_id",
+        "position",
+        "travel_minutes",
+        "service_minutes"
+      ],
+      "title": "PlanStop",
+      "type": "object"
+    },
+    "UnassignedJob": {
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "format": "uuid",
+          "title": "Job Id",
+          "type": "string"
+        },
+        "reason_code": {
+          "enum": [
+            "no_eligible_crew",
+            "shift_limit",
+            "held",
+            "hazard_review",
+            "blocked",
+            "recheck_requested"
+          ],
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "reason_code"
+      ],
+      "title": "UnassignedJob",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assignments": {
+      "items": {
+        "$ref": "#/$defs/PlanStop"
+      },
+      "title": "Assignments",
+      "type": "array"
+    },
+    "revision": {
+      "title": "Revision",
+      "type": "string"
+    },
+    "travel_estimates_label": {
+      "minLength": 1,
+      "title": "Travel Estimates Label",
+      "type": "string"
+    },
+    "unassigned": {
+      "items": {
+        "$ref": "#/$defs/UnassignedJob"
+      },
+      "title": "Unassigned",
+      "type": "array"
+    }
+  },
+  "required": [
+    "revision",
+    "assignments",
+    "unassigned",
+    "travel_estimates_label"
+  ],
+  "title": "PlanProposal",
+  "type": "object"
+}

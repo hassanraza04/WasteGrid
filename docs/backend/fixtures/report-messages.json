@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "body": "What is the status?",
+      "created_at": "2026-10-16T22:00:00Z",
+      "direction": "inbound",
+      "id": "60000000-0000-4000-8000-000000000004"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "total": 1
+}

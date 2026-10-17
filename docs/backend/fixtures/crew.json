@@ -1,0 +1,19 @@
+{
+  "available": true,
+  "equipment": [
+    "gloves",
+    "trash_bags",
+    "broom",
+    "shovel"
+  ],
+  "id": "30000000-0000-4000-8000-000000000001",
+  "illustrative": true,
+  "name": "Illustrative Crew A",
+  "shift_minutes": 120,
+  "start_location": {
+    "landmark": "Illustrative Gulshan-e-Iqbal location",
+    "latitude": 24.923,
+    "longitude": 67.092
+  },
+  "version": 1
+}

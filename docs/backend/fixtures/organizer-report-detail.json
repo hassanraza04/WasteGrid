@@ -1,0 +1,37 @@
+{
+  "events": [],
+  "report": {
+    "address": "Illustrative park entrance, Gulshan-e-Iqbal, Karachi",
+    "clarifications": [],
+    "completion_photo_ids": [],
+    "created_at": "2026-10-16T22:00:00Z",
+    "dashboard_status": "submitted",
+    "display_status": "received",
+    "id": "10000000-0000-4000-8000-000000000001",
+    "illustrative": true,
+    "job_id": null,
+    "latest_update": {
+      "created_at": "2026-10-16T22:00:00Z",
+      "id": "80000000-0000-4000-8000-000000000001",
+      "job_status": null,
+      "kind": "report.received",
+      "message": "Your report has been received.",
+      "report_state": "received",
+      "status": "submitted"
+    },
+    "location": {
+      "landmark": "Illustrative Gulshan-e-Iqbal location",
+      "latitude": 24.923,
+      "longitude": 67.092
+    },
+    "note": "ILLUSTRATIVE: litter near park gate",
+    "photo_id": "40000000-0000-4000-8000-000000000001",
+    "public_reference": "WG-A1B2C3D4E5F6",
+    "state": "received",
+    "timeline": [],
+    "title": "Illustrative litter near park gate",
+    "triage": null,
+    "updated_at": "2026-10-16T22:00:00Z",
+    "version": 1
+  }
+}
