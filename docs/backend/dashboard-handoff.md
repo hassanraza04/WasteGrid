@@ -5,12 +5,16 @@
 Supabase migrations, Auth roles, private Storage and the illustrative dataset
 are configured. The backend runs locally at `http://127.0.0.1:8000` after the
 [startup command](setup.md#current-local-demo). Its Supabase project URL is
-`https://einjnvlhdogzdxafauyr.supabase.co`. There is no shared hosted API yet:
-`localhost` on a teammate's computer refers to their own computer.
+`https://einjnvlhdogzdxafauyr.supabase.co`. The shared API-only development
+service is **https://wastegrid-api-dev.onrender.com**. `localhost` on a
+teammate's computer still refers to their own computer.
 
-The [shared development API runbook](shared-development-api.md) now defines an
-API-only Render deployment with manual releases. Its hosted URL remains pending
-until deployment and acceptance; the worker remains inactive.
+The [shared development API runbook](shared-development-api.md) records the
+Render deployment from `main` commit `7b77f8d` and 23 passing hosted checks.
+Releases remain manual; the worker remains inactive. Hassan should confirm the
+actual browser address of his dashboard so Omer can allow that exact origin in
+Render CORS settings, then test a browser request. The currently configured
+origins are `http://localhost:5173` and `http://127.0.0.1:8000`.
 
 Run `uv run --extra backend python -m scripts.verify_live_backend` for live
 authentication/read/privacy checks. It checks the ten reports, six jobs,
@@ -41,10 +45,10 @@ PostgreSQL. Synthetic images and decisions remain illustrative fixtures.
   actual deployment origin explicitly.
 - The configured messaging key passed authentication on a read-only lookup;
   missing/wrong keys were rejected. This does not demonstrate Photon delivery.
-- The API still binds only to this machine's loopback address. Hassan needs his
-  own configured backend or a shared reachable deployment. CORS does not expose
-  this machine's server, and the confirmed port does not establish which process
-  serves Hassan's dashboard on his machine.
+- The local API still binds only to this machine's loopback address. Hassan can
+  now use the shared HTTPS deployment above. CORS does not expose the local
+  server, and the confirmed port does not establish which process serves
+  Hassan's dashboard on his machine.
 
 ## Owner checklist
 

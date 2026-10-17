@@ -1,17 +1,18 @@
 # Shared development API deployment
 
-**Owner:** Omer. **Prepared:** 17 October 2026. **Status:** configuration prepared;
-Render service and shared HTTPS URL still pending. This document is shareable;
-the environment and account credential files are private.
+**Owner:** Omer. **Activated:** 17 October 2026. **Status:** API-only Render
+service live at **https://wastegrid-api-dev.onrender.com**. This document is
+shareable; the environment and account credential files are private.
 
 ## Deployment scope
 
-Use [`render.dev.yaml`](../../render.dev.yaml) for one Docker web service named
-`wastegrid-api-dev`, on the Free plan in Ohio. It uses the reviewed `main` branch,
-manual deployments and `/ready` health checks. Select this filename explicitly
-when creating a Blueprint. The older [`render.yaml`](../../render.yaml) also
+The live service was created as a Docker Web Service from the repository's
+public Git URL, on the Free plan in Ohio. It uses the reviewed `main` branch,
+manual deployments and `/ready` health checks. The equivalent API-only Blueprint
+is [`render.dev.yaml`](../../render.dev.yaml) for a future recreation where
+Blueprints are available. The older [`render.yaml`](../../render.yaml) also
 defines a worker and is not the configuration for this milestone.
-See [Render's Blueprint reference](https://render.com/docs/blueprint-spec).
+See [Render's Web Service guide](https://render.com/docs/web-services).
 
 The API uses the existing Supabase project
 `https://einjnvlhdogzdxafauyr.supabase.co` for PostgreSQL, Auth and private Storage.
@@ -45,7 +46,7 @@ importing; it is a snapshot, not a synchronized file.
 | `SUPABASE_SECRET_KEY` | Existing backend secret from `.env`. Never a frontend setting. |
 | `MESSAGING_API_KEY` | Existing `.env` key; only Hassan's server adapter receives it privately. |
 | `AGENT_API_KEY` | Separate existing `.env` key for optional AI context reads. |
-| `CORS_ORIGINS` | Initially `["http://localhost:5173","http://127.0.0.1:8000"]`, matching the current local configuration and supplied dashboard origin. |
+| `CORS_ORIGINS` | Initially `["http://localhost:5173","http://127.0.0.1:8000"]`, matching the local configuration. Confirm the actual dashboard browser origin with its owner before relying on browser integration. |
 | `SUPABASE_PHOTO_BUCKET` | `report-photos` |
 
 Do not import demo passwords, user JWTs, Photon credentials, or `PERSON3_*`/
@@ -59,23 +60,25 @@ this list does not grant a separately hosted frontend access.
 
 ## Create the service
 
-1. Commit and push this preparation branch for review, then merge through the
-   repository's normal review process. Do not push directly to `main`.
-2. In Render, connect the GitHub account/repository, create a Blueprint from
-   `main`, and select **`render.dev.yaml`**. Confirm the preview contains one
-   Free web service and no worker/database.
-3. Fill the prompted environment values from the private export. For individual
-   fields, use the actual value without dotenv wrapper quotes. Existing services
-   also support **Environment → Add from .env**. Review the parsed CORS value as
-   a JSON array. See [Render environment setup](https://render.com/docs/configure-environment-variables).
-4. Before creation/deployment, check which `main` commit Render will build. The
-   reviewed starting point is `b3dec0a`; this preparation adds no SQL migrations.
-   If other PRs have since added migrations, review and apply those separately
-   before deploying that newer code. Do not apply PR #6 migrations as part of
-   this preparation.
-5. Deploy, copy the **actual HTTPS URL** from Render, and record it with the
-   deployed commit SHA. Keep automatic deployment off. A placeholder or service
-   name is not proof that a URL exists or is reachable.
+The following steps reproduce the current service without enabling a worker:
+
+1. Use a reviewed `main` commit. Do not push directly to `main`. The active
+   deployment shows source commit `7b77f8d` (the PR #10 merge), which added no SQL
+   migrations. Review and apply any later migrations separately before deploying
+   newer code.
+2. In Render, choose **Deploy a Web Service → Public Git Repository**, connect
+   `https://github.com/hassanraza04/WasteGrid`, select `main`, Docker, Free, Ohio,
+   and the name `wastegrid-api-dev`. Leave the root directory blank, use
+   `./Dockerfile`, keep the Docker command blank, and set `/ready` as health path.
+   Keep automatic deployment off. This public-URL source uses manual deploys.
+3. Add the seven server environment variables from the owner-only export. Use
+   **Environment → Add from .env** with the unquoted, ignored
+   `.env.render-dev-paste`, or enter values individually without `KEY=` prefixes
+   or outer quotes. Do not use a Render Secret File; the API reads environment
+   variables. Review the parsed CORS value as a JSON array. See
+   [Render environment setup](https://render.com/docs/configure-environment-variables).
+4. Deploy and verify the actual HTTPS URL and source commit in Render. Do not
+   activate `render.yaml` or PR #6 migrations as part of this API-only service.
 
 For subsequent releases, inspect migration changes, apply approved additive
 migrations from the owner's local environment if needed, then manually deploy
@@ -95,10 +98,10 @@ This checks all six migration hashes and the preserved Supabase fixture through
 the existing local API. It intentionally accepts loopback URLs only. Do not
 change that restriction to run it against an arbitrary remote host.
 
-After deployment, set `API_BASE_URL` to the actual Render HTTPS origin in a local
-terminal (it is public configuration), then run these credential-free checks:
+Run these credential-free checks (the URL is public configuration):
 
 ```bash
+API_BASE_URL=https://wastegrid-api-dev.onrender.com
 curl --fail --show-error --max-time 120 "$API_BASE_URL/health"
 curl --fail --show-error --max-time 120 "$API_BASE_URL/ready"
 curl --fail --show-error --max-time 120 --output /dev/null "$API_BASE_URL/docs"
@@ -131,18 +134,24 @@ six jobs, two crews, ten photos and five assignments remain intact. Coordinate
 separate test data before teammates begin state-changing integration tests;
 those tests will change counts and may queue AI work.
 
-Record hosted acceptance here before announcing readiness:
+Hosted acceptance on 17 October 2026:
 
 | Evidence | Result |
 | --- | --- |
-| Actual API HTTPS URL | Pending |
-| Render service ID and deployed commit SHA | Pending |
-| UTC verification time | Pending |
-| Health, readiness, docs and unauthenticated denial | Pending |
-| Staff roles, crew isolation and private photos | Pending |
-| Actual browser CORS check | Pending |
-| Supabase fixture preservation | Pending hosted checks |
+| Actual API HTTPS URL | `https://wastegrid-api-dev.onrender.com` |
+| Render source commit | `7b77f8d` (`main`, PR #10 merge); service ID not recorded |
+| UTC verification time | 2026-10-17 17:20:15 UTC |
+| Health, readiness, docs and unauthenticated denial | Passed in 23-check hosted verifier; OpenAPI identifies WasteGrid API v0.2.0 |
+| Staff roles, crew isolation and private photos | Passed: organizer, both crews, cross-crew denial, authorized photo downloads, public/direct Storage denial |
+| CORS preflight | Configured `http://127.0.0.1:8000` accepted (200 with matching allow-origin); unknown origin rejected (400 without allow-origin). Actual dashboard browser origin and browser test remain to confirm with Hassan. |
+| Supabase fixture preservation | Passed: 10 reports, 6 jobs, 2 crews, 10 photos, 5 assignments; application rows and Storage metadata compared, not photo bytes |
 | Worker / messaging | Inactive / unconnected |
+
+The owner-only, secret-free hosted verifier report is
+`.data/backend-hosted-render-verification.json` (23 of 23 checks passed). The
+script ran the existing read-only live checks against this exact Render origin;
+normal Supabase Auth sessions were the only live writes. The documented curl
+checks above reproduce the public HTTP and CORS acceptance without credentials.
 
 ## Owner handoff after acceptance
 
@@ -151,8 +160,7 @@ Record hosted acceptance here before announcing readiness:
 | Mobile owner | Verified HTTPS API URL and [mobile integration handoff](mobile-handoff.md). Resident flows need only the API URL; staff login also needs the Supabase URL, publishable key and appropriate private account credentials. Store resident tokens securely. |
 | Hassan: dashboard | Same API URL, Supabase public configuration and organizer account privately. Confirm browser origin and CORS. Never embed integration/server keys in the dashboard. |
 | Hassan: messaging server | API URL and existing messaging key privately. Use `X-Integration-Key` on messaging `/internal/...` routes and exact `sent_text` acknowledgements. Hosting alone does not start Photon. |
-| Sherry: AI | API URL, [provider contracts](contracts.md) and optional separate agent key privately. Worker activation follows provider review, migration review and an agreed queued-task policy. PR #6 is still awaiting permission to review. |
+| Sherry: AI | API URL, [provider contracts](contracts.md) and optional separate agent key privately. Worker activation follows resolution of PR #6 review findings, migration review and an agreed queued-task policy. |
 
-Update the shared URL in this record, the mobile handoff and dashboard handoff
-only after acceptance. Never distribute `.env.render-dev` or the backend `.env`
+Never distribute `.env.render-dev`, `.env.render-dev-paste` or the backend `.env`
 as a frontend configuration file.

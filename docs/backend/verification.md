@@ -1,5 +1,34 @@
 # Dashboard contract completion: verification evidence
 
+## Shared Render API activation: 2026-10-17
+
+The API-only development service is live at
+`https://wastegrid-api-dev.onrender.com`. Render showed source commit `7b77f8d`
+from `main` (PR #10 merge). The service was created as a direct Docker Web
+Service from the public Git URL; it uses manual deployments, the Free plan and
+the `/ready` health check. No worker was deployed.
+
+| Check | Result |
+| --- | --- |
+| Public `/health` and `/ready` | Both 200; readiness returned `{"status":"ready"}` |
+| OpenAPI identity | WasteGrid API v0.2.0; 34 paths |
+| Hosted live verifier | 23 passed, 0 failed; completed 2026-10-17 17:20:15 UTC |
+| Staff authorization | Organizer and both crew logins, protected reads, cross-crew denial and unauthenticated denial passed |
+| Private photos | Authorized downloads passed; public and direct Storage reads denied |
+| Supabase safety | Six migration checksums, RLS/schema/Data API checks and bucket limits passed |
+| Fixture preservation | 10 reports, 6 jobs, 2 crews, 10 photos, 5 assignments unchanged; application rows and Storage metadata compared, not photo bytes |
+| Post-hosted local recheck | 23 passed, completed 2026-10-17 17:23:40 UTC; same fixture preserved |
+| Hosted CORS preflight | Configured `http://127.0.0.1:8000` returned 200 with matching allow-origin; `https://unconfigured.invalid` returned 400 without allow-origin |
+| Actual dashboard browser origin | Still requires confirmation and browser testing with Hassan |
+| AI worker / Photon | Inactive / unconnected |
+
+The owner-only, secret-free JSON result is
+`.data/backend-hosted-render-verification.json`. The hosted run performed only
+read checks against application data; normal Auth sessions were its only live
+writes. It did not reseed, apply migrations, process AI tasks or send messages.
+The public HTTP and CORS checks can be reproduced with the commands in the
+[deployment runbook](shared-development-api.md#acceptance-before-sharing-the-url).
+
 ## Shared development API preparation: 2026-10-17
 
 Based on merged `main` at `b3dec0a`, branch `omer/shared-development-api` adds
@@ -15,13 +44,13 @@ Docker build context. API implementation, contracts and migrations are unchanged
 | Fixture counts | 10 reports, 6 jobs, 2 crews, 10 photos, 5 assignments |
 | Contract export | Passed; no API v0.2 changes |
 | Documented unauthenticated / CORS behavior | 401 without credentials; configured preflight 200; unknown origin 400 without allow-origin header |
-| Hosted service / HTTPS acceptance | Pending Render connection and deployment |
+| Hosted service / HTTPS acceptance | Completed later; see activation section above |
 
 Docker image ID:
 `sha256:3dc975f4e77f97b9817b70ffb0ff9d7754bbe09fb6970d4aac9c3330fc86786b`.
 The live run's timestamped, secret-free report is
-`.data/backend-live-verification.json`. These are local preparation checks, not
-evidence of a deployed service. The existing full 116-test regression result
+`.data/backend-live-verification.json`. These were local preparation checks,
+before the hosted activation above. The existing full 116-test regression result
 below is historical; that suite was not rerun for this configuration/documentation
 change. No live migrations, reseed, worker or Photon execution occurred.
 

@@ -57,15 +57,17 @@ evidence is saved in `.data/backend-live-verification.json`; shareable acceptanc
 results belong in [verification.md](verification.md). Credentials remain in the
 ignored `.env` and `.env.supabase-demo`, outside the documentation.
 
-Render deployment and real Person 3/Photon integration remain pending. Provider
+The API-only Render service is live at
+`https://wastegrid-api-dev.onrender.com`; 23 hosted checks passed on
+17 October 2026. Real Person 3/Photon integration remains pending. Provider
 calls in the regression suite use explicit doubles. The worker **does not invent
 triage or planning output**: configure the real provider to drain queued work.
 The test-only provider is in `tests/backend/providers.py`, excluded from Docker.
 
-The [shared development API runbook](shared-development-api.md) and
-[`render.dev.yaml`](../../render.dev.yaml) prepare an API-only service with manual
-deployments. Use this configuration while provider integration is pending; the
-shared HTTPS URL will be recorded after hosted acceptance.
+The [shared development API runbook](shared-development-api.md) records the
+direct Render Web Service setup and acceptance. [`render.dev.yaml`](../../render.dev.yaml)
+is the equivalent API-only Blueprint for future recreation; deployments are
+manual while provider integration is pending.
 
 The upstream `web/` application currently uses browser-local storage, three
 presentation statuses and a development sign-in. Its owner must replace those

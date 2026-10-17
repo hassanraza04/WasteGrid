@@ -176,8 +176,10 @@ the actual `sent_text` on successful delivery acknowledgements; see
 ## 4. Render
 
 For the shared development milestone, follow the
-[API-only deployment runbook](shared-development-api.md) and select
-`render.dev.yaml`. It keeps the worker inactive and deployments manual. The
+[API-only deployment runbook](shared-development-api.md). The live Docker Web
+Service is at `https://wastegrid-api-dev.onrender.com`, created from the public
+Git repository URL with manual deployments and `/ready` health checks. The
+equivalent Blueprint is `render.dev.yaml`; the worker stays inactive. The
 API-plus-worker instructions below describe the later provider-integrated setup.
 
 1. Create/connect the Git repository in Render once you have committed/pushed
