@@ -49,7 +49,7 @@ The database has these tables:
 | --- | --- | --- |
 | `metadata` | `key`, `value` | Stores `poll_checkpoint` as an ISO-8601 UTC timestamp. |
 | `inbound_messages` | `message_id`, `received_at` | Makes accepting an inbound Photon message idempotent. |
-| `outbound_replies` | `message_id`, `text`, `state`, `attempt_count`, `next_attempt_at`, `last_error`, `created_at`, `sent_at` | Stores a reply before delivery and tracks retry state. |
+| `outbound_replies` | `message_id`, `agent_sender_id`, `space_id`, `text`, `state`, `attempt_count`, `next_attempt_at`, `last_error`, `created_at`, `sent_at` | Stores a reply and the Photon routing values needed to retry it after a restart. |
 
 `message_id` is unique in both message tables. Database operations that accept a
 message, create its outbox record, change retry state, or advance the checkpoint
@@ -118,10 +118,10 @@ local development and service state. It must be excluded from Git.
 
 ## Privacy and ownership
 
-The outbox must keep reply text long enough to send an idempotent retry. It does
-not retain raw inbound message text. The database is a local operational spool,
-not the long-term conversation history. The later Person 2 integration owns
-durable conversation retention and report association.
+The outbox must keep reply text and Photon routing IDs long enough to send an
+idempotent retry. It does not retain raw inbound message text. The database is a
+local operational spool, not the long-term conversation history. The later
+Person 2 integration owns durable conversation retention and report association.
 
 ## Testing
 
