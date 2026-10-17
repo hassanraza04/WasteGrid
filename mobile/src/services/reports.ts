@@ -35,13 +35,50 @@ export async function createDraft(photoUri: string, fields: Record<string, strin
   await SecureStore.setItemAsync(tokenKey(id), token, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
   await source.copy(destination);
   const draft: ReportDraft = { id, apiUrl, photoUri: destination.uri, mime, fields, ownerId };
-  await new File(dir, `${id}.json`).write(JSON.stringify(draft));
+  await saveDraft(draft);
   return draft;
 }
 
+type Metadata = { file: File; id: string; revision: number };
+function metadataFiles(): Metadata[] {
+  return directory().list().flatMap(file => {
+    if (!(file instanceof File)) return [];
+    // Legacy <id>.json is revision zero. Incomplete .tmp files are never published.
+    const match = /^([^.]+)(?:\.(\d+))?\.json$/.exec(file.uri.split("/").at(-1) ?? "");
+    return match ? [{ file, id: match[1], revision: Number(match[2] ?? 0) }] : [];
+  }).sort((a, b) => b.revision - a.revision);
+}
+async function readMetadata(record: Metadata): Promise<ReportDraft> {
+  const draft = JSON.parse(await record.file.text());
+  if (!draft || draft.id !== record.id || typeof draft.apiUrl !== "string" ||
+      typeof draft.photoUri !== "string" || typeof draft.mime !== "string" ||
+      !draft.fields || typeof draft.fields !== "object" || Array.isArray(draft.fields) ||
+      !Object.values(draft.fields).every(value => typeof value === "string") ||
+      ["ownerId", "reference", "rejection"].some(key => draft[key] !== undefined && typeof draft[key] !== "string")) {
+    throw new Error("This saved report's metadata is unreadable. Its photo and access key have been preserved.");
+  }
+  return draft;
+}
+async function storedDraft(id: string): Promise<ReportDraft | undefined> {
+  const record = metadataFiles().find(record => record.id === id);
+  return record ? readMetadata(record) : undefined;
+}
 async function allDrafts(): Promise<ReportDraft[]> {
-  const files = directory().list().filter((item): item is File => item instanceof File && item.extension === ".json");
-  return Promise.all(files.map(async file => JSON.parse(await file.text()) as ReportDraft));
+  const latest = new Map<string, Metadata>();
+  for (const record of metadataFiles()) if (!latest.has(record.id)) latest.set(record.id, record);
+  const drafts = await Promise.all([...latest.values()].map(async record => {
+    try { return await readMetadata(record); }
+    catch { return null; } // Isolate unreadable drafts; retain their files/tokens for recovery.
+  }));
+  return drafts.filter((draft): draft is ReportDraft => draft !== null);
+}
+
+// Serialize metadata changes for each report, including account import and discard.
+const mutations = new Map<string, Promise<unknown>>();
+function serialize<T>(id: string, work: () => Promise<T>): Promise<T> {
+  const pending = (mutations.get(id) ?? Promise.resolve()).catch(() => {}).then(work);
+  mutations.set(id, pending);
+  return pending.finally(() => { if (mutations.get(id) === pending) mutations.delete(id); });
 }
 
 export async function listDrafts(): Promise<ReportDraft[]> {
@@ -60,18 +97,35 @@ export async function claimDeviceDrafts(): Promise<void> {
   const owner = getSession()?.userId;
   if (!owner) throw new Error("Sign in to import reports from this device.");
   for (const draft of await allDrafts()) {
-    if (!draft.ownerId) await saveDraft({ ...draft, ownerId: owner });
+    if (!draft.ownerId) await saveDraft(draft, owner);
   }
 }
 
-async function saveDraft(draft: ReportDraft) {
-  const file = new File(directory(), `${draft.id}.json`);
-  const stored: ReportDraft | undefined = file.exists ? JSON.parse(await file.text()) : undefined;
-  await file.write(JSON.stringify({ ...draft, ownerId: stored?.ownerId ?? draft.ownerId }));
+async function saveDraft(draft: ReportDraft, importOwner?: string) {
+  return serialize(draft.id, async () => {
+    const stored = await storedDraft(draft.id);
+    const saved = importOwner && stored
+      ? { ...stored, ownerId: stored.ownerId ?? importOwner }
+      : { ...draft, ownerId: stored?.ownerId ?? draft.ownerId };
+    const previous = metadataFiles().filter(record => record.id === draft.id);
+    const revision = (previous[0]?.revision ?? 0) + 1;
+    const dir = directory();
+    const temporary = new File(dir, `${draft.id}.${revision}.tmp`);
+    const published = new File(dir, `${draft.id}.${revision}.json`);
+    // Publish a fully written revision by a same-directory rename. Never overwrite
+    // committed JSON: Expo's overwrite move deletes the old destination first on iOS.
+    await temporary.write(JSON.stringify(saved));
+    await temporary.move(published);
+    // A crash before cleanup leaves two valid revisions; readers choose the newest.
+    for (const record of previous) {
+      try { record.file.delete(); } catch { /* A superseded revision is harmless. */ }
+    }
+  });
 }
 
 async function credential(draft: ReportDraft) {
-  const stored: ReportDraft = JSON.parse(await new File(directory(), `${draft.id}.json`).text());
+  const stored = await storedDraft(draft.id);
+  if (!stored) throw new Error("This saved report is no longer available on this device.");
   if (stored.ownerId && stored.ownerId !== getSession()?.userId) throw new Error("Sign in to the account that saved this report.");
   const token = await SecureStore.getItemAsync(tokenKey(draft.id));
   if (!token) throw new Error("The private access key for this report is unavailable on this device.");
@@ -83,12 +137,20 @@ export async function sendDraft(draft: ReportDraft) {
 }
 
 export async function discardDraft(draft: ReportDraft) {
-  const stored: ReportDraft = JSON.parse(await new File(directory(), `${draft.id}.json`).text());
-  await discardRejectedDraft(stored, await credential(stored), request, async () => {
-    const photo = new File(stored.photoUri);
-    if (photo.exists) photo.delete();
-    new File(directory(), `${stored.id}.json`).delete();
-    await SecureStore.deleteItemAsync(tokenKey(stored.id));
+  return serialize(draft.id, async () => {
+    const stored = await storedDraft(draft.id);
+    if (!stored) throw new Error("This saved report is no longer available on this device.");
+    await discardRejectedDraft(stored, await credential(stored), request, async () => {
+      for (const file of directory().list()) {
+        const name = file.uri.split("/").at(-1) ?? "";
+        if (file instanceof File && name.startsWith(`${stored.id}.`) && name.endsWith(".tmp")) file.delete();
+      }
+      const photo = new File(stored.photoUri);
+      if (photo.exists) photo.delete();
+      // Delete old revisions first so an interrupted discard cannot reveal an older owner.
+      for (const record of metadataFiles().filter(record => record.id === draft.id).reverse()) record.file.delete();
+      await SecureStore.deleteItemAsync(tokenKey(stored.id));
+    });
   });
 }
 

@@ -89,7 +89,7 @@ export default function Report() {
     describing={describing} onGenerateCaption={generateCaption}
     canSubmit={canSubmit} busy={busy} frozen={busy || !!draft} error={error}
     onEditRejected={draft?.rejection ? editRejected : undefined}
-    onRetake={() => { photoRevision.current++; locationRequest.current++; setPhotoUri(null); setLocating(false); }}
+    onRetake={() => { photoRevision.current++; locationRequest.current++; setPhotoUri(null); setLocation(null); setLocating(false); setError(""); }}
     onSubmit={onSubmit} onClose={() => router.back()}
   />;
 }

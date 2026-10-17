@@ -24,7 +24,7 @@ export const ui = {
 export function load(file, mocks = {}) {
  const url = new URL('../../src/' + file, import.meta.url);
  const source = fs.readFileSync(url, 'utf8');
- const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+ const code = ts.transpileModule(source, { fileName: file, compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
  const module = { exports: {} };
  vm.runInThisContext('(function(require,module,exports){' + code + '\n})', { filename: file })(name => name in mocks ? mocks[name] : require(name), module, module.exports);
  return module.exports;

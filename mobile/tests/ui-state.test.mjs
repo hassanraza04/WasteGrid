@@ -7,9 +7,10 @@ const { RoutePlannerOverlay } = load('components/admin/route-planner-overlay.tsx
  'react-native-reanimated': { __esModule: true, default: { View: wrap }, SlideInDown: { duration: () => ({}) } },
  'react-native-safe-area-context': { useSafeAreaInsets: () => ({ bottom: 0 }) },
  '@/components/ui': ui, '@/theme': theme,
+ '@/hooks/use-latest-request': load('hooks/use-latest-request.ts'),
  '@/utils/route-planner': { DEFAULT_CONSTRAINTS: { hours: 2, maxStopsPerCrew: 10, returnToStart: true } },
 });
-test('a delayed calculation cannot restore a deselected crew; a fresh calculation can be assigned', async () => {
+test('planner locks selection during calculation and clears routes when inputs change', async () => {
  const pending = deferred(); const requests = []; let assigned;
  const route = [{ crewId: 'A', stops: [{ reportId: 'job' }], distanceKm: 1, durationMin: 5 }];
  const view = mount(RoutePlannerOverlay, {
@@ -19,8 +20,11 @@ test('a delayed calculation cannot restore a deselected crew; a fresh calculatio
  try {
   await view.render();
   await act(() => button(view.container, 'Calculate routes').click());
+  assert.equal(button(view.container, 'Crew B').disabled, true);
   await act(() => button(view.container, 'Crew B').click());
+  assert.equal(button(view.container, 'Crew B').dataset.selected, 'true');
   await act(async () => pending.resolve([{ ...route[0], crewId: 'B' }]));
+  await act(() => button(view.container, 'Crew B').click());
   assert.equal(view.container.textContent.includes('Assign route'), false);
   assert.equal(button(view.container, 'Crew B').dataset.selected, 'false');
   await act(async () => button(view.container, 'Calculate routes').click());
@@ -48,6 +52,7 @@ test('route map refits on reassignment and accepts an empty route', async () => 
   'react-native': native, 'react-native-maps': { __esModule: true, default: MapView, Marker: wrap, Polyline: wrap, PROVIDER_GOOGLE: 'google' },
   '@/theme/mapStyle.json': [], '@/components/route/stop-marker': { StopMarker: wrap }, '@/theme': theme,
   '@/utils/map': { DEFAULT_REGION: { latitude: 24, longitude: 67 }, regionAround: coords => coords },
+  '@/hooks/use-fit-to-coordinates': load('hooks/use-fit-to-coordinates.ts', { '@/utils/map': load('utils/map.ts') }),
  });
  const first = [{ reportId: 'first', coords: { latitude: 24, longitude: 67 } }];
  const second = [{ reportId: 'second', coords: { latitude: 31, longitude: 74 } }];
@@ -67,11 +72,13 @@ test('statistics never expose old-city data under a new city or period while loa
  const view = mount(Probe, { city: { id: 'karachi' }, period: '7d' });
  try {
   await view.render(); await act(async () => requests[0].resolve({ reportsMade: 240 }));
-  assert.equal(result.stats.reportsMade, 240);
+  assert.equal(result.data.stats.reportsMade, 240);
   await view.render({ city: { id: 'lahore' }, period: '30d' });
-  assert.deepEqual(result, { stats: null, loading: true });
+  assert.equal(result.loading, true);
+  assert.equal(result.data.city.id, 'karachi'); assert.equal(result.data.period, '7d');
+  assert.equal(result.data.stats.reportsMade, 240);
   await act(async () => requests[1].resolve({ reportsMade: 190 }));
-  assert.equal(result.stats.reportsMade, 190);
+  assert.equal(result.data.stats.reportsMade, 190);
  } finally { await view.close(); }
 });
 
@@ -103,5 +110,41 @@ test('report screen accepts a manual address and unlocks rejected drafts for cor
   await act(async () => form.onEditRejected());
   assert.equal(discarded, true); assert.equal(form.frozen, false); assert.equal(form.canSubmit, true);
   assert.equal(form.caption, 'Overflowing bin');
+ } finally { await view.close(); }
+});
+
+
+test('retaking clears the first photo location and requires a fresh fix or explicit address', async () => {
+ const client = await import('../src/services/report-client.ts');
+ const requests = []; let form, camera, submitted;
+ const Report = load('app/report.tsx', {
+  'expo-router': { router: { replace() {}, back() {} } },
+  '@/services/reports': {
+   createDraft: async (photoUri, fields) => { submitted = { photoUri, fields }; return { id: 'draft', photoUri, fields }; },
+   sendDraft: async () => {}, discardDraft: async () => {},
+  },
+  '@/services/report-client': client,
+  '@/components/report/camera-step': { CameraStep: props => { camera = props; return null; } },
+  '@/components/report/report-form': { ReportForm: props => { form = props; return null; } },
+  '@/utils/describe-photo': { describePhoto: async () => null },
+  '@/utils/location': { getPhotoLocation: () => { const request = deferred(); requests.push(request); return request.promise; } },
+ }).default;
+ const view = mount(Report, {});
+ try {
+  await view.render(); await act(() => camera.onCapture('file:///first.jpg'));
+  await act(async () => requests[0].resolve({ coords: { latitude: 24, longitude: 67 }, address: 'Old location' }));
+  await act(() => form.onCaptionChange('Overflowing bin')); assert.equal(form.canSubmit, true);
+  // Leave an old relocation request pending across the retake too.
+  await act(() => form.onRelocate());
+  await act(() => form.onRetake()); await act(() => camera.onCapture('file:///second.jpg'));
+  assert.equal(form.location, null); assert.equal(form.canSubmit, false);
+  await act(async () => requests[2].resolve(null)); // GPS fails for the second photo.
+  await act(async () => requests[1].resolve({ coords: { latitude: 25, longitude: 68 }, address: 'Late old location' }));
+  assert.equal(form.location, null); assert.equal(form.canSubmit, false);
+  await act(async () => form.onSubmit()); assert.equal(submitted, undefined);
+  await act(() => form.onAddressChange('Explicit new address')); assert.equal(form.canSubmit, true);
+  await act(async () => form.onSubmit());
+  assert.equal(submitted.photoUri, 'file:///second.jpg'); assert.equal(submitted.fields.address, 'Explicit new address');
+  assert.equal('latitude' in submitted.fields, false); assert.equal('longitude' in submitted.fields, false);
  } finally { await view.close(); }
 });

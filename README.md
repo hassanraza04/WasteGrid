@@ -45,6 +45,11 @@ and an immutable upload draft before submission. **My reports** recovers interru
 with that report's token. Definitively rejected uploads can be edited in the form
 or discarded from My reports after checking that the server has not accepted them. Timeouts
 and other uncertain outcomes retain their original identity and bytes.
+Retaking a photo clears its location and requires a fresh lookup or a new manual
+address. Draft metadata is published through a completed temporary file before
+older revisions are removed. Interrupted saves retain the previous version;
+unreadable records are isolated so intact history remains accessible. Their photos
+and access keys are retained for recovery. Existing unversioned drafts remain readable.
 Native credentials use Expo SecureStore; Expo web
 report submission is not supported by this storage adapter.
 
