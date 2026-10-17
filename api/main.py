@@ -55,6 +55,7 @@ from api.models import (
     Task,
     now,
 )
+from api.routing import routing_router
 from api.schemas import (
     BindConversation,
     ClaimMessages,
@@ -199,6 +200,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = make_engine(settings)
     app.state.cloud = SupabaseCloud(settings)
+    app.include_router(routing_router(settings))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -557,6 +559,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         staff: Principal = Depends(get_staff),
     ):
         job = job_access(db, job_id, staff, lock=True)
+        if (
+            settings.organizer_routing_enabled
+            and staff.role == "organizer"
+            and (
+                "assigned_crew_id" in body.model_fields_set
+                or body.status == "unassigned"
+                or body.held is True
+            )
+        ):
+            # A resident recheck pauses its old route. Only an audited organiser
+            # resolution may release that stop; all other ownership edits still
+            # go through dispatch. Preserve exact command retries after release.
+            recheck_release = (
+                body.status == "unassigned"
+                and not body.model_fields_set & {"assigned_crew_id", "held", "locked"}
+                and (
+                    job.status == "recheck_requested"
+                    or command_seen(db, job.id, body, "job.changed")[0]
+                )
+            )
+            if not recheck_release:
+                raise HTTPException(
+                    409, "Use route preview and dispatch to change assignment ownership"
+                )
         apply_job_change(
             db,
             job,
@@ -640,7 +666,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         crew = db.scalar(select(Crew).where(Crew.id == crew_id).with_for_update())
         if crew is None:
             raise HTTPException(404, "Crew not found")
-        change_crew(db, crew, body, actor=str(staff.user_id))
+        change_crew(
+            db,
+            crew,
+            body,
+            actor=str(staff.user_id),
+            organizer_routing=settings.organizer_routing_enabled,
+        )
         db.commit()
         return crew
 
@@ -670,6 +702,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db: Session = Depends(get_db),
         staff: Principal = Depends(organizer),
     ):
+        if settings.organizer_routing_enabled:
+            raise HTTPException(409, "Use /routing/previews then organiser dispatch")
         task = enqueue(db, "plan", f"manual-plan:{body.command_id}", {})
         db.commit()
         return task

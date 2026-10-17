@@ -23,6 +23,37 @@
           "title": "Illustrative",
           "type": "boolean"
         },
+        "location_received_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location Received At"
+        },
+        "location_recorded_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location Recorded At"
+        },
+        "location_revision": {
+          "default": 0,
+          "title": "Location Revision",
+          "type": "integer"
+        },
         "name": {
           "title": "Name",
           "type": "string"
@@ -241,7 +272,7 @@
         "service_minutes": {
           "exclusiveMinimum": 0,
           "title": "Service Minutes",
-          "type": "integer"
+          "type": "number"
         },
         "travel_minutes": {
           "minimum": 0,
