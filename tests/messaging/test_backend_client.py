@@ -25,14 +25,19 @@ def backend_config() -> BackendConfig:
 
 
 def client_for(handler) -> WasteGridBackendClient:
-    return WasteGridBackendClient(backend_config(), transport=httpx.MockTransport(handler))
+    def check_auth(request: httpx.Request) -> httpx.Response:
+        assert request.headers["x-integration-key"] == "private-key"
+        assert "authorization" not in request.headers
+        return handler(request)
+
+    return WasteGridBackendClient(backend_config(), transport=httpx.MockTransport(check_auth))
 
 
-def test_resolve_conversation_uses_bearer_auth_and_required_fields() -> None:
+def test_resolve_conversation_uses_integration_key_and_required_fields() -> None:
     def respond(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
         assert request.url.path == "/api/internal/conversations/resolve"
-        assert request.headers["authorization"] == "Bearer private-key"
+        assert request.headers["x-integration-key"] == "private-key"
         assert json.loads(request.content) == {
             "channel": "imessage", "external_id": "pho-user-1"
         }

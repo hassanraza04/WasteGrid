@@ -51,7 +51,7 @@ class WasteGridBackendClient:
                 base_url=self._config.base_url,
                 timeout=self._config.timeout_seconds,
                 transport=self._transport,
-                headers={"Authorization": f"Bearer {self._config.messaging_api_key}"},
+                headers={"X-Integration-Key": self._config.messaging_api_key},
             ) as client:
                 response = client.post(path, json=payload)
         except (httpx.HTTPError, ValueError):
