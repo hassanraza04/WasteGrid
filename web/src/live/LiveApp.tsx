@@ -11,21 +11,29 @@ import { AccessError, createOrganizerApi, type LiveReport, type OrganizerApi } f
 
 const defaultRepository = new BrowserReportRepository(window.localStorage);
 
-function OrganizerConfigurationPage() {
-  return <main><h1>Organiser sign in</h1><p role="alert">Organiser sign-in has not been configured for this build.</p></main>;
+function OrganizerConfigurationPage({ message }: { message: string }) {
+  return <main><h1>Organiser sign in</h1><p role="alert">{message}</p></main>;
 }
 
 export function LiveApp({ api: suppliedApi, repository = defaultRepository }: { api?: OrganizerApi; repository?: ReportRepository }) {
-  const [api] = useState(() => {
-    if (suppliedApi) return suppliedApi;
-    try { return createOrganizerApi(); } catch { return null; }
+  const [dashboard] = useState(() => {
+    if (suppliedApi) return { api: suppliedApi, configurationError: "" };
+    try { return { api: createOrganizerApi(), configurationError: "" }; }
+    catch (caught) {
+      return {
+        api: null,
+        configurationError: caught instanceof Error
+          ? caught.message
+          : "Organiser sign-in has not been configured for this build.",
+      };
+    }
   });
   return <ReportErrorBoundary><Routes>
     <Route path="/" element={<CustomerHomePage repository={repository} />} />
     <Route path="/report/new" element={<CreateReportPage repository={repository} />} />
     <Route path="/report/track" element={<TrackReportPage />} />
     <Route path="/report/:reference" element={<ReportDetailPage repository={repository} />} />
-    <Route path="/admin/*" element={api ? <Dashboard api={api} /> : <OrganizerConfigurationPage />} />
+    <Route path="/admin/*" element={dashboard.api ? <Dashboard api={dashboard.api} /> : <OrganizerConfigurationPage message={dashboard.configurationError} />} />
     <Route path="*" element={<main><h1>Page not found</h1><Link to="/">Home</Link></main>} />
   </Routes></ReportErrorBoundary>;
 }

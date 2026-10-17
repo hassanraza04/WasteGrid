@@ -75,3 +75,10 @@ test("missing public configuration fails closed", () => {
  render(<MemoryRouter initialEntries={["/admin"]}><LiveApp /></MemoryRouter>);
  expect(screen.getByRole("alert")).toHaveTextContent("not been configured");
 });
+test("malformed organizer configuration stays on the organizer route with a specific error", () => {
+ vi.stubEnv("VITE_API_BASE_URL", "https://api.example");
+ vi.stubEnv("VITE_SUPABASE_URL", "not-a-url");
+ vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test");
+ render(<MemoryRouter initialEntries={["/admin"]}><LiveApp /></MemoryRouter>);
+ expect(screen.getByRole("alert")).toHaveTextContent("VITE_SUPABASE_URL must be a valid HTTPS URL");
+});

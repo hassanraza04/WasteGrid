@@ -52,3 +52,11 @@ test("requires only public configuration and uses an in-memory, refreshing Supab
   auth.getSession.mockResolvedValueOnce({ error: null, data: { session: null } } as never);
   await expect(api.reports(0)).rejects.toThrow("Please sign in");
 });
+test("rejects a malformed Supabase URL before initializing the browser client", () => {
+  vi.stubEnv("VITE_API_BASE_URL", "https://api.example");
+  vi.stubEnv("VITE_SUPABASE_URL", "not-a-url");
+  vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test");
+
+  expect(() => createOrganizerApi()).toThrow("VITE_SUPABASE_URL must be a valid HTTPS URL");
+  expect(createClient).not.toHaveBeenCalled();
+});
