@@ -40,6 +40,9 @@ uv run --extra backend python -m api.worker
 `seed_demo` is for an isolated demo database and refuses databases containing real
 reports/jobs. Rerunning it refreshes known illustrative rows that have pending,
 missing assessments from older seeds, without resetting their jobs or photos.
+The same transaction supersedes pending/running assessment tasks for these known
+synthetic fixtures, recording a skipped result and clearing leases so the worker
+cannot overwrite them. A rerun also reconciles tasks for already refreshed fixtures.
 The stored assessments are explicitly synthetic, not live AI outputs. An optional
 `--reset-demo` rebuilds the demo fixtures; it is unnecessary for assessment refresh.
 This code does not migrate or reseed a hosted database automatically.

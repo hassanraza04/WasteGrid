@@ -123,6 +123,7 @@ def seed(engine, cloud, reset=False):
                     for i, (label, kind, _, _) in enumerate(SCENARIOS)
                 }
                 refreshed = 0
+                reconciled = 0
                 for row in reports:
                     if (
                         row.id in fixtures
@@ -132,11 +133,31 @@ def seed(engine, cloud, reset=False):
                         label, kind = fixtures[row.id]
                         set_fixture_assessment(row, label, kind)
                         refreshed += 1
+                    if row.id in fixtures and (row.assessment or {}).get("reason") == (
+                        "Illustrative fixture; not an actual model result."
+                    ):
+                        for task in db.scalars(
+                            select(Task).where(
+                                Task.kind == "assessment",
+                                Task.status.in_(["pending", "running"]),
+                                Task.payload["report_id"].as_string() == str(row.id),
+                            )
+                        ):
+                            # Supersede migration work atomically with the fixture.
+                            # Clearing the lease also rejects an in-flight result.
+                            task.status = "succeeded"
+                            task.result = {"skipped": "illustrative_fixture_refresh"}
+                            task.last_error = None
+                            task.lease_id = task.leased_until = None
+                            reconciled += 1
                 db.commit()
                 return {
-                    "status": "refreshed" if refreshed else "already_seeded",
+                    "status": (
+                        "refreshed" if refreshed or reconciled else "already_seeded"
+                    ),
                     "reports": len(reports),
                     "assessments_refreshed": refreshed,
+                    "assessment_tasks_reconciled": reconciled,
                 }
             if reset:
                 removed = list(db.scalars(select(Photo.object_path)))

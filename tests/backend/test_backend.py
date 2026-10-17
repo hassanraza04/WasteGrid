@@ -1244,28 +1244,85 @@ def test_builtin_planner_outputs_pass_existing_backend_validator(
         db.commit()
 
 
-def test_rerun_seed_refreshes_old_pending_illustrative_assessments(engine, client):
+@pytest.mark.parametrize("claimed", [False, True])
+def test_migration_seed_refresh_reconciles_assessments_before_worker(
+    engine, client, claimed
+):
+    from types import SimpleNamespace
+
+    from api.decisions import AssessmentDecisionProvider
     from scripts.seed_demo import seed
+    from tests.test_assessment import assessment
 
     seed(engine, client.app.state.cloud)
     with Session(engine) as db:
+        job_links = {row.id: row.job_id for row in db.scalars(select(Report))}
+        photos = set(db.scalars(select(Photo.id)))
         for row in db.scalars(select(Report)):
             row.assessment = None
             row.assessment_status = "pending"
             row.priority = None
         db.commit()
+    # Reproduce an old seed upgraded through the actual backfill migration.
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "DELETE FROM wastegrid.schema_migrations WHERE name = '0011_legacy_assessment_backfill.sql'"
+            )
+        )
+    migrate(engine)
+    with Session(engine) as db:
+        tasks = list(db.scalars(select(Task).where(Task.kind == "assessment")))
+        assert len(tasks) == 3 and all(t.status == "pending" for t in tasks)
+        if claimed:
+            tasks[0].status = "running"
+            tasks[0].attempts = 1
+            tasks[0].lease_id = uuid4()
+            tasks[0].leased_until = now() + timedelta(minutes=5)
+        task_attempts = {t.id: t.attempts for t in tasks}
+        db.commit()
     refreshed = seed(engine, client.app.state.cloud)
-    assert (
-        refreshed["status"] == "refreshed" and refreshed["assessments_refreshed"] == 10
-    )
+    assert refreshed["status"] == "refreshed"
+    assert refreshed["assessments_refreshed"] == 10
+    assert refreshed["assessment_tasks_reconciled"] == 3
     with Session(engine) as db:
         rows = list(db.scalars(select(Report)))
+        assessments = {row.id: row.assessment for row in rows}
         assert all(r.assessment_status != "pending" for r in rows)
         assert all(
             r.assessment_status == "assessed" and not r.needs_review
             for r in rows
             if r.job_id
         )
+        for task in db.scalars(select(Task).where(Task.kind == "assessment")):
+            assert task.status == "succeeded"
+            assert task.result == {"skipped": "illustrative_fixture_refresh"}
+            assert task.attempts == task_attempts[task.id]
+            assert task.lease_id is None and task.leased_until is None
+    # Repair the prior buggy refresh too: assessments may already be synthetic
+    # while migration work remains pending. Do not alter completed task history.
+    with Session(engine) as db:
+        task = db.scalar(select(Task).where(Task.kind == "assessment"))
+        task.status, task.result = "pending", None
+        db.commit()
+    repaired = seed(engine, client.app.state.cloud)
+    assert repaired["status"] == "refreshed"
+    assert repaired["assessments_refreshed"] == 0
+    assert repaired["assessment_tasks_reconciled"] == 1
+    calls = []
+    model = SimpleNamespace(assess=lambda *args: calls.append(args) or assessment())
+    for _ in range(30):
+        if not process_one(
+            engine, AssessmentDecisionProvider(0), client.app.state.cloud, model
+        ):
+            break
+    assert calls == []
+    with Session(engine) as db:
+        assert {row.id: row.assessment for row in db.scalars(select(Report))} == (
+            assessments
+        )
+        assert {row.id: row.job_id for row in db.scalars(select(Report))} == job_links
+        assert set(db.scalars(select(Photo.id))) == photos
     assert seed(engine, client.app.state.cloud)["status"] == "already_seeded"
 
 
