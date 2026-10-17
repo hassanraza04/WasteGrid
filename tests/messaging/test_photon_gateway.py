@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 
 from api.messaging.config import PhotonConfig
@@ -33,6 +34,7 @@ def gateway(client: FakeClient) -> PhotonGateway:
             project_id="pho_prj_test",
             api_key="pho_sk_test",
             poll_interval_seconds=2.0,
+            delivery_db_path=Path(".data/test-delivery.db"),
         ),
         client=client,  # type: ignore[arg-type]
     )

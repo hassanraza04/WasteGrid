@@ -1,6 +1,7 @@
 """Local configuration for the Photon Beta integration."""
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Mapping
 
 
@@ -15,6 +16,7 @@ class PhotonConfig:
     project_id: str
     api_key: str
     poll_interval_seconds: float
+    delivery_db_path: Path
 
 
 def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
@@ -40,4 +42,7 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
         project_id=project_id,
         api_key=api_key,
         poll_interval_seconds=poll_interval_seconds,
+        delivery_db_path=Path(
+            environ.get("PHOTON_DELIVERY_DB_PATH", ".data/photon-delivery.db")
+        ).expanduser(),
     )

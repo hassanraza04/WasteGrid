@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from api.messaging.config import ConfigurationError, load_photon_config
@@ -24,6 +26,19 @@ def test_load_photon_config_reads_values_and_default_interval() -> None:
     assert config.project_id == "pho_prj_test"
     assert config.api_key == "pho_sk_test"
     assert config.poll_interval_seconds == 2.0
+    assert config.delivery_db_path == Path(".data/photon-delivery.db")
+
+
+def test_load_photon_config_reads_delivery_db_path() -> None:
+    config = load_photon_config(
+        {
+            "PHOTON_PROJECT_ID": "pho_prj_test",
+            "PHOTON_API_KEY": "pho_sk_test",
+            "PHOTON_DELIVERY_DB_PATH": "/tmp/ledger.db",
+        }
+    )
+
+    assert config.delivery_db_path == Path("/tmp/ledger.db")
 
 
 def test_load_photon_config_rejects_non_positive_poll_interval() -> None:
