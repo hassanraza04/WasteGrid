@@ -53,7 +53,7 @@ export default function MapPage() {
       {/* Layer 2: overlays. box-none lets touches pass through to the map */}
       <SafeAreaView edges={["top"]} pointerEvents="box-none" style={s.header}>
         <View style={s.brand}><Text style={s.title}>WasteGrid</Text></View>
-        <Pressable style={s.avatar}><Text style={s.avatarText}>P</Text></Pressable>
+        <Pressable style={s.avatar} accessibilityLabel="My reports" onPress={() => router.push("/my-reports")}><Text style={s.avatarText}>My reports</Text></Pressable>
       </SafeAreaView>
 
       <View pointerEvents="box-none" style={s.fabs}>
