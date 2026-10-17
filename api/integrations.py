@@ -81,6 +81,7 @@ class ChalkAssessmentClient:
         if not settings.chalk_router_api_key or not settings.chalk_env_id:
             raise ValueError("Configure CHALK_ROUTER_API_KEY and CHALK_ENV_ID")
         self.model = settings.chalk_model
+        self.reasoning_effort = settings.chalk_reasoning_effort
         self.client = httpx.Client(
             base_url=settings.chalk_router_base_url.rstrip("/") + "/",
             headers={
@@ -109,6 +110,11 @@ class ChalkAssessmentClient:
             json={
                 "model": self.model,
                 "max_tokens": 600,
+                **(
+                    {"reasoning_effort": self.reasoning_effort}
+                    if self.reasoning_effort is not None
+                    else {}
+                ),
                 "response_format": {"type": "json_object"},
                 "messages": [
                     {

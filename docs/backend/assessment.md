@@ -156,3 +156,35 @@ planning constraints, seed refresh and the real bind → followup → outgoing c
 loop with fake external services. Live Chalk/Groq requests, hosted Supabase changes,
 and actual Photon delivery require deployment credentials and are not inferred
 from CI success.
+
+## Local photo check without a database
+
+Put the Chalk gateway key, environment ID, and exact Grok model ID/route into an
+ignored backend `.env`. Use the connection prefix from Chalk, not a guessed prefix:
+
+```text
+CHALK_ROUTER_API_KEY=<Chalk gateway key, not the xAI provider key>
+CHALK_ENV_ID=<environment ID>
+CHALK_MODEL=<exact discovered model ID or published route for Grok 4.3>
+CHALK_REASONING_EFFORT=none
+```
+
+`CHALK_REASONING_EFFORT` is optional and omitted from requests by default. Grok 4.3
+supports `none` for lower latency; remove this setting for models that do not
+support it. The xAI key stays on the provider connection inside Chalk.
+
+From the repository root, run:
+
+```sh
+uv run --extra backend python -m scripts.check_chalk_assessment /path/to/trash.jpg
+```
+
+Optional flags: `--model`, `--note`, paired `--latitude`/`--longitude`, and
+`--fire yes|no`/`--sharp-objects yes|no`. The check requires an explicitly selected
+model so it cannot silently test the default Qwen connection instead of Grok.
+It sends one local JPG/PNG as a base64 data URL through `ChalkAssessmentClient`,
+validates the real assessment contract, and prints elapsed seconds, assessment,
+and deterministic priority. It creates no report or database rows. No request is
+sent if credentials or the photo are missing/invalid. Credentials and upstream
+error bodies are never printed. Exit codes: 0 success, 1 gateway/output failure,
+2 missing configuration/invalid local inputs.
