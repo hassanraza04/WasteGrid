@@ -8,6 +8,10 @@ are configured. The backend runs locally at `http://127.0.0.1:8000` after the
 `https://einjnvlhdogzdxafauyr.supabase.co`. There is no shared hosted API yet:
 `localhost` on a teammate's computer refers to their own computer.
 
+The [shared development API runbook](shared-development-api.md) now defines an
+API-only Render deployment with manual releases. Its hosted URL remains pending
+until deployment and acceptance; the worker remains inactive.
+
 Run `uv run --extra backend python -m scripts.verify_live_backend` for live
 authentication/read/privacy checks. It checks the ten reports, six jobs,
 two crews, ten photo records and five assignments, compares application rows and

@@ -62,6 +62,11 @@ calls in the regression suite use explicit doubles. The worker **does not invent
 triage or planning output**: configure the real provider to drain queued work.
 The test-only provider is in `tests/backend/providers.py`, excluded from Docker.
 
+The [shared development API runbook](shared-development-api.md) and
+[`render.dev.yaml`](../../render.dev.yaml) prepare an API-only service with manual
+deployments. Use this configuration while provider integration is pending; the
+shared HTTPS URL will be recorded after hosted acceptance.
+
 The upstream `web/` application currently uses browser-local storage, three
 presentation statuses and a development sign-in. Its owner must replace those
 adapters with async API/Supabase clients. Preserve the backend's report/job

@@ -175,6 +175,11 @@ the actual `sent_text` on successful delivery acknowledgements; see
 
 ## 4. Render
 
+For the shared development milestone, follow the
+[API-only deployment runbook](shared-development-api.md) and select
+`render.dev.yaml`. It keeps the worker inactive and deployments manual. The
+API-plus-worker instructions below describe the later provider-integrated setup.
+
 1. Create/connect the Git repository in Render once you have committed/pushed
    the reviewed changes. The prepared `render.yaml` defines the API Docker web
    service and worker. Choose the intended branch in Render. Create the API
