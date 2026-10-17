@@ -6,10 +6,8 @@ import pytest
 
 from api.messaging import run_imessage_agent
 from api.messaging.config import BackendConfig, PhotonConfig
-from api.messaging.delivery_coordinator import DeliveryCoordinator
 from api.messaging.delivery_ledger import DeliveryLedger
 from api.messaging.messages import InboundMessage
-from api.messaging.reply_policy import SmokeTestReplyPolicy
 from api.messaging.run_imessage_agent import run_once
 
 
@@ -20,12 +18,7 @@ class Content:
 
 
 @dataclass(frozen=True)
-class User:
-    id: str
-
-
-@dataclass(frozen=True)
-class Space:
+class Entity:
     id: str
 
 
@@ -35,170 +28,165 @@ class Message:
     platform: str
     status: str
     content: Content
-    receivedBy: User
-    space: Space
+    receivedBy: Entity
+    space: Entity
+
+
+def inbound_message() -> Message:
+    return Message(
+        "photon-1",
+        "imessage",
+        "received",
+        Content("text", "hello"),
+        Entity("agent-1"),
+        Entity("space-1"),
+    )
 
 
 @dataclass
-class FakeSender:
-    sent: list[tuple[str, str]] = field(default_factory=list)
+class FakeCoordinator:
+    events: list[str] = field(default_factory=list)
+    submitted: list[InboundMessage] = field(default_factory=list)
+    fail_submit: bool = False
 
-    def send_reply(self, message: InboundMessage, text: str) -> None:
-        self.sent.append((message.id, text))
+    def dispatch_claimed(self) -> list[str]:
+        self.events.append("dispatch")
+        return []
+
+    def submit_inbound(self, message: InboundMessage) -> bool:
+        self.events.append("submit")
+        self.submitted.append(message)
+        if self.fail_submit:
+            raise TimeoutError("private text https://secret.example")
+        return True
 
 
 @dataclass
-class FakeGateway(FakeSender):
+class FakeGateway:
     messages: list[object] = field(default_factory=list)
+    events: list[str] = field(default_factory=list)
     requested_since: datetime | None = None
-    before_fetch: list[tuple[str, str]] | None = None
     fail_fetch: bool = False
 
     def list_new_messages(self, since: datetime) -> list[object]:
+        self.events.append("fetch")
         self.requested_since = since
-        if self.before_fetch is not None:
-            assert self.sent == self.before_fetch
         if self.fail_fetch:
-            raise TimeoutError("Photon fetch failed with private text and secret")
+            raise TimeoutError("private text https://secret.example")
         return self.messages
 
 
-def inbound_message(message_id: str = "pho_msg_test") -> Message:
-    return Message(
-        id=message_id,
-        platform="imessage",
-        status="received",
-        content=Content(type="text", text="hello"),
-        receivedBy=User(id="pho_usr_agent"),
-        space=Space(id="pho_spc_test"),
-    )
-
-
-def test_run_once_resumes_checkpoint_and_sends_due_replies_before_fetch(
+def test_run_once_dispatches_before_fetch_and_after_submitting_then_advances_checkpoint(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "delivery.db"
-    checkpoint = datetime(2026, 10, 16, 20, 0, tzinfo=UTC)
-    poll_started_at = checkpoint + timedelta(minutes=5)
-    ledger = DeliveryLedger(path)
+    checkpoint = datetime(2026, 10, 16, 20, tzinfo=UTC)
+    started = checkpoint + timedelta(minutes=5)
+    ledger = DeliveryLedger(tmp_path / "delivery.db")
     ledger.checkpoint_or_initialize(checkpoint)
-    ledger.enqueue_reply(
-        InboundMessage("pho_retry", "pho_usr_agent", "pho_spc_test", "earlier"),
-        "saved reply",
-        checkpoint,
-    )
-    gateway = FakeGateway(
-        messages=[inbound_message(), object()],
-        before_fetch=[("pho_retry", "saved reply")],
-    )
-    coordinator = DeliveryCoordinator(ledger, SmokeTestReplyPolicy(), gateway)
+    events: list[str] = []
+    gateway = FakeGateway(messages=[inbound_message(), object()], events=events)
+    coordinator = FakeCoordinator(events=events)
 
-    run_once(gateway, coordinator, poll_started_at)
+    assert run_once(gateway, coordinator, ledger, started) == ["photon-1"]
 
+    assert events == ["dispatch", "fetch", "submit", "dispatch"]
     assert gateway.requested_since == checkpoint
-    assert gateway.sent == [
-        ("pho_retry", "saved reply"),
-        ("pho_msg_test", "Photon Spectrum is connected. You said: hello"),
+    assert coordinator.submitted == [
+        InboundMessage("photon-1", "agent-1", "space-1", "hello")
     ]
-    assert (
-        DeliveryLedger(path).checkpoint_or_initialize(
-            poll_started_at + timedelta(minutes=1)
-        )
-        == poll_started_at
-    )
+    assert ledger.checkpoint_or_initialize(started + timedelta(minutes=1)) == started
 
 
-def test_run_once_keeps_checkpoint_when_fetch_fails_after_due_retry(
-    tmp_path: Path,
+@pytest.mark.parametrize("failure", ["fetch", "submit"])
+def test_run_once_keeps_checkpoint_when_processing_fails(
+    tmp_path: Path, failure: str
 ) -> None:
-    path = tmp_path / "delivery.db"
-    checkpoint = datetime(2026, 10, 16, 20, 0, tzinfo=UTC)
-    poll_started_at = checkpoint + timedelta(minutes=5)
-    ledger = DeliveryLedger(path)
+    checkpoint = datetime(2026, 10, 16, 20, tzinfo=UTC)
+    started = checkpoint + timedelta(minutes=5)
+    ledger = DeliveryLedger(tmp_path / "delivery.db")
     ledger.checkpoint_or_initialize(checkpoint)
-    ledger.enqueue_reply(
-        InboundMessage("pho_retry", "pho_usr_agent", "pho_spc_test", "earlier"),
-        "saved reply",
-        checkpoint,
+    gateway = FakeGateway(messages=[inbound_message()], fail_fetch=failure == "fetch")
+    coordinator = FakeCoordinator(fail_submit=failure == "submit")
+
+    with pytest.raises(TimeoutError):
+        run_once(gateway, coordinator, ledger, started)
+
+    assert coordinator.events == (
+        ["dispatch"] if failure == "fetch" else ["dispatch", "submit"]
     )
-    gateway = FakeGateway(fail_fetch=True)
-    coordinator = DeliveryCoordinator(ledger, SmokeTestReplyPolicy(), gateway)
-
-    with pytest.raises(TimeoutError, match="Photon fetch failed"):
-        run_once(gateway, coordinator, poll_started_at)
-
-    assert gateway.requested_since == checkpoint
-    assert gateway.sent == [("pho_retry", "saved reply")]
-    assert (
-        DeliveryLedger(path).checkpoint_or_initialize(
-            poll_started_at + timedelta(minutes=1)
-        )
-        == checkpoint
-    )
+    assert ledger.checkpoint_or_initialize(started + timedelta(minutes=1)) == checkpoint
 
 
-def test_run_forever_stops_cleanly_when_interrupted(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    gateway = FakeGateway()
-    config = PhotonConfig(
-        project_id="pho_prj_test",
-        api_key="pho_sk_test",
+def config(tmp_path: Path) -> PhotonConfig:
+    return PhotonConfig(
+        project_id="project-1",
+        api_key="photon-key",
         backend=BackendConfig(
-            base_url="https://backend.example.test/api",
-            messaging_api_key="backend-key",
-            agent_sender_id="pho_usr_agent",
-            timeout_seconds=10.0,
+            "https://backend.example.test/api", "backend-key", "agent-1", 10.0
         ),
         poll_interval_seconds=2.0,
         delivery_db_path=tmp_path / "delivery.db",
     )
+
+
+def test_run_forever_constructs_backend_coordinator(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    selected = config(tmp_path)
+    gateway = FakeGateway()
+    backend = object()
+    constructed: list[tuple[object, object, str]] = []
+    coordinator = FakeCoordinator()
     monkeypatch.setattr(
-        run_imessage_agent, "load_photon_config", lambda environ: config
+        run_imessage_agent, "load_photon_config", lambda environ: selected
     )
-    monkeypatch.setattr(run_imessage_agent, "PhotonGateway", lambda _: gateway)
+    monkeypatch.setattr(run_imessage_agent, "PhotonGateway", lambda value: gateway)
     monkeypatch.setattr(
-        "api.messaging.run_imessage_agent.time.sleep",
+        run_imessage_agent,
+        "WasteGridBackendClient",
+        lambda value: backend if value == selected.backend else None,
+    )
+    monkeypatch.setattr(
+        run_imessage_agent,
+        "BackendCoordinator",
+        lambda b, g, a: constructed.append((b, g, a)) or coordinator,
+    )
+    monkeypatch.setattr(
+        run_imessage_agent.time,
+        "sleep",
         lambda _: (_ for _ in ()).throw(KeyboardInterrupt()),
     )
 
     run_imessage_agent.run_forever()
 
+    assert constructed == [(backend, gateway, "agent-1")]
     assert gateway.requested_since is not None
-    assert (
-        DeliveryLedger(config.delivery_db_path).checkpoint_or_initialize(
-            gateway.requested_since + timedelta(minutes=1)
-        )
-        == gateway.requested_since
-    )
+    assert coordinator.events == ["dispatch", "dispatch"]
 
 
 def test_run_forever_logs_no_fetch_error_details(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    selected = config(tmp_path)
     gateway = FakeGateway(fail_fetch=True)
-    config = PhotonConfig(
-        project_id="pho_prj_test",
-        api_key="pho_sk_test",
-        backend=BackendConfig(
-            base_url="https://backend.example.test/api",
-            messaging_api_key="backend-key",
-            agent_sender_id="pho_usr_agent",
-            timeout_seconds=10.0,
-        ),
-        poll_interval_seconds=2.0,
-        delivery_db_path=tmp_path / "delivery.db",
+    monkeypatch.setattr(
+        run_imessage_agent, "load_photon_config", lambda environ: selected
+    )
+    monkeypatch.setattr(run_imessage_agent, "PhotonGateway", lambda value: gateway)
+    monkeypatch.setattr(
+        run_imessage_agent, "WasteGridBackendClient", lambda value: object()
     )
     monkeypatch.setattr(
-        run_imessage_agent, "load_photon_config", lambda environ: config
+        run_imessage_agent, "BackendCoordinator", lambda *args: FakeCoordinator()
     )
-    monkeypatch.setattr(run_imessage_agent, "PhotonGateway", lambda _: gateway)
     monkeypatch.setattr(
-        "api.messaging.run_imessage_agent.time.sleep",
+        run_imessage_agent.time,
+        "sleep",
         lambda _: (_ for _ in ()).throw(KeyboardInterrupt()),
     )
 
     run_imessage_agent.run_forever()
 
     assert "Photon polling iteration failed: TimeoutError" in caplog.text
-    assert "private text and secret" not in caplog.text
+    assert "private text" not in caplog.text
+    assert "secret.example" not in caplog.text
