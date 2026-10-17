@@ -1,0 +1,69 @@
+{
+  "completed_minutes": {
+    "30000000-0000-4000-8000-000000000001": 0.0
+  },
+  "crews": [
+    {
+      "available": true,
+      "equipment": [
+        "gloves",
+        "trash_bags",
+        "broom",
+        "shovel"
+      ],
+      "id": "30000000-0000-4000-8000-000000000001",
+      "illustrative": true,
+      "name": "Illustrative Crew A",
+      "shift_minutes": 120,
+      "start_location": {
+        "landmark": "Illustrative Gulshan-e-Iqbal location",
+        "latitude": 24.923,
+        "longitude": 67.092
+      },
+      "version": 1
+    }
+  ],
+  "fixed_assignments": [],
+  "jobs": [
+    {
+      "assigned_crew_id": null,
+      "category": "litter",
+      "decision_summary": "Illustrative recommendation",
+      "estimated_service_minutes": 15,
+      "held": false,
+      "id": "20000000-0000-4000-8000-000000000001",
+      "illustrative": true,
+      "location": {
+        "landmark": "Illustrative Gulshan-e-Iqbal location",
+        "latitude": 24.923,
+        "longitude": 67.092
+      },
+      "locked": false,
+      "required_equipment": [
+        "gloves",
+        "trash_bags"
+      ],
+      "route_position": null,
+      "status": "unassigned",
+      "travel_minutes": 0.0,
+      "unassigned_reason": "planning_pending",
+      "version": 1
+    }
+  ],
+  "node_ids": [
+    "crew:30000000-0000-4000-8000-000000000001",
+    "job:20000000-0000-4000-8000-000000000001"
+  ],
+  "revision": "EXAMPLE_REVISION_REPLACE_WITH_CURRENT_INPUT",
+  "travel_estimates_label": "Illustrative estimate: straight-line distance × 1.3 at 20 km/h; no live traffic",
+  "travel_minutes": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0
+    ]
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "category": "litter",
+  "command_id": "60000000-0000-4000-8000-000000000001",
+  "decision_summary": "Illustrative routine cleanup recommendation",
+  "duplicate_candidate_id": null,
+  "duplicate_confirmed": false,
+  "estimated_service_minutes": 15,
+  "evidence_report_ids": [
+    "10000000-0000-4000-8000-000000000001"
+  ],
+  "evidence_sufficient": true,
+  "expected_version": 1,
+  "hazard": false,
+  "missing_information": [],
+  "next_action": "create_job",
+  "proposed_equipment": [
+    "gloves",
+    "trash_bags"
+  ],
+  "report_id": "10000000-0000-4000-8000-000000000001"
+}

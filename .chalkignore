@@ -28,3 +28,22 @@ idea
 # Git artifacts
 .git
 .github
+
+# Backend routes/maintenance tools do not belong to the feature deployment.
+# Person 3's api/agents, api/planner and api/evals remain available to Chalk.
+api/main.py
+api/auth.py
+api/config.py
+api/db.py
+api/http_limits.py
+api/integrations.py
+api/models.py
+api/services.py
+api/storage.py
+api/worker.py
+api/workflows.py
+scripts
+supabase
+docs/backend
+Dockerfile
+render.yaml

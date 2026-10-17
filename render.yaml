@@ -1,0 +1,40 @@
+# Proposed service definition; create/connect the Render project manually.
+services:
+  - type: web
+    name: wastegrid-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /ready
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: MESSAGING_API_KEY
+        sync: false
+      - key: AGENT_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: SUPABASE_PHOTO_BUCKET
+        value: report-photos
+  - type: worker
+    name: wastegrid-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: python -m api.worker
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_PHOTO_BUCKET
+        value: report-photos
+      - key: PERSON3_BASE_URL
+        sync: false
+      - key: PERSON3_API_KEY
+        sync: false

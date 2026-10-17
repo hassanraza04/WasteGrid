@@ -1,0 +1,135 @@
+{
+  "$defs": {
+    "Equipment": {
+      "enum": [
+        "gloves",
+        "trash_bags",
+        "broom",
+        "shovel",
+        "wheelbarrow",
+        "pickup_truck"
+      ],
+      "title": "Equipment",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Category",
+      "type": "string"
+    },
+    "command_id": {
+      "format": "uuid",
+      "title": "Command Id",
+      "type": "string"
+    },
+    "decision_summary": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Decision Summary",
+      "type": "string"
+    },
+    "duplicate_candidate_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duplicate Candidate Id"
+    },
+    "duplicate_confirmed": {
+      "default": false,
+      "title": "Duplicate Confirmed",
+      "type": "boolean"
+    },
+    "estimated_service_minutes": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "maximum": 1440,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Estimated Service Minutes"
+    },
+    "evidence_report_ids": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "maxItems": 30,
+      "title": "Evidence Report Ids",
+      "type": "array"
+    },
+    "evidence_sufficient": {
+      "default": false,
+      "title": "Evidence Sufficient",
+      "type": "boolean"
+    },
+    "expected_version": {
+      "minimum": 1,
+      "title": "Expected Version",
+      "type": "integer"
+    },
+    "hazard": {
+      "default": false,
+      "title": "Hazard",
+      "type": "boolean"
+    },
+    "missing_information": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Missing Information",
+      "type": "array"
+    },
+    "next_action": {
+      "enum": [
+        "create_job",
+        "link_job",
+        "request_info",
+        "review"
+      ],
+      "title": "Next Action",
+      "type": "string"
+    },
+    "proposed_equipment": {
+      "items": {
+        "$ref": "#/$defs/Equipment"
+      },
+      "title": "Proposed Equipment",
+      "type": "array"
+    },
+    "report_id": {
+      "format": "uuid",
+      "title": "Report Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "command_id",
+    "expected_version",
+    "report_id",
+    "category",
+    "proposed_equipment",
+    "missing_information",
+    "decision_summary",
+    "evidence_report_ids",
+    "next_action"
+  ],
+  "title": "TriageRecommendation",
+  "type": "object"
+}
