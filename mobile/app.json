@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "WasteGrid",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -50,9 +50,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#12804D",
+          "image": "./assets/images/splash-wordmark.png",
+          "imageWidth": 170
         }
       ],
       "expo-audio",
