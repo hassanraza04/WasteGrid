@@ -10,7 +10,9 @@ service is **https://wastegrid-api-dev.onrender.com**. `localhost` on a
 teammate's computer still refers to their own computer.
 
 The [shared development API runbook](shared-development-api.md) records the
-Render deployment from `main` commit `7b77f8d` and 23 passing hosted checks.
+initial Render deployment from `main` commit `7b77f8d` and 23 passing hosted checks.
+PR #6 is merged and its migrations are applied; its API redeploy needs separate
+acceptance. All 23 hosted checks also passed after the database upgrade.
 Releases remain manual; the worker remains inactive. Hassan should confirm the
 actual browser address of his dashboard so Omer can allow that exact origin in
 Render CORS settings, then test a browser request. The currently configured
@@ -38,8 +40,9 @@ PostgreSQL. Synthetic images and decisions remain illustrative fixtures.
   Never bundle the messaging key or a hardcoded organizer password into a browser
   build. The organizer JWT is sent as `Authorization: Bearer <JWT>`.
 - Organizer access to `/organizer/reports`, `/crews` and `/plans/current` was
-  verified. The existing six migrations and Gulshan fixture plan are present;
-  the plan is not stale. No reseed/reset was needed or performed.
+  verified. All eleven migrations and the Gulshan fixture plan are present;
+  the plan is not stale. The PR #6 upgrade refreshed labeled synthetic
+  assessments while preserving existing data; no demo reset was performed.
 - Per the supplied dashboard origin, local `CORS_ORIGINS` now includes
   `http://127.0.0.1:8000` and retains `http://localhost:5173`. The API was restarted;
   authenticated-request preflights passed for both and an unconfigured origin was

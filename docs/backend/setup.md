@@ -3,7 +3,7 @@
 ## Current local demo
 
 The configured project is `einjnvlhdogzdxafauyr`, with Supabase URL
-`https://einjnvlhdogzdxafauyr.supabase.co`. All six migrations and the private
+`https://einjnvlhdogzdxafauyr.supabase.co`. Migrations 0001–0011 and the private
 `report-photos` bucket are installed. The preserved fixture contains ten
 illustrative reports, six jobs, two crews, ten photos and five assignments.
 Email/password Auth and the protected organizer/crew roles are configured.

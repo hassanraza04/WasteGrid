@@ -26,7 +26,7 @@ trying requests; Swagger is not a mobile framework or a product requirement.
 | Organizer/crew authorization | Implemented; demo accounts provisioned |
 | AI triage and route planning | Integration pending; worker inactive, new work stays queued |
 | Messaging transport | PR #9 adapter merged; separate Photon process not activated and live delivery not yet verified |
-| Public hosting | Render API deployed from `main` commit `7b77f8d`; 23 hosted checks passed. Free instances can sleep when idle. |
+| Public hosting | Initial Render acceptance used `main` commit `7b77f8d`; 23 hosted checks also passed after the PR #6 database upgrade. The PR #6 API redeploy needs separate acceptance. Free instances can sleep when idle. |
 
 The configured demo has **10 illustrative reports, 6 jobs, 2 crews, 10 photos and
 5 assignments** (Crew A: 3; Crew B: 2). Images and decisions in that dataset are

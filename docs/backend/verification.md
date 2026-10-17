@@ -1,5 +1,35 @@
 # Dashboard contract completion: verification evidence
 
+## PR #11 argument redaction and PR #6 upgrade: 2026-10-17
+
+Hassan's follow-up found that argparse echoed rejected credential values to
+stderr. The hosted entry point now rejects every non-help argument with a fixed
+error before parsing, including invalid arguments mixed with `--help`. The
+regressions cover explicit argument lists and process arguments, assert exit
+code 2, no verification call and no synthetic secret in stdout or stderr. Normal
+help still exits successfully without connecting to any service.
+
+The branch incorporates merged PR #6 (`8535603`). The complete combined suite
+passed **288 tests with zero skips** against disposable PostgreSQL, including
+22 hosted-verifier tests. Black, isort, selected flake8 checks, strict messaging
+types and exported contracts passed. Evidence:
+`/tmp/wastegrid-pr11-argument-redaction.xml`.
+
+In the separately authorized database upgrade, migrations 0007–0011 and the
+reviewed synthetic assessment refresh committed together after preservation
+checks. Original migration checksums and existing application rows, account
+identities, Storage bucket and photo metadata were preserved. Ten fixture
+assessments were refreshed; three queued fixture assessments were marked skipped
+so they cannot consume model calls. No worker was activated.
+
+All **23 hosted checks passed after that upgrade** against all eleven migration
+checksums. The merged API also passed local `/health`, `/ready`, `/docs` and
+OpenAPI startup checks against the upgraded database. Owner-only evidence is in
+`.data/deployments/pr6-8535603/migration-result.json` and
+`.data/deployments/pr6-8535603/hosted-after-migrations.json`. These results do not
+confirm the subsequent Render redeploy; that needs separate acceptance. Photo
+bytes were not compared. The earlier six-migration records below are historical.
+
 ## PR #11 review follow-up: 2026-10-17
 
 Canonical connection instructions in the dashboard handoff and contracts now

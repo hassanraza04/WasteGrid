@@ -17,8 +17,11 @@ See [Render's Web Service guide](https://render.com/docs/web-services).
 The API uses the existing Supabase project
 `https://einjnvlhdogzdxafauyr.supabase.co` for PostgreSQL, Auth and private Storage.
 No additional database or disk is needed. The Dockerfile already binds
-`0.0.0.0:$PORT`; use its default command. API v0.2 and the six installed migration
-checksums remain unchanged. Do not reseed the project.
+`0.0.0.0:$PORT`; use its default command. API v0.2 and the original six migration
+checksums remain unchanged. Migrations 0007–0011 from merged PR #6 were applied
+on 17 October 2026. The reviewed fixture refresh added labeled synthetic
+assessments and skipped three queued fixture assessments, preserving all
+existing reports, jobs, assignments and photo metadata. Do not reset the demo.
 
 The worker stays inactive. New submissions can be stored and tracked, but their
 AI tasks remain queued. Existing plans and decisions are illustrative fixtures.
@@ -63,10 +66,10 @@ this list does not grant a separately hosted frontend access.
 
 The following steps reproduce the current service without enabling a worker:
 
-1. Use a reviewed `main` commit. Do not push directly to `main`. The active
-   deployment shows source commit `7b77f8d` (the PR #10 merge), which added no SQL
-   migrations. Review and apply any later migrations separately before deploying
-   newer code.
+1. Use a reviewed `main` commit. Do not push directly to `main`. Initial hosted
+   acceptance used `7b77f8d` (the PR #10 merge). The database is now prepared for
+   PR #6 merge `8535603`; verify the Render redeploy separately. Review and apply
+   any later migrations before deploying code that requires them.
 2. In Render, choose **Deploy a Web Service → Public Git Repository**, connect
    `https://github.com/hassanraza04/WasteGrid`, select `main`, Docker, Free, Ohio,
    and the name `wastegrid-api-dev`. Leave the root directory blank, use
@@ -78,8 +81,8 @@ The following steps reproduce the current service without enabling a worker:
    or outer quotes. Do not use a Render Secret File; the API reads environment
    variables. Review the parsed CORS value as a JSON array. See
    [Render environment setup](https://render.com/docs/configure-environment-variables).
-4. Deploy and verify the actual HTTPS URL and source commit in Render. Do not
-   activate `render.yaml` or PR #6 migrations as part of this API-only service.
+4. Deploy and verify the actual HTTPS URL and source commit in Render. Keep
+   the worker inactive; do not activate the combined `render.yaml` configuration.
 
 For subsequent releases, inspect migration changes, apply approved additive
 migrations from the owner's local environment if needed, then manually deploy
@@ -95,7 +98,7 @@ Before the first deployment, while the fixture is idle, run:
 uv run --extra backend python -m scripts.verify_live_backend
 ```
 
-This checks all six migration hashes and the preserved Supabase fixture through
+This checks all checked-in migration hashes and the preserved Supabase fixture through
 the existing local API. It intentionally accepts loopback URLs only. Do not
 change that restriction to run it against an arbitrary remote host.
 
@@ -131,8 +134,10 @@ uv run --extra backend python -m scripts.verify_hosted_backend
 
 This runs the same 23 read-only Supabase/API checks as the local verifier, but
 its destination is fixed in source to `https://wastegrid-api-dev.onrender.com`.
-It accepts no alternate URL or credential arguments, and HTTP clients do not
-follow redirects. The local command's loopback restriction remains in place.
+It accepts no alternate URL or credential arguments. Unsupported arguments fail
+with a generic error that never echoes supplied values, even alongside `--help`.
+HTTP clients do not follow redirects. The local command's loopback restriction
+remains in place.
 The owner must have the ignored backend `.env` and `.env.supabase-demo` files
 with the existing Supabase configuration and all three demo staff accounts;
 never share these files with frontend/mobile owners. The command prints only
@@ -154,7 +159,7 @@ six jobs, two crews, ten photos and five assignments remain intact. Coordinate
 separate test data before teammates begin state-changing integration tests;
 those tests will change counts and may queue AI work.
 
-Hosted acceptance on 17 October 2026:
+Initial hosted acceptance on 17 October 2026 (before the PR #6 database upgrade):
 
 | Evidence | Result |
 | --- | --- |
@@ -180,7 +185,7 @@ The curl checks reproduce public HTTP and CORS acceptance without credentials.
 | Mobile owner | Verified HTTPS API URL and [mobile integration handoff](mobile-handoff.md). Resident flows need only the API URL; staff login also needs the Supabase URL, publishable key and appropriate private account credentials. Store resident tokens securely. |
 | Hassan: dashboard | Same API URL, Supabase public configuration and organizer account privately. Confirm browser origin and CORS. Never embed integration/server keys in the dashboard. |
 | Hassan: messaging server | API URL and existing messaging key privately. Use `X-Integration-Key` on messaging `/internal/...` routes and exact `sent_text` acknowledgements. Hosting alone does not start Photon. |
-| Sherry: AI | API URL, [provider contracts](contracts.md) and optional separate agent key privately. Worker activation follows resolution of PR #6 review findings, migration review and an agreed queued-task policy. |
+| Sherry: AI | API URL, [provider contracts](contracts.md) and optional separate agent key privately. PR #6 is merged and its migrations are applied. Worker activation still requires provider configuration, an agreed queued-task policy and live acceptance. |
 
 Never distribute `.env.render-dev`, `.env.render-dev-paste` or the backend `.env`
 as a frontend configuration file.
