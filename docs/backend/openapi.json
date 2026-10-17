@@ -319,6 +319,26 @@
         "title": "ClarificationRecord",
         "type": "object"
       },
+      "ComputeRoutes": {
+        "additionalProperties": false,
+        "properties": {
+          "crew_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Crew Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "crew_ids"
+        ],
+        "title": "ComputeRoutes",
+        "type": "object"
+      },
       "ConversationLookup": {
         "additionalProperties": false,
         "properties": {
@@ -450,6 +470,61 @@
         "title": "ConversationView",
         "type": "object"
       },
+      "CrewLocationUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "$ref": "#/components/schemas/Location"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location",
+          "recorded_at"
+        ],
+        "title": "CrewLocationUpdate",
+        "type": "object"
+      },
+      "CrewLocationView": {
+        "additionalProperties": false,
+        "properties": {
+          "crew_id": {
+            "format": "uuid",
+            "title": "Crew Id",
+            "type": "string"
+          },
+          "location": {
+            "$ref": "#/components/schemas/Location"
+          },
+          "received_at": {
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "recorded_at": {
+            "format": "date-time",
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "crew_id",
+          "location",
+          "recorded_at",
+          "received_at",
+          "revision"
+        ],
+        "title": "CrewLocationView",
+        "type": "object"
+      },
       "CrewPatch": {
         "additionalProperties": false,
         "properties": {
@@ -519,6 +594,39 @@
         "title": "CrewPatch",
         "type": "object"
       },
+      "CrewRoute": {
+        "additionalProperties": false,
+        "properties": {
+          "crew_id": {
+            "format": "uuid",
+            "title": "Crew Id",
+            "type": "string"
+          },
+          "duration_minutes": {
+            "title": "Duration Minutes",
+            "type": "number"
+          },
+          "stops": {
+            "items": {
+              "$ref": "#/components/schemas/RoutingStop"
+            },
+            "title": "Stops",
+            "type": "array"
+          },
+          "travel_minutes": {
+            "title": "Travel Minutes",
+            "type": "number"
+          }
+        },
+        "required": [
+          "crew_id",
+          "stops",
+          "duration_minutes",
+          "travel_minutes"
+        ],
+        "title": "CrewRoute",
+        "type": "object"
+      },
       "CrewView": {
         "additionalProperties": false,
         "properties": {
@@ -541,6 +649,35 @@
           "illustrative": {
             "title": "Illustrative",
             "type": "boolean"
+          },
+          "location_received_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Received At"
+          },
+          "location_recorded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Recorded At"
+          },
+          "location_revision": {
+            "default": 0,
+            "title": "Location Revision",
+            "type": "integer"
           },
           "name": {
             "title": "Name",
@@ -674,6 +811,21 @@
           "delivered_at"
         ],
         "title": "DeliveryStatus",
+        "type": "object"
+      },
+      "DispatchRoutes": {
+        "additionalProperties": false,
+        "properties": {
+          "command_id": {
+            "format": "uuid",
+            "title": "Command Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id"
+        ],
+        "title": "DispatchRoutes",
         "type": "object"
       },
       "Equipment": {
@@ -1453,6 +1605,57 @@
         "title": "Principal",
         "type": "object"
       },
+      "Reassignment": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "previous_crew_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Crew Id"
+          },
+          "previous_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Position"
+          },
+          "proposed_crew_id": {
+            "format": "uuid",
+            "title": "Proposed Crew Id",
+            "type": "string"
+          },
+          "proposed_position": {
+            "title": "Proposed Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id",
+          "previous_crew_id",
+          "proposed_crew_id",
+          "previous_position",
+          "proposed_position"
+        ],
+        "title": "Reassignment",
+        "type": "object"
+      },
       "Recheck": {
         "additionalProperties": false,
         "properties": {
@@ -1872,6 +2075,239 @@
           }
         },
         "title": "ResidentAnswers",
+        "type": "object"
+      },
+      "RouteDispatchView": {
+        "additionalProperties": false,
+        "properties": {
+          "plan_id": {
+            "format": "uuid",
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "preview_id": {
+            "format": "uuid",
+            "title": "Preview Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preview_id",
+          "plan_id"
+        ],
+        "title": "RouteDispatchView",
+        "type": "object"
+      },
+      "RoutePreviewView": {
+        "additionalProperties": false,
+        "properties": {
+          "computed_at": {
+            "format": "date-time",
+            "title": "Computed At",
+            "type": "string"
+          },
+          "dispatchable": {
+            "title": "Dispatchable",
+            "type": "boolean"
+          },
+          "exclusions": {
+            "items": {
+              "$ref": "#/components/schemas/RoutingIssue"
+            },
+            "title": "Exclusions",
+            "type": "array"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "matrix_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matrix Id"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/RoutingMetrics"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "reassignments": {
+            "items": {
+              "$ref": "#/components/schemas/Reassignment"
+            },
+            "title": "Reassignments",
+            "type": "array"
+          },
+          "routes": {
+            "items": {
+              "$ref": "#/components/schemas/CrewRoute"
+            },
+            "title": "Routes",
+            "type": "array"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "title": "Settings",
+            "type": "object"
+          },
+          "termination_reason": {
+            "title": "Termination Reason",
+            "type": "string"
+          },
+          "travel_label": {
+            "title": "Travel Label",
+            "type": "string"
+          },
+          "unassigned": {
+            "items": {
+              "$ref": "#/components/schemas/RoutingIssue"
+            },
+            "title": "Unassigned",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "computed_at",
+          "expires_at",
+          "matrix_id",
+          "travel_label",
+          "routes",
+          "unassigned",
+          "exclusions",
+          "metrics",
+          "termination_reason",
+          "dispatchable",
+          "reassignments",
+          "settings"
+        ],
+        "title": "RoutePreviewView",
+        "type": "object"
+      },
+      "RoutingIssue": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "reason"
+        ],
+        "title": "RoutingIssue",
+        "type": "object"
+      },
+      "RoutingMetrics": {
+        "additionalProperties": false,
+        "properties": {
+          "latest_finish": {
+            "title": "Latest Finish",
+            "type": "number"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "total_travel": {
+            "title": "Total Travel",
+            "type": "number"
+          },
+          "weighted_wait": {
+            "title": "Weighted Wait",
+            "type": "number"
+          }
+        },
+        "required": [
+          "weighted_wait",
+          "latest_finish",
+          "total_travel",
+          "score"
+        ],
+        "title": "RoutingMetrics",
+        "type": "object"
+      },
+      "RoutingStop": {
+        "additionalProperties": false,
+        "properties": {
+          "completion_minutes": {
+            "title": "Completion Minutes",
+            "type": "number"
+          },
+          "fixed": {
+            "title": "Fixed",
+            "type": "boolean"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "priority": {
+            "enum": [
+              "high",
+              "medium",
+              "routine"
+            ],
+            "title": "Priority",
+            "type": "string"
+          },
+          "service_estimate_source": {
+            "title": "Service Estimate Source",
+            "type": "string"
+          },
+          "service_minutes": {
+            "title": "Service Minutes",
+            "type": "number"
+          },
+          "travel_minutes": {
+            "title": "Travel Minutes",
+            "type": "number"
+          }
+        },
+        "required": [
+          "job_id",
+          "position",
+          "priority",
+          "travel_minutes",
+          "service_minutes",
+          "completion_minutes",
+          "fixed",
+          "service_estimate_source"
+        ],
+        "title": "RoutingStop",
         "type": "object"
       },
       "Snapshot": {
@@ -2555,6 +2991,119 @@
           }
         ],
         "summary": "Crews"
+      }
+    },
+    "/crews/me/location": {
+      "post": {
+        "operationId": "update_location_crews_me_location_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrewLocationUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrewLocationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "ReportOrStaffBearer": []
+          }
+        ],
+        "summary": "Update Location"
       }
     },
     "/crews/{crew_id}": {
@@ -6070,6 +6619,359 @@
           }
         ],
         "summary": "Get Report Updates"
+      }
+    },
+    "/routing/previews": {
+      "post": {
+        "operationId": "compute_routing_previews_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComputeRoutes"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutePreviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "ReportOrStaffBearer": []
+          }
+        ],
+        "summary": "Compute"
+      }
+    },
+    "/routing/previews/{preview_id}": {
+      "get": {
+        "operationId": "read_preview_routing_previews__preview_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "preview_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Preview Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutePreviewView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "ReportOrStaffBearer": []
+          }
+        ],
+        "summary": "Read Preview"
+      }
+    },
+    "/routing/previews/{preview_id}/dispatch": {
+      "post": {
+        "operationId": "dispatch_routing_previews__preview_id__dispatch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "preview_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Preview Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DispatchRoutes"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteDispatchView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "ReportOrStaffBearer": []
+          }
+        ],
+        "summary": "Dispatch"
       }
     },
     "/tasks": {

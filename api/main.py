@@ -55,6 +55,7 @@ from api.models import (
     Task,
     now,
 )
+from api.routing import routing_router
 from api.schemas import (
     BindConversation,
     ClaimMessages,
@@ -199,6 +200,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = make_engine(settings)
     app.state.cloud = SupabaseCloud(settings)
+    app.include_router(routing_router(settings))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -670,6 +672,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db: Session = Depends(get_db),
         staff: Principal = Depends(organizer),
     ):
+        if settings.organizer_routing_enabled:
+            raise HTTPException(409, "Use /routing/previews then organiser dispatch")
         task = enqueue(db, "plan", f"manual-plan:{body.command_id}", {})
         db.commit()
         return task

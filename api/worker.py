@@ -69,7 +69,13 @@ def fail_assessment(report):
 
 
 def process_one(
-    engine, provider, cloud, assessment_client=None, *, duplicate_radius_meters=10
+    engine,
+    provider,
+    cloud,
+    assessment_client=None,
+    *,
+    duplicate_radius_meters=10,
+    organizer_routing=False,
 ) -> bool:
     if provider is None and assessment_client is not None:
         from api.decisions import AssessmentDecisionProvider
@@ -104,6 +110,13 @@ def process_one(
         )
         if task is None:
             return False
+        if task.kind == "plan" and organizer_routing:
+            task.status = "succeeded"
+            task.result = {"organizer_dispatch_required": True}
+            task.last_error = None
+            task.lease_id = task.leased_until = None
+            db.commit()
+            return True
         # An expired assessment lease may already have called the model. Never replay it.
         if task.kind == "assessment" and task.attempts > 0:
             report = db.get(Report, UUID(task.payload["report_id"]))
@@ -345,6 +358,7 @@ def main():
                 cloud,
                 assessment_client,
                 duplicate_radius_meters=settings.duplicate_radius_meters,
+                organizer_routing=settings.organizer_routing_enabled,
             )
             if args.once:
                 break

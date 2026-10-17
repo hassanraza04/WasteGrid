@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.assessment import calculate_priority
-from api.models import Assignment, Crew, Event, Job, Plan, Report
+from api.models import Assignment, Crew, Event, Job, Plan, Report, now
 from api.schemas import (
     CrewPatch,
     CrewView,
@@ -273,6 +273,9 @@ def apply_triage(
 
 
 def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
+    latest = db.scalar(select(Plan).order_by(Plan.created_at.desc(), Plan.id).limit(1))
+    if latest is not None and latest.routing_mode == "organizer":
+        raise HTTPException(409, "Organiser dispatch controls active routes")
     current = build_planning_input(db)
     if current.revision != proposal.revision:
         raise HTTPException(409, "Planning inputs changed; regenerate the plan")
@@ -450,6 +453,48 @@ def apply_plan(db: Session, proposal: PlanProposal) -> Plan:
 
 def ensure_can_start(db: Session, job: Job):
     crew = db.get(Crew, job.assigned_crew_id) if job.assigned_crew_id else None
+    plan = db.scalar(select(Plan).order_by(Plan.created_at.desc(), Plan.id).limit(1))
+    if plan is not None and plan.routing_mode == "organizer":
+        reports = list(db.scalars(select(Report).where(Report.job_id == job.id)))
+        assigned = db.scalar(
+            select(Assignment.id).where(
+                Assignment.plan_id == plan.id,
+                Assignment.job_id == job.id,
+                Assignment.crew_id == job.assigned_crew_id,
+            )
+        )
+        if not (
+            crew
+            and crew.available
+            and not job.held
+            and assigned
+            and reports
+            and all(
+                job_assessment_approved(db, r) and r.priority is not None
+                for r in reports
+            )
+        ):
+            raise HTTPException(
+                409, "Current organiser assignment and approved assessment required"
+            )
+        earlier = db.scalar(
+            select(Job.id).where(
+                Job.assigned_crew_id == crew.id,
+                Job.id != job.id,
+                Job.status != "completed",
+                (
+                    (Job.status == "in_progress")
+                    | (Job.route_position < job.route_position)
+                ),
+            )
+        )
+        if earlier:
+            raise HTTPException(
+                409, "Finish the preceding crew stop before starting this job"
+            )
+        # Another crew starting/completing work invalidates future previews, not
+        # the ownership of already dispatched jobs. No equipment/shift budget here.
+        return
     if not eligible(job, crew) or job.held:
         raise HTTPException(409, "Crew or job is no longer eligible; replan required")
     plan = db.scalar(select(Plan).order_by(Plan.created_at.desc(), Plan.id).limit(1))
@@ -563,6 +608,8 @@ def change_job(
     if body.status is not None:
         if body.status == "in_progress":
             ensure_can_start(db, job)
+            if job.status != "in_progress":
+                job.collection_started_at = now()
         if body.status == "assigned" and not job.assigned_crew_id:
             raise HTTPException(422, "An assigned job requires a crew")
         job.status = body.status
@@ -597,6 +644,10 @@ def change_crew(db: Session, crew: Crew, body: CrewPatch, actor: str):
         if value is None:
             raise HTTPException(422, "Crew fields cannot be null")
         setattr(crew, key, value.model_dump() if key == "start_location" else value)
+        if key == "start_location":
+            # Manual depot edits are not live observations.
+            crew.location_recorded_at = crew.location_received_at = None
+            crew.location_revision += 1
     crew.version += 1
     for job in db.scalars(
         select(Job).where(

@@ -31,3 +31,18 @@ class Settings(BaseSettings):
     )
     assessment_timeout_seconds: float = Field(default=30, gt=0, le=120)
     duplicate_radius_meters: float = Field(default=10, ge=0, le=100)
+    organizer_routing_enabled: bool = False
+    routing_osrm_base_url: str = ""
+    routing_provider_timeout_seconds: float = Field(default=10, gt=0, le=30)
+    routing_service_minutes: int = Field(default=5, gt=0, le=60)
+    routing_location_max_age_seconds: int = Field(default=120, ge=10, le=3600)
+    routing_preview_max_age_seconds: int = Field(default=120, ge=10, le=3600)
+    routing_max_displacement_meters: float = Field(default=100, gt=0, le=1000)
+    routing_improvement_budget: int = Field(default=10000, ge=0, le=100000)
+    routing_solver_timeout_seconds: float = Field(default=5, gt=0, le=30)
+
+    routing_wait_weight: float = Field(default=1, gt=0, le=100, allow_inf_nan=False)
+    routing_finish_weight: float = Field(default=1, gt=0, le=100, allow_inf_nan=False)
+    routing_travel_weight: float = Field(
+        default=0.25, gt=0, le=100, allow_inf_nan=False
+    )

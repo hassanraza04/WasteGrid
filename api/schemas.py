@@ -228,6 +228,9 @@ class CrewView(Contract):
     start_location: Location
     illustrative: bool
     version: int
+    location_recorded_at: datetime | None = None
+    location_received_at: datetime | None = None
+    location_revision: int = 0
 
 
 class CrewPatch(Command):
