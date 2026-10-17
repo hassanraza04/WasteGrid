@@ -512,14 +512,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.get("/jobs", response_model=list[JobView])
-    def jobs(db: Session = Depends(get_db), staff: Principal = Depends(get_staff)):
+    def jobs(
+        active_only: bool = False,
+        limit: int = Query(default=100, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+        db: Session = Depends(get_db),
+        staff: Principal = Depends(get_staff),
+    ):
         query = (
             select(Job)
             .order_by(
                 Job.assigned_crew_id, Job.route_position.asc().nulls_last(), Job.id
             )
-            .limit(100)
+            .limit(limit)
+            .offset(offset)
         )
+        if active_only:
+            query = query.where(Job.status != "completed")
         if staff.role == "crew":
             query = query.where(Job.assigned_crew_id == staff.crew_id)
         return db.scalars(query).all()

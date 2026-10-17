@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from api.auth import Principal, get_staff
 from api.db import mutation_lock
 from api.main import create_app
-from api.models import Job, Plan, RoutingPreview, Task
+from api.models import Job, Plan, RoutingPreview, Task, now
 from api.routing import compute_preview, dispatch_preview
 from api.worker import process_one
 from scripts.migrate import migrate
@@ -132,3 +132,103 @@ def test_postgres_audited_recheck_release_restores_route(engine):
     app.dependency_overrides[get_staff] = staff
     with TestClient(app) as client:
         verify_recheck_route_resolution(client, engine, ids, jobs)
+
+
+def test_postgres_active_job_pages_preserve_crew_scope(client, engine, seeded):
+    from tests.test_routing import verify_active_job_pages
+
+    verify_active_job_pages(client, engine, seeded["crew_a"], seeded["crew_b"], "a")
+
+
+def test_routed_job_completion_exposes_resident_evidence_once(
+    client, engine, seeded, png
+):
+    from uuid import UUID
+
+    from api.models import Report
+    from tests.backend.conftest import auth, report
+    from tests.backend.providers import seed_eligible_assessment
+
+    created = report(client, png)
+    rid = created["report"]["id"]
+    with Session(engine) as db:
+        row = db.get(Report, UUID(rid))
+        seed_eligible_assessment(row)
+        job = Job(
+            category="mixed_waste",
+            required_equipment=[],
+            estimated_service_minutes=5,
+            location=row.location,
+        )
+        db.add(job)
+        db.flush()
+        row.job_id, row.state = job.id, "linked_to_job"
+        db.commit()
+        jid = str(job.id)
+    client.app.state.settings.organizer_routing_enabled = True
+    client.app.state.road_times = FakeRoads()
+    gps = client.post(
+        "/crews/me/location",
+        headers=auth("a"),
+        json={
+            "location": {"latitude": 24.92, "longitude": 67.09},
+            "recorded_at": now().isoformat(),
+        },
+    )
+    assert gps.status_code == 200, gps.text
+    preview = client.post(
+        "/routing/previews",
+        headers=auth("org"),
+        json={"crew_ids": [str(seeded["crew_a"])]},
+    )
+    assert preview.status_code == 200 and preview.json()["dispatchable"], preview.text
+    dispatch = {"command_id": str(uuid4())}
+    route = "/routing/previews/" + preview.json()["id"] + "/dispatch"
+    assert client.post(route, headers=auth("org"), json=dispatch).status_code == 200
+    assert client.post(route, headers=auth("org"), json=dispatch).status_code == 200
+    job = client.get("/jobs?active_only=true", headers=auth("a")).json()[0]
+    assert client.get("/jobs?active_only=true", headers=auth("b")).json() == []
+    start = {
+        "command_id": str(uuid4()),
+        "expected_version": job["version"],
+        "status": "in_progress",
+    }
+    started = client.patch(f"/jobs/{jid}", headers=auth("a"), json=start)
+    assert started.status_code == 200, started.text
+    done = {"command_id": str(uuid4()), "expected_version": started.json()["version"]}
+    for _ in range(2):
+        completed = client.post(
+            f"/jobs/{jid}/completion",
+            headers=auth("a"),
+            data=done,
+            files={"photo": ("cleanup.png", png, "image/png")},
+        )
+        assert completed.status_code == 200, completed.text
+    assert client.get("/jobs?active_only=true", headers=auth("a")).json() == []
+    detail = client.get(f"/jobs/{jid}", headers=auth("a")).json()
+    assert (
+        len(
+            [
+                event
+                for event in detail["events"]
+                if event.get("command_id") == done["command_id"]
+                and event["kind"] == "job.completed"
+            ]
+        )
+        == 1
+    )
+    resident = client.get(
+        f"/reports/{rid}", headers=auth(created["access_token"])
+    ).json()
+    assert (
+        resident["display_status"] == "completed"
+        and len(resident["completion_photo_ids"]) == 1
+    )
+    photo = resident["completion_photo_ids"][0]
+    assert (
+        client.get(
+            f"/photos/{photo}/access", headers=auth(created["access_token"])
+        ).status_code
+        == 200
+    )
+    assert client.get(f"/photos/{photo}/access", headers=auth("b")).status_code == 404
