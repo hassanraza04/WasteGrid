@@ -39,7 +39,8 @@ npm run dev
 ```
 
 Open the public customer view at the Vite URL. Open `/admin` for the organizer
-view. Its local sign-in is only a development adapter and is not production
+view while running the development server. Production builds omit both organizer
+routes. Its local sign-in is only a development adapter and is not production
 authentication.
 
 Run the frontend checks with:

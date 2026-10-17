@@ -21,6 +21,29 @@ function createStorage(overrides: Partial<Storage>): Storage {
   };
 }
 
+function storedReport(reference = "WG-TEST"): object {
+  return {
+    reference,
+    title: "Overflowing bin",
+    status: "submitted",
+    location: { latitude: 0, longitude: 0, address: "14 Market Street" },
+    createdAt: "2026-10-16T12:00:00.000Z",
+    latestUpdate: {
+      createdAt: "2026-10-16T12:00:00.000Z",
+      status: "submitted",
+      message: "Your report has been received.",
+    },
+    updates: [
+      {
+        createdAt: "2026-10-16T12:00:00.000Z",
+        status: "submitted",
+        message: "Your report has been received.",
+      },
+    ],
+    conversation: [],
+  };
+}
+
 test("creates a report and makes it retrievable by its generated reference", () => {
   const repository = new BrowserReportRepository(window.localStorage);
 
@@ -68,7 +91,7 @@ test("raises a clear error when browser storage cannot be read", () => {
 
 test("raises a clear error when storing a remembered report fails", () => {
   const unavailableStorage = createStorage({
-    getItem: () => JSON.stringify([{ reference: "WG-TEST" }]),
+    getItem: () => JSON.stringify([storedReport()]),
     setItem: () => {
       throw new Error("storage disabled");
     },
@@ -101,6 +124,45 @@ test("resets non-list stored report data to the demo report", () => {
 
   expect(repository.list()).toEqual([expect.objectContaining({ reference: "WG-DEMO" })]);
   expect(writes).toHaveLength(1);
+});
+
+test("resets stored reports with incomplete records to the demo report", () => {
+  const writes: string[] = [];
+  const storage = createStorage({
+    getItem: () => JSON.stringify([{ reference: "WG-INCOMPLETE" }]),
+    setItem: (_key, value) => writes.push(value),
+  });
+  const repository = new BrowserReportRepository(storage);
+
+  expect(repository.list()).toEqual([expect.objectContaining({ reference: "WG-DEMO" })]);
+  expect(writes).toHaveLength(1);
+});
+
+test("resets stored reports with invalid field types to the demo report", () => {
+  const invalidReports = [
+    "not-a-report",
+    { ...storedReport(), location: { latitude: "north", longitude: 0, address: "14 Market Street" } },
+    {
+      ...storedReport(),
+      updates: [{ createdAt: "2026-10-16T12:00:00.000Z", status: "unknown", message: "Update" }],
+    },
+    {
+      ...storedReport(),
+      conversation: [
+        { createdAt: "2026-10-16T12:00:00.000Z", direction: "sideways", body: "Hello" },
+      ],
+    },
+  ];
+
+  for (const invalidReport of invalidReports) {
+    const storage = createStorage({
+      getItem: () => JSON.stringify([invalidReport]),
+      setItem: () => undefined,
+    });
+    const repository = new BrowserReportRepository(storage);
+
+    expect(repository.list()).toEqual([expect.objectContaining({ reference: "WG-DEMO" })]);
+  }
 });
 
 test("does not remember an unknown report reference", () => {

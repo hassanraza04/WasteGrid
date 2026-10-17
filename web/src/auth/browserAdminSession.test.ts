@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from "vitest";
 
-import { BrowserAdminSession } from "./browserAdminSession";
+import { BrowserAdminSession, createDevelopmentAdminSession } from "./browserAdminSession";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -22,4 +22,11 @@ test("signs out by removing the local session", () => {
   session.signOut();
 
   expect(session.isSignedIn()).toBe(false);
+});
+
+test("does not create the development session for a production build", () => {
+  expect(createDevelopmentAdminSession(window.localStorage, false)).toBeUndefined();
+  expect(createDevelopmentAdminSession(window.localStorage, true)).toBeInstanceOf(
+    BrowserAdminSession,
+  );
 });

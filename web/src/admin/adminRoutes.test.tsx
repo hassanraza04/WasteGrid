@@ -55,3 +55,17 @@ test("returns an organizer to sign-in after sign-out", async () => {
 
   expect(await screen.findByRole("heading", { name: "Organizer sign in" })).toBeInTheDocument();
 });
+
+test("does not expose local organizer routes when the local demo is disabled", () => {
+  const repository = new BrowserReportRepository(window.localStorage);
+  const session = new BrowserAdminSession(window.localStorage);
+
+  render(
+    <MemoryRouter initialEntries={["/admin"]}>
+      <App repository={repository} adminSession={session} localAdminEnabled={false} />
+    </MemoryRouter>,
+  );
+
+  expect(screen.queryByRole("heading", { name: "Organizer sign in" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Organizer dashboard" })).not.toBeInTheDocument();
+});

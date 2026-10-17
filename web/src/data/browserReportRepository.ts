@@ -1,4 +1,4 @@
-import type { CreateReportInput, Report } from "../domain/reports";
+import type { CreateReportInput, Report, ReportStatus } from "../domain/reports";
 import type { ReportRepository } from "./reportRepository";
 
 const reportsKey = "wastegrid.demo.reports";
@@ -84,7 +84,9 @@ export class BrowserReportRepository implements ReportRepository {
 
     try {
       const parsedReports: unknown = JSON.parse(serializedReports);
-      return Array.isArray(parsedReports) ? (parsedReports as Report[]) : this.resetReports();
+      return Array.isArray(parsedReports) && parsedReports.every(isReport)
+        ? parsedReports
+        : this.resetReports();
     } catch {
       return this.resetReports();
     }
@@ -140,4 +142,66 @@ function createReport(reference: string, title: string, address: string, created
     updates: [update],
     conversation: [],
   };
+}
+
+function isReport(value: unknown): value is Report {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    isString(value.reference) &&
+    isString(value.title) &&
+    isReportStatus(value.status) &&
+    isReportLocation(value.location) &&
+    isString(value.createdAt) &&
+    isReportUpdate(value.latestUpdate) &&
+    Array.isArray(value.updates) &&
+    value.updates.every(isReportUpdate) &&
+    Array.isArray(value.conversation) &&
+    value.conversation.every(isConversationMessage)
+  );
+}
+
+function isReportLocation(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNumber(value.latitude) &&
+    isNumber(value.longitude) &&
+    isString(value.address)
+  );
+}
+
+function isReportUpdate(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isString(value.createdAt) &&
+    isReportStatus(value.status) &&
+    isString(value.message)
+  );
+}
+
+function isConversationMessage(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isString(value.createdAt) &&
+    (value.direction === "inbound" || value.direction === "outbound") &&
+    isString(value.body)
+  );
+}
+
+function isReportStatus(value: unknown): value is ReportStatus {
+  return value === "submitted" || value === "in-progress" || value === "resolved";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
 }
