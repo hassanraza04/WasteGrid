@@ -194,6 +194,28 @@
             "title": "Photo",
             "type": "string"
           },
+          "resident_fire": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resident Fire"
+          },
+          "resident_sharp_objects": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resident Sharp Objects"
+          },
           "title": {
             "anyOf": [
               {
@@ -1547,6 +1569,9 @@
             "title": "Public Reference",
             "type": "string"
           },
+          "resident_answers": {
+            "$ref": "#/components/schemas/ResidentAnswers"
+          },
           "state": {
             "$ref": "#/components/schemas/ReportState"
           },
@@ -1604,6 +1629,35 @@
           "triage"
         ],
         "title": "ReportView",
+        "type": "object"
+      },
+      "ResidentAnswers": {
+        "additionalProperties": false,
+        "properties": {
+          "fire": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fire"
+          },
+          "sharp_objects": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharp Objects"
+          }
+        },
+        "title": "ResidentAnswers",
         "type": "object"
       },
       "Snapshot": {
@@ -1941,6 +1995,32 @@
       "WasteAssessment": {
         "additionalProperties": false,
         "properties": {
+          "comparison_reason": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparison Reason"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
           "description": {
             "maxLength": 200,
             "minLength": 1,
@@ -1986,6 +2066,17 @@
             "title": "Reason",
             "type": "string"
           },
+          "resident_context_agreement": {
+            "default": "not_provided",
+            "enum": [
+              "consistent",
+              "conflicting",
+              "unclear",
+              "not_provided"
+            ],
+            "title": "Resident Context Agreement",
+            "type": "string"
+          },
           "size": {
             "enum": [
               "small",
@@ -2003,6 +2094,26 @@
               "unknown"
             ],
             "title": "Special Handling",
+            "type": "string"
+          },
+          "visible_fire": {
+            "default": "unknown",
+            "enum": [
+              "yes",
+              "no",
+              "unknown"
+            ],
+            "title": "Visible Fire",
+            "type": "string"
+          },
+          "visible_sharp_objects": {
+            "default": "unknown",
+            "enum": [
+              "yes",
+              "no",
+              "unknown"
+            ],
+            "title": "Visible Sharp Objects",
             "type": "string"
           }
         },

@@ -96,6 +96,9 @@ class Report(Base):
     )
     priority_reason: Mapped[str | None] = mapped_column(Text)
     assessment: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    resident_answers: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default=text("'{}'")
+    )
 
 
 class Photo(Base):

@@ -14,6 +14,11 @@ class Contract(BaseModel):
     )
 
 
+class ResidentAnswers(Contract):
+    fire: bool | None = Field(default=None, strict=True)
+    sharp_objects: bool | None = Field(default=None, strict=True)
+
+
 class WasteAssessment(Contract):
     description: str = Field(min_length=1, max_length=200, pattern=r"\S")
     size: Literal["small", "medium", "large", "unknown"]
@@ -24,6 +29,13 @@ class WasteAssessment(Contract):
     forces_people_into_traffic: Literal["yes", "no", "unknown"]
     special_handling: Literal["suspected", "none_identified", "unknown"]
     reason: str = Field(min_length=1, max_length=400, pattern=r"\S")
+    visible_fire: Literal["yes", "no", "unknown"] = "unknown"
+    visible_sharp_objects: Literal["yes", "no", "unknown"] = "unknown"
+    confidence: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    resident_context_agreement: Literal[
+        "consistent", "conflicting", "unclear", "not_provided"
+    ] = "not_provided"
+    comparison_reason: str | None = Field(default=None, min_length=1, max_length=300)
 
 
 class Equipment(StrEnum):
@@ -159,6 +171,7 @@ class ReportView(Contract):
     needs_review: bool = False
     priority_reason: str | None = None
     assessment: WasteAssessment | None = None
+    resident_answers: ResidentAnswers = Field(default_factory=ResidentAnswers)
 
 
 class ReportCreated(Contract):

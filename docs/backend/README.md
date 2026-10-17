@@ -24,7 +24,11 @@ calls and real authentication; a public reference alone grants no access.
   Supabase Auth; protected database role records determine permissions.
 - Creation supports safe retries using a client UUID and a client-generated
   256-bit token. Repeating a command does not duplicate its state transition.
-- Report creation and clarification enqueue durable triage work. The worker
+- New reports enqueue a one-call Chalk assessment, followed by deterministic
+  backend priority calculation; see [assessment.md](assessment.md) for metadata,
+  proximity duplicate policy, configuration and API fields. The assessment slice
+  does not automatically create jobs. Legacy clarification still enqueues triage.
+  The legacy worker
   obtains decisions through the Person 3 boundary and applies backend rules:
   missing location requests information, hazards and uncertain duplicates go
   to review, eligible ordinary reports create/link jobs.

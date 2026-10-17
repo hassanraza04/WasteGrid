@@ -120,6 +120,7 @@ def report_view(db: Session, report: Report) -> ReportView:
         needs_review=report.needs_review,
         priority_reason=report.priority_reason,
         assessment=report.assessment,
+        resident_answers=report.resident_answers,
         completion_photo_ids=(
             list(db.scalars(select(Photo.id).where(Photo.job_id == report.job_id)))
             if job

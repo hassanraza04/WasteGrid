@@ -470,6 +470,9 @@
           "title": "Public Reference",
           "type": "string"
         },
+        "resident_answers": {
+          "$ref": "#/$defs/ResidentAnswers"
+        },
         "state": {
           "$ref": "#/$defs/ReportState"
         },
@@ -527,6 +530,37 @@
         "triage"
       ],
       "title": "ReportView",
+      "type": "object"
+    },
+    "ResidentAnswers": {
+      "additionalProperties": false,
+      "properties": {
+        "fire": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fire"
+        },
+        "sharp_objects": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sharp Objects"
+        }
+      },
+      "title": "ResidentAnswers",
       "type": "object"
     },
     "Snapshot": {
@@ -678,6 +712,34 @@
     "WasteAssessment": {
       "additionalProperties": false,
       "properties": {
+        "comparison_reason": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comparison Reason"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
         "description": {
           "maxLength": 200,
           "minLength": 1,
@@ -723,6 +785,17 @@
           "title": "Reason",
           "type": "string"
         },
+        "resident_context_agreement": {
+          "default": "not_provided",
+          "enum": [
+            "consistent",
+            "conflicting",
+            "unclear",
+            "not_provided"
+          ],
+          "title": "Resident Context Agreement",
+          "type": "string"
+        },
         "size": {
           "enum": [
             "small",
@@ -740,6 +813,26 @@
             "unknown"
           ],
           "title": "Special Handling",
+          "type": "string"
+        },
+        "visible_fire": {
+          "default": "unknown",
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ],
+          "title": "Visible Fire",
+          "type": "string"
+        },
+        "visible_sharp_objects": {
+          "default": "unknown",
+          "enum": [
+            "yes",
+            "no",
+            "unknown"
+          ],
+          "title": "Visible Sharp Objects",
           "type": "string"
         }
       },

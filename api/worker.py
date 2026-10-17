@@ -22,6 +22,7 @@ from api.schemas import (
     FollowupInput,
     FollowupResult,
     PlanProposal,
+    ResidentAnswers,
     TriageInput,
     TriageRecommendation,
     WasteAssessment,
@@ -115,7 +116,12 @@ def process_one(engine, provider, cloud, assessment_client=None) -> bool:
                 if report is None:
                     raise HTTPException(404, "Report removed")
                 photo = db.get(Photo, report.photo_id)
-                request = (cloud.signed_url(photo.object_path), report.note)
+                request = (
+                    cloud.signed_url(photo.object_path),
+                    report.note,
+                    report.location,
+                    report.resident_answers,
+                )
             elif kind == "triage":
                 report = db.get(Report, UUID(payload["report_id"]))
                 if report is None:
@@ -170,7 +176,9 @@ def process_one(engine, provider, cloud, assessment_client=None) -> bool:
                 return True
             if kind == "assessment":
                 report = db.get(Report, UUID(payload["report_id"]))
-                decision = calculate_priority(output)
+                decision = calculate_priority(
+                    output, ResidentAnswers.model_validate(report.resident_answers)
+                )
                 report.assessment = output.model_dump(mode="json")
                 report.priority = decision.priority
                 report.needs_review = decision.needs_review

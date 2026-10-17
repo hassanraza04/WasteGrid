@@ -25,3 +25,4 @@ class Settings(BaseSettings):
     chalk_model: str = "groq/qwen/qwen3.8-27b"
     chalk_router_base_url: str = "https://api.chalk.ai/v1/router"
     assessment_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    duplicate_radius_meters: float = Field(default=10, ge=0, le=100)

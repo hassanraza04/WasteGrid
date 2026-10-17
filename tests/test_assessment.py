@@ -18,7 +18,7 @@ from api.config import Settings
 from api.integrations import ChalkAssessmentClient
 from api.main import create_app
 from api.models import Base, Photo, Report, Task, now
-from api.schemas import WasteAssessment
+from api.schemas import ResidentAnswers, WasteAssessment
 from api.services import enqueue, report_view
 from api.worker import process_one
 
@@ -33,6 +33,11 @@ def assessment(**changes):
             "forces_people_into_traffic": "no",
             "special_handling": "none_identified",
             "reason": "Waste is beside the path with no visible obstruction.",
+            "visible_fire": "no",
+            "visible_sharp_objects": "no",
+            "confidence": 0.8,
+            "resident_context_agreement": "not_provided",
+            "comparison_reason": "No resident claims were provided.",
             **changes,
         }
     )
@@ -140,7 +145,10 @@ def test_gateway_one_request(body, status):
             with pytest.raises(ValidationError):
                 client.assess("https://photo.invalid/image", None)
         else:
-            assert client.assess("https://photo.invalid/image", None) == assessment()
+            assert (
+                client.assess("https://photo.invalid/image", None).model_dump()
+                == assessment().model_dump()
+            )
         assert len(calls) == 1
     finally:
         client.close()
@@ -198,8 +206,8 @@ def test_worker_retains_report_and_exposes_result(assessment_db, failure):
 
     calls = []
 
-    def assess(photo, note):
-        calls.append((photo, note))
+    def assess(photo, note, location, answers):
+        calls.append((photo, note, location, answers))
         if failure == "invalid":
             return {"description": "incomplete"}
         if failure == "timeout":
@@ -324,3 +332,202 @@ def test_suspected_handling_cannot_create_ordinary_job(assessment_db):
         db.commit()
         assert row.state == "needs_review"
         assert row.job_id is None
+
+
+@pytest.mark.parametrize("confidence", [0.1, 0.99])
+def test_confidence_is_not_a_priority_rule(confidence):
+    assert calculate_priority(assessment(confidence=confidence)).priority == "routine"
+
+
+def test_resident_no_cannot_override_visible_hazard():
+    result = calculate_priority(
+        assessment(visible_fire="yes"), ResidentAnswers(fire=False)
+    )
+    assert result.needs_review
+    assert result.priority is None
+
+
+def test_unverified_resident_hazard_is_reviewed_not_copied_as_visual_fact():
+    value = assessment(visible_fire="no")
+    result = calculate_priority(value, ResidentAnswers(fire=True))
+    assert value.visible_fire == "no"
+    assert result.needs_review
+    assert result.priority is None
+
+
+def test_conflicting_note_does_not_erase_supported_high_priority():
+    result = calculate_priority(
+        assessment(
+            obstruction="entrance",
+            obstruction_level="complete",
+            resident_context_agreement="conflicting",
+        )
+    )
+    assert result.priority == "high"
+    assert result.needs_review
+
+
+@pytest.fixture
+def report_api(assessment_db):
+    from io import BytesIO
+
+    from PIL import Image
+
+    app = create_app(Settings(_env_file=None))
+    app.state.engine = assessment_db
+    app.state.cloud.close()
+    uploads = []
+    app.state.cloud = SimpleNamespace(
+        upload=lambda *args: uploads.append(args),
+        delete=lambda *args: None,
+        signed_url=lambda path: "https://photo.invalid/image",
+        close=lambda: None,
+    )
+    image = BytesIO()
+    Image.new("RGB", (8, 8)).save(image, "PNG")
+    with TestClient(app) as client:
+        yield client, image.getvalue(), uploads
+
+
+def submit(client, image, **data):
+    return client.post(
+        "/reports",
+        files={"photo": ("waste.png", image, "image/png")},
+        data={"latitude": 24.92, "longitude": 67.09, **data},
+    )
+
+
+def test_nearby_duplicate_rejects_photo_and_task(report_api, assessment_db):
+    from sqlalchemy import func
+
+    client, image, uploads = report_api
+    first = submit(client, image)
+    assert first.status_code == 201
+    # About one metre north: similar coordinates, rather than exact equality.
+    duplicate = submit(client, image, latitude=24.92001)
+    assert duplicate.status_code == 409
+    assert duplicate.json() == {"detail": "Trash already reported at this location."}
+    assert duplicate.headers["X-WasteGrid-Error"] == "trash_already_reported"
+    assert len(uploads) == 1
+    with Session(assessment_db) as db:
+        for model in (Report, Photo, Task):
+            assert db.scalar(select(func.count()).select_from(model)) == 1
+
+
+def test_different_location_is_not_rejected(report_api):
+    client, image, uploads = report_api
+    assert submit(client, image).status_code == 201
+    # About 33 metres north, beyond the default 10 metre policy.
+    assert submit(client, image, latitude=24.9203).status_code == 201
+    assert len(uploads) == 2
+
+
+def test_completed_cleanup_can_be_reported_again(report_api, assessment_db):
+    from uuid import UUID
+
+    from api.models import Job
+
+    client, image, uploads = report_api
+    first = submit(client, image).json()
+    with Session(assessment_db) as db:
+        report = db.get(Report, UUID(first["report"]["id"]))
+        job = Job(
+            status="completed",
+            location=report.location,
+            category="mixed",
+            required_equipment=["gloves"],
+            estimated_service_minutes=15,
+        )
+        db.add(job)
+        db.flush()
+        report.job_id = job.id
+        report.state = "linked_to_job"
+        db.commit()
+    assert submit(client, image).status_code == 201
+    assert len(uploads) == 2
+
+
+def test_same_submission_retry_precedes_duplicate_check(report_api):
+    from secrets import token_urlsafe
+
+    client, image, uploads = report_api
+    token = "wg_r_" + token_urlsafe(32)
+    data = {
+        "client_report_id": str(uuid4()),
+        "latitude": 24.92,
+        "longitude": 67.09,
+        "resident_fire": "false",
+        "resident_sharp_objects": "true",
+    }
+
+    def send():
+        return client.post(
+            "/reports",
+            files={"photo": ("waste.png", image, "image/png")},
+            data=data,
+            headers={"X-Report-Token": token},
+        )
+
+    first, retried = send(), send()
+    assert first.status_code == retried.status_code == 201
+    assert first.json() == retried.json()
+    assert len(uploads) == 1
+    data["resident_fire"] = "true"
+    assert send().status_code == 409
+
+
+def test_photo_location_answers_and_note_reach_gateway(report_api, assessment_db):
+    client, image, _ = report_api
+    response = submit(
+        client,
+        image,
+        note="Bags near the wall",
+        resident_fire="true",
+        resident_sharp_objects="false",
+    )
+    assert response.status_code == 201
+    created = response.json()
+    assert created["report"]["resident_answers"] == {
+        "fire": True,
+        "sharp_objects": False,
+    }
+    gateway = ChalkAssessmentClient(
+        Settings(_env_file=None, chalk_router_api_key="test", chalk_env_id="test")
+    )
+    gateway.client.close()
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        body = json.loads(request.content)
+        content = body["messages"][1]["content"]
+        context = json.loads(content[0]["text"])
+        assert context["location"]["latitude"] == 24.92
+        assert context["location"]["longitude"] == 67.09
+        assert context["resident_answers"] == {"fire": True, "sharp_objects": False}
+        assert context["resident_note"] == "Bags near the wall"
+        assert content[1]["image_url"]["url"] == "https://photo.invalid/image"
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": assessment().model_dump_json()}}]
+            },
+        )
+
+    gateway.client = httpx.Client(
+        base_url="https://test.invalid/", transport=httpx.MockTransport(respond)
+    )
+    try:
+        assert process_one(assessment_db, None, client.app.state.cloud, gateway)
+        result = client.get(
+            "/reports/" + created["report"]["id"],
+            headers={"Authorization": "Bearer " + created["access_token"]},
+        ).json()
+        assert result["assessment"]["visible_fire"] == "no"
+        assert result["assessment"]["confidence"] == 0.8
+        assert result["assessment_status"] == "needs_review"
+        assert result["needs_review"]
+        assert result["priority"] is None
+        assert len(calls) == 1
+    finally:
+        gateway.close()

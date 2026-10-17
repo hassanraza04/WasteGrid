@@ -32,6 +32,10 @@
     "priority": null,
     "priority_reason": null,
     "public_reference": "WG-A1B2C3D4E5F6",
+    "resident_answers": {
+      "fire": null,
+      "sharp_objects": null
+    },
     "state": "received",
     "timeline": [],
     "title": "Illustrative litter near park gate",

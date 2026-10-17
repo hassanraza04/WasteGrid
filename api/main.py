@@ -39,6 +39,7 @@ from api.auth import (
 )
 from api.config import Settings
 from api.db import get_db, make_engine
+from api.duplicates import nearby_open_report
 from api.http_limits import BodyLimitMiddleware
 from api.models import (
     Conversation,
@@ -85,6 +86,7 @@ from api.schemas import (
     ReportDetails,
     ReportUpdates,
     ReportView,
+    ResidentAnswers,
     Snapshot,
     TaskView,
     TriageRecommendation,
@@ -259,6 +261,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         longitude: float | None = Form(default=None),
         landmark: str | None = Form(default=None, max_length=300),
         note: str | None = Form(default=None, max_length=2000),
+        resident_fire: bool | None = Form(default=None),
+        resident_sharp_objects: bool | None = Form(default=None),
         title: str | None = Form(default=None, min_length=1, max_length=160),
         address: str | None = Form(default=None, min_length=1, max_length=500),
         client_report_id: UUID | None = Form(default=None),
@@ -295,6 +299,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # Preserve fingerprints for retries from callers predating these fields.
         if title is not None or address is not None:
             request_content.update(title=title, address=address)
+        resident_answers = ResidentAnswers(
+            fire=resident_fire, sharp_objects=resident_sharp_objects
+        ).model_dump(exclude_none=True)
+        # Omitted answers preserve fingerprints for older retry-safe clients.
+        if resident_answers:
+            request_content["resident_answers"] = resident_answers
         request_hash = digest(json.dumps(request_content, sort_keys=True))
         if client_report_id:
             previous = db.get(Report, client_report_id)
@@ -307,6 +317,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return ReportCreated(
                     report=report_view(db, previous), access_token=x_report_token
                 )
+        # get_db holds the existing PostgreSQL mutation lock through creation,
+        # so concurrent submissions cannot both pass this check and then persist.
+        if nearby_open_report(db, location, settings.duplicate_radius_meters):
+            raise HTTPException(
+                409,
+                "Trash already reported at this location.",
+                headers={"X-WasteGrid-Error": "trash_already_reported"},
+            )
         report_id, photo_id = client_report_id or uuid4(), uuid4()
         token = x_report_token or "wg_r_" + token_urlsafe(32)
         path = f"reports/{report_id}/{photo_id}"
@@ -319,6 +337,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             title=title if title is not None else "Cleanup report",
             address=address,
             request_hash=request_hash,
+            resident_answers=resident_answers,
         )
         db.add(report)
         db.flush()

@@ -38,3 +38,13 @@ services:
         sync: false
       - key: PERSON3_API_KEY
         sync: false
+      - key: CHALK_ROUTER_API_KEY
+        sync: false
+      - key: CHALK_ENV_ID
+        sync: false
+      - key: CHALK_MODEL
+        value: groq/qwen/qwen3.8-27b
+      - key: CHALK_ROUTER_BASE_URL
+        value: https://api.chalk.ai/v1/router
+      - key: ASSESSMENT_TIMEOUT_SECONDS
+        value: "30"

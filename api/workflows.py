@@ -102,7 +102,10 @@ def apply_triage(db: Session, proposal: TriageRecommendation, actor="agent") -> 
     if (
         proposal.hazard
         or proposal.next_action == "review"
+        or report.needs_review
         or (report.assessment or {}).get("special_handling") == "suspected"
+        or (report.assessment or {}).get("visible_fire") == "yes"
+        or (report.assessment or {}).get("visible_sharp_objects") == "yes"
     ):
         report.state = "needs_review"
     elif (

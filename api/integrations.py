@@ -6,13 +6,15 @@ from typing import Protocol
 
 import httpx
 
-from api.assessment import INSTRUCTION
+from api.assessment import INSTRUCTION, AssessmentOutput
 from api.config import Settings
 from api.schemas import (
     FollowupInput,
     FollowupResult,
+    Location,
     PlanningInput,
     PlanProposal,
+    ResidentAnswers,
     TriageInput,
     TriageRecommendation,
     WasteAssessment,
@@ -85,7 +87,19 @@ class ChalkAssessmentClient:
             timeout=settings.assessment_timeout_seconds,
         )
 
-    def assess(self, photo_url: str, note: str | None) -> WasteAssessment:
+    def assess(
+        self,
+        photo_url: str,
+        note: str | None,
+        location: dict | None = None,
+        resident_answers: dict | None = None,
+    ) -> WasteAssessment:
+        location_value = (
+            Location.model_validate(location).model_dump() if location else None
+        )
+        answers = ResidentAnswers.model_validate(resident_answers or {}).model_dump(
+            exclude_none=True
+        )
         response = self.client.post(
             "chat/completions",
             json={
@@ -97,14 +111,20 @@ class ChalkAssessmentClient:
                         "role": "system",
                         "content": INSTRUCTION
                         + "\nJSON schema: "
-                        + json.dumps(WasteAssessment.model_json_schema()),
+                        + json.dumps(AssessmentOutput.model_json_schema()),
                     },
                     {
                         "role": "user",
                         "content": [
                             {
                                 "type": "text",
-                                "text": json.dumps({"resident_note": note}),
+                                "text": json.dumps(
+                                    {
+                                        "resident_note": note,
+                                        "location": location_value,
+                                        "resident_answers": answers,
+                                    }
+                                ),
                             },
                             {"type": "image_url", "image_url": {"url": photo_url}},
                         ],
@@ -113,7 +133,7 @@ class ChalkAssessmentClient:
             },
         )
         response.raise_for_status()
-        return WasteAssessment.model_validate_json(
+        return AssessmentOutput.model_validate_json(
             response.json()["choices"][0]["message"]["content"]
         )
 
