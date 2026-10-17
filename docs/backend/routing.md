@@ -93,7 +93,9 @@ both services before using the new UI.
 4. Crews use existing `GET /jobs` for ordered, crew-scoped assignments. Start the
    next stop using the existing job PATCH command, which records collection start
    time. In organiser plans, starting respects route order and current approved
-   assignment; legacy equipment and shift budgets are not applied. Completing work
+   assignment; legacy equipment and shift budgets are not applied. Ownership edits
+   through the legacy job PATCH are rejected in organiser mode; use dispatch.
+   Editing legacy equipment/shift values does not clear organiser assignments. Completing work
    uses existing `POST /jobs/{id}/completion` with the required cleanup photo.
    No AI analysis of completion evidence is performed.
 

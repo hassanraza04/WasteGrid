@@ -26,7 +26,7 @@ class OSRMRoadTimes:
                 )
                 response.raise_for_status()
                 data = response.json()
-            if data.get("code") != "Ok":
+            if not isinstance(data, dict) or data.get("code") != "Ok":
                 raise ValueError("Provider did not return a complete table")
             matrix = data["durations"]
             n = len(locations)

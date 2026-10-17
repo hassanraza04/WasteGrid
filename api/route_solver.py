@@ -186,6 +186,8 @@ def solve(snapshot, matrix, *, clock=monotonic):
         if best is None:
             break
         routes, remaining = best[1:]
+    if budget == 0 and termination != "time_limit_reached":
+        termination = "iteration_limit_reached"
     value = evaluate(snapshot, matrix, routes)
     complete = not remaining
     # With no incomplete matrix elements, an insertion failure is still a search

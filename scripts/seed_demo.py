@@ -174,7 +174,6 @@ def seed(engine, cloud, reset=False):
                     LinkCode,
                     Photo,
                     Report,
-                    RoutingPreview,
                     Job,
                 ):
                     db.execute(delete(model))

@@ -500,3 +500,52 @@ def test_ongoing_work_does_not_prevent_other_crew_starting_after_invalidation(
         assert first.collection_started_at is not None
         assert db.scalar(select(Plan)).stale
         ensure_can_start(db, second)
+
+
+def test_legacy_resource_edits_preserve_organizer_assignments(
+    assessment_db, monkeypatch
+):
+    from api.schemas import CrewPatch
+    from api.workflows import change_crew
+
+    monkeypatch.setattr("api.routing.mutation_lock", lambda db: None)
+    ids, jobs = seed_routing(assessment_db)
+    actor, settings = uuid4(), config()
+    with Session(assessment_db) as db:
+        view = compute_preview(db, ids[:2], settings, FakeRoads(), str(actor))
+        dispatch_preview(db, db.get(RoutingPreview, view.id), uuid4(), actor, settings)
+        job = db.get(Job, jobs[0])
+        owner = job.assigned_crew_id
+        crew = db.get(Crew, owner)
+        change_crew(
+            db,
+            crew,
+            CrewPatch(
+                command_id=uuid4(),
+                expected_version=crew.version,
+                shift_minutes=1,
+                equipment=[],
+            ),
+            str(actor),
+            organizer_routing=True,
+        )
+        db.commit()
+        assert db.get(Job, jobs[0]).assigned_crew_id == owner
+        assert db.get(Job, jobs[0]).status == "assigned"
+
+
+def test_osrm_timeout_is_unavailable_not_unreachable(monkeypatch):
+    original = httpx.Client
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        raise httpx.ReadTimeout("timeout", request=request)
+
+    monkeypatch.setattr(
+        "api.road_times.httpx.Client",
+        lambda **kwargs: original(transport=httpx.MockTransport(respond), **kwargs),
+    )
+    with pytest.raises(TravelDataUnavailable):
+        OSRMRoadTimes("https://roads.invalid").matrix([dict(latitude=24, longitude=67)])
+    assert len(calls) == 1

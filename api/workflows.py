@@ -634,7 +634,9 @@ def change_job(
     return job
 
 
-def change_crew(db: Session, crew: Crew, body: CrewPatch, actor: str):
+def change_crew(
+    db: Session, crew: Crew, body: CrewPatch, actor: str, *, organizer_routing=False
+):
     seen, fingerprint = command_seen(db, crew.id, body, "crew.changed")
     if seen:
         return crew
@@ -654,6 +656,8 @@ def change_crew(db: Session, crew: Crew, body: CrewPatch, actor: str):
             Job.assigned_crew_id == crew.id,
             Job.status == "assigned",
             Job.locked.is_(False),
+            # Ignored legacy equipment/shift edits must not erase organiser routes.
+            not organizer_routing or body.available is False,
         )
     ):
         job.assigned_crew_id = None
