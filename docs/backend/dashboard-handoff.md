@@ -5,20 +5,13 @@
 Supabase migrations, Auth roles, private Storage and the illustrative dataset
 are configured. The backend runs locally at `http://127.0.0.1:8000` after the
 [startup command](setup.md#current-local-demo). Its Supabase project URL is
-`https://einjnvlhdogzdxafauyr.supabase.co`. The shared API-only development
-service is **https://wastegrid-api-dev.onrender.com**. `localhost` on a
-teammate's computer still refers to their own computer.
+`https://einjnvlhdogzdxafauyr.supabase.co`. The shared development API is
+`https://wastegrid-api-dev.onrender.com`. The browser dashboard runs at
+`http://127.0.0.1:5173`, which is configured as an allowed CORS origin.
 
-The [shared development API runbook](shared-development-api.md) records the
-initial Render deployment from `main` commit `7b77f8d` and 23 passing hosted checks.
-PR #6 is merged and its migrations are applied; its API redeploy needs separate
-acceptance. All 23 hosted checks also passed after the database upgrade.
-Releases remain manual; the worker remains inactive. Hassan should confirm the
-actual browser address of his dashboard so Omer can allow that exact origin in
-Render CORS settings, then test a browser request. The currently configured
-origins are `http://localhost:5173` and `http://127.0.0.1:8000`.
-PR #9's Photon adapter is now merged. It is a separate process that has not been
-activated for this API deployment; live messaging delivery remains unverified.
+The [shared development API runbook](shared-development-api.md) defines the
+API-only Render deployment. The worker and Photon adapter remain inactive until
+their owners coordinate a safe, explicit integration test.
 
 Run `uv run --extra backend python -m scripts.verify_live_backend` for live
 authentication/read/privacy checks. It checks the ten reports, six jobs,
@@ -40,26 +33,21 @@ PostgreSQL. Synthetic images and decisions remain illustrative fixtures.
   Never bundle the messaging key or a hardcoded organizer password into a browser
   build. The organizer JWT is sent as `Authorization: Bearer <JWT>`.
 - Organizer access to `/organizer/reports`, `/crews` and `/plans/current` was
-  verified. All eleven migrations and the Gulshan fixture plan are present;
-  the plan is not stale. The PR #6 upgrade refreshed labeled synthetic
-  assessments while preserving existing data; no demo reset was performed.
-- Per the supplied dashboard origin, local `CORS_ORIGINS` now includes
-  `http://127.0.0.1:8000` and retains `http://localhost:5173`. The API was restarted;
-  authenticated-request preflights passed for both and an unconfigured origin was
-  denied. `localhost` and `127.0.0.1` are different origins. Configure any later
-  actual deployment origin explicitly.
+  verified. The hosted Render API allows the supplied dashboard browser origin,
+  `http://127.0.0.1:5173`. `localhost` and `127.0.0.1` are different origins;
+  configure each additional dashboard origin explicitly.
 - The configured messaging key passed authentication on a read-only lookup;
   missing/wrong keys were rejected. This does not demonstrate Photon delivery.
-- The local API still binds only to this machine's loopback address. Hassan can
-  now use the shared HTTPS deployment above. CORS does not expose the local
-  server, and the confirmed port does not establish which process serves
-  Hassan's dashboard on his machine.
+- The API still binds only to this machine's loopback address. Hassan needs his
+  own configured backend or a shared reachable deployment. The dashboard now
+  uses the shared HTTPS API through `VITE_API_BASE_URL`; CORS does not expose a
+  local server to other machines.
 
 ## Owner checklist
 
 | Owner | Inputs and next action |
 | --- | --- |
-| Frontend/mobile | Use the API base URL and Supabase project URL above. Obtain the **publishable** key from project Settings → API Keys. Use `signInWithPassword`, send the resulting user access JWT to FastAPI, and check `/auth/me`. Replace local demo adapters with asynchronous requests, required photo upload, private resident-token storage, and the tracking/history mappings below. |
+| Frontend/mobile | The organizer dashboard uses `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, and `VITE_SUPABASE_PUBLISHABLE_KEY` to sign in with Supabase, verify `/auth/me`, and load `/organizer/reports`. Only the publishable key belongs in browser configuration. Customer creation and tracking remain browser-local demo flows until their separate integration work is complete. |
 | Person 3 | Implement HTTP `POST /triage`, `/plan`, `/followup` with the generated schemas and fixtures, or provide the documented Python factory. Supply `PERSON3_BASE_URL` and any `PERSON3_API_KEY` privately to the backend owner. Optional snapshot tools use the separate `AGENT_API_KEY` in `X-Agent-Key`. Configure and start the worker only after the provider is ready; inspect `/tasks` and retry failed tasks explicitly. |
 | Person 4 | Obtain `MESSAGING_API_KEY` privately for server-side `X-Integration-Key`. Implement opt-in linking, conversation resolution after restart, stable inbound message IDs, outgoing leases/retries, and delivery acknowledgements with the exact `sent_text`. The Photon echo agent must be replaced by this adapter before claiming integrated delivery. |
 
@@ -131,9 +119,9 @@ their adapters; these payload shapes remain proposed until coordinated.
 - **Local API:** `http://localhost:8000` after the configuration and startup in
   [setup.md](setup.md). This is a local address, not a shared team deployment.
   **Shared dev API:** `https://wastegrid-api-dev.onrender.com`. Interactive
-  documentation is at `/docs`. Confirm the dashboard's exact browser origin
-  and complete its CORS browser test; hosted HTTP preflight checks alone do not
-  establish that the dashboard is connected.
+  documentation is at `/docs`. The shared API permits the dashboard origin
+  `http://127.0.0.1:5173`; the browser smoke test remains the final connection
+  check.
 - **Organizer:** sign in with Supabase email/password, then send
   `Authorization: Bearer <user-access-JWT>`. A backend-provisioned organizer role
   is required. `/auth/me` confirms it. Never send service-role keys from a browser.

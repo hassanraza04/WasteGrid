@@ -21,6 +21,8 @@ export interface StaffAuth {
 
 export class AccessError extends Error {}
 
+export class DashboardConfigurationError extends Error {}
+
 export class OrganizerApi {
   constructor(private readonly auth: StaffAuth, private readonly baseUrl: string) {}
 
@@ -66,11 +68,11 @@ export class OrganizerApi {
 }
 
 export function createOrganizerApi(): OrganizerApi {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL;
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const baseUrl = configuredUrl(import.meta.env.VITE_API_BASE_URL, "VITE_API_BASE_URL", ["http:", "https:"]);
+  const supabaseUrl = configuredUrl(import.meta.env.VITE_SUPABASE_URL, "VITE_SUPABASE_URL", ["https:"]);
   const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-  if (!baseUrl || !supabaseUrl || !key?.startsWith("sb_publishable_")) {
-    throw new Error("Organiser sign-in has not been configured for this build.");
+  if (!key?.startsWith("sb_publishable_")) {
+    throw new DashboardConfigurationError("Organiser sign-in has not been configured for this build.");
   }
   const client = createClient(supabaseUrl, key, {
     auth: { persistSession: false, autoRefreshToken: true, detectSessionInUrl: false },
@@ -89,5 +91,19 @@ export function createOrganizerApi(): OrganizerApi {
       // Clears this tab's session even if the logout request cannot reach Auth.
       await client.auth.signOut({ scope: "local" });
     },
-  }, baseUrl.replace(/\/$/, ""));
+  }, baseUrl);
+}
+
+function configuredUrl(value: string | undefined, setting: string, protocols: string[]): string {
+  if (!value) {
+    throw new DashboardConfigurationError("Organiser sign-in has not been configured for this build.");
+  }
+  try {
+    const url = new URL(value);
+    if (!protocols.includes(url.protocol)) throw new Error();
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    const protocol = protocols.length === 1 ? protocols[0].replace(":", "").toUpperCase() : "HTTP or HTTPS";
+    throw new DashboardConfigurationError(`${setting} must be a valid ${protocol} URL`);
+  }
 }
