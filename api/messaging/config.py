@@ -1,8 +1,10 @@
 """Local configuration for the Photon Beta integration."""
 
 from dataclasses import dataclass
+import ipaddress
 from math import isfinite
 from pathlib import Path
+import re
 from typing import Mapping
 from urllib.parse import urlsplit
 
@@ -32,6 +34,29 @@ class BackendConfig:
     timeout_seconds: float
 
 
+def _is_valid_host(hostname: str) -> bool:
+    if ":" in hostname:
+        try:
+            ipaddress.IPv6Address(hostname)
+        except ValueError:
+            return False
+        return True
+
+    try:
+        ascii_hostname = hostname.encode("idna").decode("ascii")
+    except UnicodeError:
+        return False
+
+    if len(ascii_hostname) > 253:
+        return False
+    labels = ascii_hostname.rstrip(".").split(".")
+    return bool(labels) and all(
+        0 < len(label) <= 63
+        and re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?", label)
+        for label in labels
+    )
+
+
 def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
     """Load Photon configuration without exposing secret values in error messages."""
     project_id = environ.get("PHOTON_PROJECT_ID", "").strip()
@@ -48,6 +73,7 @@ def load_photon_config(environ: Mapping[str, str]) -> PhotonConfig:
         valid_backend_url = (
             parsed_backend_url.scheme in {"http", "https"}
             and bool(parsed_backend_url.hostname)
+            and _is_valid_host(parsed_backend_url.hostname)
             and parsed_backend_url.username is None
             and parsed_backend_url.password is None
             and not parsed_backend_url.query
