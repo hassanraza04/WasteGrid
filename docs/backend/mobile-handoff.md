@@ -19,14 +19,14 @@ trying requests; Swagger is not a mobile framework or a product requirement.
 | --- | --- |
 | Backend | FastAPI with Supabase PostgreSQL, Auth and private photo Storage |
 | Local API | `http://127.0.0.1:8000`, on Omer's machine while its process is running |
-| Shared API URL for your app | **Pending.** Obtain a reachable API URL from Omer before device integration |
+| Shared API URL for your app | `https://wastegrid-api-dev.onrender.com` (verified API-only development service) |
 | Supabase project URL | `https://einjnvlhdogzdxafauyr.supabase.co` |
 | Supabase publishable key | **Pending handoff.** Needed for organizer/crew login, not resident submissions |
 | Resident report submission, tracking and private photos | Implemented |
 | Organizer/crew authorization | Implemented; demo accounts provisioned |
 | AI triage and route planning | Integration pending; worker inactive, new work stays queued |
-| Messaging transport | Photon integration pending; no live delivery claimed |
-| Public hosting | API-only Render preparation available; deployment and URL pending |
+| Messaging transport | PR #9 adapter merged; separate Photon process not activated and live delivery not yet verified |
+| Public hosting | Initial Render acceptance used `main` commit `7b77f8d`; 23 hosted checks also passed after the PR #6 database upgrade. The PR #6 API redeploy needs separate acceptance. Free instances can sleep when idle. |
 
 The configured demo has **10 illustrative reports, 6 jobs, 2 crews, 10 photos and
 5 assignments** (Crew A: 3; Crew B: 2). Images and decisions in that dataset are
@@ -44,13 +44,14 @@ backend results; mobile end-to-end acceptance is still to be completed.
 ## 2. Connection settings and access
 
 The backend owner follows the [shared API deployment runbook](shared-development-api.md).
-Use the verified HTTPS URL supplied after its acceptance checks; the deployment
-configuration alone does not make a service available.
+The shared development API passed hosted acceptance on 17 October 2026. Use its
+verified HTTPS URL for device integration; coordinate state-changing tests with
+Omer so they do not alter the illustrative Supabase fixture unexpectedly.
 
 Proposed mobile configuration, for example in `mobile/.env.local`:
 
 ```dotenv
-EXPO_PUBLIC_API_BASE_URL=REPLACE_WITH_REACHABLE_API_URL
+EXPO_PUBLIC_API_BASE_URL=https://wastegrid-api-dev.onrender.com
 EXPO_PUBLIC_SUPABASE_URL=https://einjnvlhdogzdxafauyr.supabase.co
 EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=REPLACE_WITH_PUBLISHABLE_KEY
 ```
@@ -68,8 +69,8 @@ only public configuration. Read them using static expressions such as
 See [Expo environment variables](https://docs.expo.dev/guides/environment-variables/).
 
 **Networking:** this machine's `127.0.0.1` is not accessible from your computer or
-phone. On a phone, `localhost` refers to that phone. Use your own configured backend
-or a shared HTTPS deployment supplied by Omer. A temporary LAN connection requires
+phone. On a phone, `localhost` refers to that phone. Use the shared HTTPS
+deployment above. A temporary LAN connection requires
 explicit server binding, firewall and WSL/network routing setup with Omer; replacing
 the hostname alone does not expose this server. `0.0.0.0` is a server listening
 address, not the URL to put in the app. For Expo's web preview, provide Omer the exact

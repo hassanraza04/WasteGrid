@@ -439,21 +439,17 @@ def run(base_url, report):
         engine.dispose()
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--base-url", type=loopback_url, default="http://127.0.0.1:8000"
-    )
-    args = parser.parse_args(argv)
+def verify(base_url, evidence):
+    """Run shared checks for an origin validated by a developer entry point."""
     report = {
         "started_at_utc": datetime.now(timezone.utc).isoformat(),
-        "base_url": args.base_url,
+        "base_url": base_url,
         "status": "failed",
         "checks": [],
         "preservation_scope": "application rows, Auth account identities, Storage bucket and object metadata; photo bytes are not compared",
     }
     try:
-        run(args.base_url, report)
+        run(base_url, report)
         report["status"] = "passed"
     except Exception as error:
         # Exception strings, HTTP bodies and URLs can contain credentials.
@@ -468,15 +464,24 @@ def main(argv=None):
         )
     report["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
     try:
-        EVIDENCE.parent.mkdir(exist_ok=True)
-        EVIDENCE.write_text(json.dumps(report, indent=2) + "\n")
+        evidence.parent.mkdir(exist_ok=True)
+        evidence.write_text(json.dumps(report, indent=2) + "\n")
     except OSError:
         print("FAIL: unable to save local verification evidence.")
         return 1
     for check in report["checks"]:
         print(f"{check['status'].upper()}: {check['name']}")
-    print(f"Result: {report['status']}. Evidence: {EVIDENCE}")
+    print(f"Result: {report['status']}. Evidence: {evidence}")
     return 0 if report["status"] == "passed" else 1
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--base-url", type=loopback_url, default="http://127.0.0.1:8000"
+    )
+    args = parser.parse_args(argv)
+    return verify(args.base_url, EVIDENCE)
 
 
 if __name__ == "__main__":

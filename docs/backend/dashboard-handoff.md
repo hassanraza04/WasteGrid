@@ -5,12 +5,20 @@
 Supabase migrations, Auth roles, private Storage and the illustrative dataset
 are configured. The backend runs locally at `http://127.0.0.1:8000` after the
 [startup command](setup.md#current-local-demo). Its Supabase project URL is
-`https://einjnvlhdogzdxafauyr.supabase.co`. There is no shared hosted API yet:
-`localhost` on a teammate's computer refers to their own computer.
+`https://einjnvlhdogzdxafauyr.supabase.co`. The shared API-only development
+service is **https://wastegrid-api-dev.onrender.com**. `localhost` on a
+teammate's computer still refers to their own computer.
 
-The [shared development API runbook](shared-development-api.md) now defines an
-API-only Render deployment with manual releases. Its hosted URL remains pending
-until deployment and acceptance; the worker remains inactive.
+The [shared development API runbook](shared-development-api.md) records the
+initial Render deployment from `main` commit `7b77f8d` and 23 passing hosted checks.
+PR #6 is merged and its migrations are applied; its API redeploy needs separate
+acceptance. All 23 hosted checks also passed after the database upgrade.
+Releases remain manual; the worker remains inactive. Hassan should confirm the
+actual browser address of his dashboard so Omer can allow that exact origin in
+Render CORS settings, then test a browser request. The currently configured
+origins are `http://localhost:5173` and `http://127.0.0.1:8000`.
+PR #9's Photon adapter is now merged. It is a separate process that has not been
+activated for this API deployment; live messaging delivery remains unverified.
 
 Run `uv run --extra backend python -m scripts.verify_live_backend` for live
 authentication/read/privacy checks. It checks the ten reports, six jobs,
@@ -32,8 +40,9 @@ PostgreSQL. Synthetic images and decisions remain illustrative fixtures.
   Never bundle the messaging key or a hardcoded organizer password into a browser
   build. The organizer JWT is sent as `Authorization: Bearer <JWT>`.
 - Organizer access to `/organizer/reports`, `/crews` and `/plans/current` was
-  verified. The existing six migrations and Gulshan fixture plan are present;
-  the plan is not stale. No reseed/reset was needed or performed.
+  verified. All eleven migrations and the Gulshan fixture plan are present;
+  the plan is not stale. The PR #6 upgrade refreshed labeled synthetic
+  assessments while preserving existing data; no demo reset was performed.
 - Per the supplied dashboard origin, local `CORS_ORIGINS` now includes
   `http://127.0.0.1:8000` and retains `http://localhost:5173`. The API was restarted;
   authenticated-request preflights passed for both and an unconfigured origin was
@@ -41,10 +50,10 @@ PostgreSQL. Synthetic images and decisions remain illustrative fixtures.
   actual deployment origin explicitly.
 - The configured messaging key passed authentication on a read-only lookup;
   missing/wrong keys were rejected. This does not demonstrate Photon delivery.
-- The API still binds only to this machine's loopback address. Hassan needs his
-  own configured backend or a shared reachable deployment. CORS does not expose
-  this machine's server, and the confirmed port does not establish which process
-  serves Hassan's dashboard on his machine.
+- The local API still binds only to this machine's loopback address. Hassan can
+  now use the shared HTTPS deployment above. CORS does not expose the local
+  server, and the confirmed port does not establish which process serves
+  Hassan's dashboard on his machine.
 
 ## Owner checklist
 
@@ -121,8 +130,10 @@ their adapters; these payload shapes remain proposed until coordinated.
 
 - **Local API:** `http://localhost:8000` after the configuration and startup in
   [setup.md](setup.md). This is a local address, not a shared team deployment.
-  **Shared dev API:** not provisioned; supply the actual HTTPS URL after hosting
-  and Supabase setup. Interactive documentation is at `/docs`.
+  **Shared dev API:** `https://wastegrid-api-dev.onrender.com`. Interactive
+  documentation is at `/docs`. Confirm the dashboard's exact browser origin
+  and complete its CORS browser test; hosted HTTP preflight checks alone do not
+  establish that the dashboard is connected.
 - **Organizer:** sign in with Supabase email/password, then send
   `Authorization: Bearer <user-access-JWT>`. A backend-provisioned organizer role
   is required. `/auth/me` confirms it. Never send service-role keys from a browser.
