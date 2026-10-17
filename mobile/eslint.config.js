@@ -7,4 +7,14 @@ module.exports = defineConfig([
   {
     ignores: ['dist/*'],
   },
+  {
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: 'expo-crypto',
+          message: "Crashes on Android in SDK 58 (expo/expo#51198). Use '@/utils/secure-random'.",
+        }],
+      }],
+    },
+  },
 ]);
