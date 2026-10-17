@@ -77,7 +77,7 @@ const s = StyleSheet.create({
   avatarText: { fontWeight: "700", fontSize: 13 },
   fabs: { position: "absolute", right: 16, bottom: 104, gap: 12 },
   fab: { width: 52, height: 52, borderRadius: 14, backgroundColor: "#fff", alignItems: "center", justifyContent: "center", ...shadow },
-  cta: { position: "absolute", left: 24, right: 24, bottom: 20, height: 64, borderRadius: 16, backgroundColor: "#3A7A64",
+  cta: { position: "absolute", left: 24, right: 24, bottom: 20, height: 64, borderRadius: 16, backgroundColor: "#17af4f",
          flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, ...shadow },
   ctaText: { color: "#fff", fontSize: 17, fontWeight: "600" },
 });

@@ -1,9 +1,9 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { View, Text, Pressable, StyleSheet, Linking } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
-import { playSfx } from '@/utils/sounds';
+import { playSfx, preloadSounds } from '@/utils/sounds';
 
 type Props = {
   onCapture: (uri: string) => void;
@@ -16,7 +16,8 @@ export function CameraStep({ onCapture, onClose }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [ready, setReady] = useState(false); // takePictureAsync fails before onCameraReady
   const [busy, setBusy] = useState(false);   // blocks double-taps on the shutter
-
+  useEffect(() => { preloadSounds(); }, []);
+  
   if (!permission) return <View style={s.container} />; // permission status still loading
 
   if (!permission.granted) {

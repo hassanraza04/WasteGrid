@@ -9,19 +9,29 @@ import { getPhotoLocation, type PhotoLocation } from "@/utils/location";
 export default function Report() {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [location, setLocation] = useState<PhotoLocation | null>(null);
+  const [locating, setLocating] = useState(false);
   const [caption, setCaption] = useState("");
+
+  // keepTyped: the automatic lookup after capture shouldn't overwrite an address the user already typed
+  const locate = async (keepTyped: boolean) => {
+    setLocating(true);
+    const result = await getPhotoLocation();
+    setLocating(false);
+    if (!result) return; // denied/unavailable → user types the address
+    setLocation((prev) => (keepTyped && prev?.address ? { ...result, address: prev.address } : result));
+  };
 
   const onCapture = (uri: string) => {
     setPhotoUri(uri);
-    // TODO: kick off getPhotoLocation() here so it resolves while the user types
+    locate(true); // resolves while the user writes the caption
   };
 
-  const onRetake = () => {
-    setPhotoUri(null);
-  };
+  const canSubmit = caption.trim().length > 0 && !!(location?.coords || location?.address.trim());
 
   const onSubmit = () => {
-    // TODO: upload { photoUri, location, caption } once there's a backend
+    const report = { photoUri, caption: caption.trim(), location };
+    // TODO: upload once the report API exists (see web/src/domain/reports.ts for the shared shape)
+    console.log("New report", report);
     router.back();
   };
 
@@ -33,11 +43,13 @@ export default function Report() {
     <ReportForm
       photoUri={photoUri}
       location={location}
-      onLocationChange={setLocation}
-      onRelocate={async () => setLocation(await getPhotoLocation())}
+      locating={locating}
+      onAddressChange={(address) => setLocation((prev) => ({ coords: prev?.coords ?? null, address }))}
+      onRelocate={() => locate(false)}
       caption={caption}
       onCaptionChange={setCaption}
-      onRetake={onRetake}
+      canSubmit={canSubmit}
+      onRetake={() => setPhotoUri(null)} // keeps caption + location
       onSubmit={onSubmit}
       onClose={() => router.back()}
     />

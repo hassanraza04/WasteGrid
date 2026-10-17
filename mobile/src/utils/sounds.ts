@@ -19,6 +19,8 @@ function ensureInitialized() {
   initialized = true;
 }
 
+export const preloadSounds = ensureInitialized;
+
 export function playSfx(name: SoundName, volume = 1) {
   ensureInitialized();
 
