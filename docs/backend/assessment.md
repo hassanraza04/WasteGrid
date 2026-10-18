@@ -169,16 +169,20 @@ triage task or job. Deploy the reviewed backend and migrations first. Keep
 `MESSAGING_PILOT_ENABLED=false` and `ORGANIZER_ROUTING_ENABLED=true`; set the
 intended `CHALK_MODEL` explicitly.
 
-Before the run, inspect the deployed `/ready` response headers. Confirm
-`X-WasteGrid-Revision` is the reviewed commit,
+The command reads the deployed `/ready` response before leasing any task. It
+requires `X-WasteGrid-Revision` to match the full reviewed commit SHA,
 `X-WasteGrid-Organizer-Routing: true`, and
-`X-WasteGrid-Messaging-Pilot: false`. If a header is missing, the deployed
-revision or configuration is not established; stop before leasing the task.
+`X-WasteGrid-Messaging-Pilot: false`. Missing or mismatched headers fail closed.
+It also checks that the photo is registered in the configured Storage bucket
+and that Supabase reports that bucket as private before requesting a signed URL.
 
 Run this command only from the backend owner's configured environment:
 
 ```sh
-uv run --extra backend python -m scripts.verify_assessment --report-id <dedicated-report-uuid>
+uv run --extra backend python -m scripts.verify_assessment \
+  --api-url https://wastegrid-api-dev.onrender.com \
+  --expected-revision <full-reviewed-deployed-commit-sha> \
+  --report-id <dedicated-report-uuid>
 ```
 
 The command refuses illustrative reports and pilot mode. It leases only that

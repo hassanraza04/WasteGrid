@@ -4,6 +4,7 @@ from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
 
+import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,6 +15,51 @@ from api.services import enqueue
 from api.worker import process_one
 from scripts.verify_assessment import verify
 from tests.test_assessment import assessment, assessment_db  # noqa: F401
+
+API_URL = "https://wastegrid-api-dev.onrender.com"
+REVISION = "a" * 40
+
+
+def ready_client(*, revision=REVISION, routing="true", pilot="false"):
+    def respond(request):
+        assert str(request.url) == API_URL + "/ready"
+        return httpx.Response(
+            200,
+            json={"status": "ready"},
+            headers={
+                "X-WasteGrid-Revision": revision,
+                "X-WasteGrid-Organizer-Routing": routing,
+                "X-WasteGrid-Messaging-Pilot": pilot,
+            },
+        )
+
+    return httpx.Client(transport=httpx.MockTransport(respond))
+
+
+def register_photo(engine, report_id):
+    with Session(engine) as db:
+        path = db.get(Photo, db.get(Report, report_id).photo_id).object_path
+    with engine.begin() as connection:
+        connection.exec_driver_sql("ATTACH DATABASE ':memory:' AS storage")
+        connection.exec_driver_sql(
+            "CREATE TABLE storage.objects(bucket_id text, name text)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO storage.objects(bucket_id,name) VALUES (?,?)",
+            ("report-photos", path),
+        )
+
+
+def configured_settings():
+    return Settings(
+        _env_file=None,
+        chalk_router_api_key="test",
+        chalk_env_id="test",
+        chalk_model="test/model",
+        supabase_url="https://storage.invalid",
+        supabase_secret_key="test",
+        organizer_routing_enabled=True,
+    )
 
 
 def add_report(engine, *, illustrative=False):
@@ -87,6 +133,7 @@ def test_scoped_verification_runs_only_assessment_and_triage(
 ):
     real_id, _ = add_report(assessment_db)
     demo_id, demo_task = add_report(assessment_db, illustrative=True)
+    register_photo(assessment_db, real_id)
     calls = []
 
     class FakeAssessment:
@@ -107,6 +154,12 @@ def test_scoped_verification_runs_only_assessment_and_triage(
         def signed_url(self, path):
             return "https://photo.invalid/image"
 
+        def call(self, method, path):
+            assert method == "GET" and path == "/storage/v1/bucket/report-photos"
+            return SimpleNamespace(
+                json=lambda: {"id": "report-photos", "public": False}
+            )
+
         def close(self):
             pass
 
@@ -114,16 +167,11 @@ def test_scoped_verification_runs_only_assessment_and_triage(
         "scripts.verify_assessment.ChalkAssessmentClient", FakeAssessment
     )
     monkeypatch.setattr("scripts.verify_assessment.SupabaseCloud", FakeCloud)
-    settings = Settings(
-        _env_file=None,
-        chalk_router_api_key="test",
-        chalk_env_id="test",
-        chalk_model="test/model",
-        supabase_url="https://storage.invalid",
-        supabase_secret_key="test",
-        organizer_routing_enabled=True,
-    )
-    result = verify(assessment_db, settings, real_id)
+    settings = configured_settings()
+    with ready_client() as api:
+        result = verify(
+            assessment_db, settings, real_id, API_URL, REVISION, api_client=api
+        )
     assert result == {
         "assessment_status": "assessed",
         "priority": "routine",
@@ -151,7 +199,83 @@ def test_verification_refuses_pilot_before_provider_call(assessment_db):
         messaging_pilot_report_ids=[uuid4(), uuid4()],
     )
     with pytest.raises(ValueError, match="pilot"):
-        verify(assessment_db, settings, report_id)
+        verify(assessment_db, settings, report_id, API_URL, REVISION)
+    with Session(assessment_db) as db:
+        assert db.get(Task, task_id).attempts == 0
+
+
+@pytest.mark.parametrize(
+    "revision,routing,pilot",
+    [
+        ("b" * 40, "true", "false"),
+        (REVISION, "false", "false"),
+        (REVISION, "true", "true"),
+    ],
+)
+def test_deployed_gate_refuses_mismatch_before_leasing(
+    assessment_db, revision, routing, pilot
+):
+    report_id, task_id = add_report(assessment_db)
+    with ready_client(revision=revision, routing=routing, pilot=pilot) as api:
+        with pytest.raises(ValueError, match="revision or safety flags"):
+            verify(
+                assessment_db,
+                configured_settings(),
+                report_id,
+                API_URL,
+                REVISION,
+                api_client=api,
+            )
+    with Session(assessment_db) as db:
+        assert db.get(Task, task_id).attempts == 0
+
+
+def test_public_bucket_refuses_before_leasing(assessment_db, monkeypatch):
+    report_id, task_id = add_report(assessment_db)
+    register_photo(assessment_db, report_id)
+
+    class PublicCloud:
+        def __init__(self, settings):
+            pass
+
+        def call(self, method, path):
+            return SimpleNamespace(json=lambda: {"id": "report-photos", "public": True})
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("scripts.verify_assessment.SupabaseCloud", PublicCloud)
+    with ready_client() as api:
+        with pytest.raises(ValueError, match="not verified private"):
+            verify(
+                assessment_db,
+                configured_settings(),
+                report_id,
+                API_URL,
+                REVISION,
+                api_client=api,
+            )
+    with Session(assessment_db) as db:
+        assert db.get(Task, task_id).attempts == 0
+
+
+def test_missing_private_object_refuses_before_leasing(assessment_db):
+    report_id, task_id = add_report(assessment_db)
+    with assessment_db.begin() as connection:
+        connection.exec_driver_sql("ATTACH DATABASE ':memory:' AS storage")
+        connection.exec_driver_sql(
+            "CREATE TABLE storage.objects(bucket_id text, name text)"
+        )
+    with ready_client() as api:
+        with pytest.raises(ValueError, match="not registered"):
+            verify(
+                assessment_db,
+                configured_settings(),
+                report_id,
+                API_URL,
+                REVISION,
+                api_client=api,
+            )
     with Session(assessment_db) as db:
         assert db.get(Task, task_id).attempts == 0
 
