@@ -1,7 +1,7 @@
 """A report-scoped check must not lease other queue work or demo reports."""
 
-from types import SimpleNamespace
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
