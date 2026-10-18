@@ -3,16 +3,16 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
 import { OrganizerDispatchWorkspace } from "./OrganizerDispatchWorkspace";
-import { RoutingConflictError, type OrganizerApi, type OrganizerCurrentPlan, type OrganizerRoutePreview } from "./organizerApi";
+import { RoutingConflictError, type OrganizerApi, type OrganizerCrew, type OrganizerCurrentPlan, type OrganizerRoutePreview, type OrganizerRoutingJob } from "./organizerApi";
 
-const crew = {
+const crew: OrganizerCrew = {
   id: "crew-1", name: "Crew One", equipment: ["gloves"], shift_minutes: 480, available: true,
   start_location: { latitude: 24.92, longitude: 67.09, landmark: "Depot" }, illustrative: true,
   location_recorded_at: new Date().toISOString(), location_received_at: new Date().toISOString(), location_revision: 1,
 };
-const job = {
+const job: OrganizerRoutingJob = {
   id: "job-1", status: "unassigned" as const, location: { latitude: 24.93, longitude: 67.1, landmark: "Gate" },
-  category: "General waste", required_equipment: ["gloves"], estimated_service_minutes: 15,
+  category: "General waste", priority: "medium", required_equipment: ["gloves"], estimated_service_minutes: 15,
   assigned_crew_id: null, locked: false, held: false, route_position: null, travel_minutes: 0,
   decision_summary: "Approved collection", unassigned_reason: null, version: 1, illustrative: false,
 };
@@ -114,6 +114,17 @@ test("shows current assignments and clearly labels held or fixed work before pre
 
   expect(await screen.findByText(/Crew One · stop 1 · job-1 · 5 minutes travel · 15 minutes service/)).toBeInTheDocument();
   expect(screen.getByText(/movable work/)).toBeInTheDocument();
+});
+
+test("marks stale plans, unavailable crews, missing GPS, and held work before previewing", async () => {
+  const unavailableCrew = { ...crew, available: false, illustrative: false, location_recorded_at: null };
+  const heldJob = { ...job, held: true };
+  setup(preview(), { plan: { id: "plan-1", stale: true, travel_estimates_label: "OSRM road estimates", assignments: [], unassigned: [] } }, [unavailableCrew], [heldJob]);
+
+  expect(await screen.findByText(/plan-1 · changed, review before replanning/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Select Crew One (crew-1)" })).toBeDisabled();
+  expect(screen.getByText(/Real crew.*GPS not shared/)).toBeInTheDocument();
+  expect(screen.getByText(/held work/)).toBeInTheDocument();
 });
 
 test("reuses one frozen command after an uncertain dispatch result", async () => {
