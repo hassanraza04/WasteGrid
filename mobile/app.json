@@ -35,6 +35,12 @@
     "plugins": [
       "expo-router",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow WasteGrid to locate waste reports and share your crew position while using the app."
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Allow $(PRODUCT_NAME) to use your camera to photograph waste reports",

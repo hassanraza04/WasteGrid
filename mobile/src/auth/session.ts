@@ -155,6 +155,18 @@ export function signOut(): Promise<void> {
   return loggingOut;
 }
 export const getSession = () => current;
+// Staff transports borrow the existing SDK session; never persist a second JWT.
+export async function staffCredentials() {
+  const identity = current;
+  if (!identity || !["admin", "crew"].includes(identity.role) || restorationBlocked || isAuthBusy()) {
+    throw new Error("Sign in with a verified staff account and try again.");
+  }
+  const { data, error } = await supabase().auth.getSession();
+  if (error || !data.session || data.session.user.id !== identity.userId || current !== identity) {
+    throw new Error("Your account changed. Refresh and try again.");
+  }
+  return { token: data.session.access_token, identity, isCurrent: () => current === identity && !restorationBlocked };
+}
 export function useSession(): Session | null {
   return useSyncExternalStore(subscribe, getSession, () => null);
 }

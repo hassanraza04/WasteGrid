@@ -976,12 +976,62 @@
         "title": "IncomingFollowup",
         "type": "object"
       },
+      "JobAuditEvent": {
+        "additionalProperties": false,
+        "description": "Staff-only command correlation; public report timelines stay redacted.",
+        "properties": {
+          "actor": {
+            "title": "Actor",
+            "type": "string"
+          },
+          "command_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "details": {
+            "additionalProperties": true,
+            "title": "Details",
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "created_at",
+          "actor",
+          "details"
+        ],
+        "title": "JobAuditEvent",
+        "type": "object"
+      },
       "JobDetails": {
         "additionalProperties": false,
         "properties": {
           "events": {
             "items": {
-              "$ref": "#/components/schemas/AuditEvent"
+              "$ref": "#/components/schemas/JobAuditEvent"
             },
             "title": "Events",
             "type": "array"
@@ -4719,6 +4769,41 @@
     "/jobs": {
       "get": {
         "operationId": "jobs_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Active Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -4793,6 +4878,16 @@
               }
             },
             "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           },
           "503": {
             "content": {

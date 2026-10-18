@@ -909,6 +909,12 @@ def verify_recheck_route_resolution(client, engine, ids, jobs):
         assert patch(first_id, "org", {**release, **extra}).status_code == 409
     response = patch(first_id, "org", release)
     assert response.status_code == 200, response.text
+    audit = client.get(f"/jobs/{first_id}", headers={"Authorization": "Bearer org"})
+    assert audit.status_code == 200
+    assert any(
+        record.get("command_id") == release["command_id"]
+        for record in audit.json()["events"]
+    )
     for _ in range(2):
         assert patch(first_id, "org", release).status_code == 200
     assert (
@@ -951,6 +957,61 @@ def test_audited_recheck_release_restores_route_and_replanning(
     monkeypatch.setattr("api.routing.mutation_lock", lambda db: None)
     client, ids, jobs = routing_api
     verify_recheck_route_resolution(client, assessment_db, ids, jobs)
+
+
+def verify_active_job_pages(client, engine, crew_id, other_crew_id, token):
+    with Session(engine) as db:
+        for index in range(105):
+            db.add(
+                Job(
+                    category="mixed_waste",
+                    required_equipment=[],
+                    estimated_service_minutes=5,
+                    location={"latitude": 24.92, "longitude": 67.09},
+                    status="completed",
+                    assigned_crew_id=crew_id,
+                    route_position=index,
+                )
+            )
+        active = Job(
+            category="mixed_waste",
+            required_equipment=[],
+            estimated_service_minutes=5,
+            location={"latitude": 24.92, "longitude": 67.09},
+            status="assigned",
+            assigned_crew_id=crew_id,
+            route_position=106,
+        )
+        other = Job(
+            category="mixed_waste",
+            required_equipment=[],
+            estimated_service_minutes=5,
+            location={"latitude": 24.93, "longitude": 67.09},
+            status="assigned",
+            assigned_crew_id=other_crew_id,
+            route_position=107,
+        )
+        db.add_all([active, other])
+        db.commit()
+        active_id, other_id = str(active.id), str(other.id)
+    headers = {"Authorization": f"Bearer {token}"}
+    default = client.get("/jobs", headers=headers)
+    assert default.status_code == 200 and len(default.json()) == 100
+    page = client.get("/jobs?limit=100&offset=100", headers=headers)
+    assert active_id in {job["id"] for job in page.json()}
+    assert other_id not in {job["id"] for job in page.json()}
+    live = client.get("/jobs?active_only=true&limit=100&offset=0", headers=headers)
+    assert live.status_code == 200
+    assert {job["id"] for job in live.json()} == {active_id}
+    for query in ("limit=0", "limit=101", "offset=-1"):
+        assert client.get(f"/jobs?{query}", headers=headers).status_code == 422
+
+
+def test_active_jobs_remain_visible_beyond_completed_history(
+    routing_api, assessment_db
+):
+    client, ids, _ = routing_api
+    verify_active_job_pages(client, assessment_db, ids[0], ids[1], "crew")
 
 
 def test_disabled_routing_blocks_new_priority_and_location_writes(

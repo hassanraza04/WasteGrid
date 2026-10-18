@@ -100,8 +100,10 @@ enter a caption and submit. If GPS is denied, enter an address manually. Wait fo
 a failed upload remains available under **My reports**. Keep this device's app
 storage: the public reference cannot recover a lost resident token.
 
-The first connection milestone does not enable the assessment worker, Photon,
-live crew completion, or the proposed routing preview/dispatch workflow.
+The mobile Dispatch and My route screens now use real staff API requests for
+foreground crew GPS, route preview/dispatch, ordered starts and photo completion.
+See [mobile routing and completion](docs/backend/mobile-routing-completion.md).
+This change does not enable the assessment worker or Photon deployment.
 New reports can remain assessment-pending while the worker is inactive. Do not
 connect a preview button to the current `/plans/generate` endpoint: its worker
 applies assignments immediately.
@@ -114,12 +116,14 @@ Run checks with Node 22.18 or newer (CI uses the current Node 22 release):
 ```
 
 The integration includes Nikolas's UI branch and keeps resident uploads in
-`mobile/src/services/reports.ts` and `report-client.ts`. Crew dispatch and city
-statistics are explicitly labelled previews with demo data. Their API connections
-remain separate work. The intended routing controls now include time available,
-maximum stops and return-to-start; cleanup is intended to support a reversible
-cleaned toggle. Those backend contract changes are pending, so prototype cleanup
-changes are local and do not call the current photo-required completion endpoint.
+`mobile/src/services/reports.ts` and `report-client.ts`. Live dispatch uses all
+eligible jobs and selected crews, following the backend's priority-aware road-time
+objective. Unsupported city/shift/max-stop/return-to-start controls are absent from
+the live flow. Crew completion requires a start and cleanup photo; there is no
+ordinary crew undo action. Saved command IDs and evidence recover lost responses.
+City statistics remain labelled demo previews. Public map pins require a separate
+privacy-scoped feed. Nearby reports retain the existing 10 m review policy; no
+automatic retention or deletion is added.
 
 See [repository safety](docs/repository-safety.md) for backend checks and
 [the mobile contract](docs/backend/mobile-handoff.md) for API details.

@@ -103,6 +103,12 @@ class AuditEvent(EventView):
     details: dict
 
 
+class JobAuditEvent(AuditEvent):
+    """Staff-only command correlation; public report timelines stay redacted."""
+
+    command_id: UUID | None = None
+
+
 class ClarificationRecord(Contract):
     note: str
     location: Location | None
@@ -211,7 +217,7 @@ class JobView(Contract):
 class JobDetails(Contract):
     job: JobView
     photo_ids: list[UUID]
-    events: list[AuditEvent]
+    events: list[JobAuditEvent]
 
 
 class ReportDetails(Contract):
