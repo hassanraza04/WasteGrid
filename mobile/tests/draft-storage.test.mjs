@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as client from '../src/services/report-client.ts';
+import * as phoneClient from '../src/services/phone-updates-client.ts';
 import { deferred, load } from './helpers/render.mjs';
 
 function setup() {
@@ -30,11 +31,11 @@ function setup() {
  let response = () => new Response(null, { status: 404 });
  process.env.EXPO_PUBLIC_API_BASE_URL = 'https://api.example';
  const reload = () => load('services/reports.ts', {
-  '@/utils/secure-random': { randomUUID: () => 'draft-' + (++nextId), getRandomBytesAsync: async () => new Uint8Array(32) },
+  '@/utils/secure-random': { randomUUID: () => `00000000-0000-4000-8000-${String(++nextId).padStart(12, '0')}`, getRandomBytesAsync: async () => new Uint8Array(32) },
   'expo-secure-store': { WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'device', setItemAsync: async (key, value) => { secrets.set(key, value); }, getItemAsync: async key => secrets.get(key), deleteItemAsync: async key => { secrets.delete(key); } },
   'expo-file-system': { Directory, File, Paths: { document: 'file:///documents' } },
   'expo/fetch': { fetch: (...args) => response(...args) }, 'react-native': { Platform: { OS: 'android' } },
-  './report-client': client, '@/auth/session': { getSession: () => session },
+  './report-client': client, './phone-updates-client': phoneClient, '@/auth/session': { getSession: () => session },
  });
  return { service: reload(), reload, faults, files, secrets, signIn: value => { session = value ? { userId: value } : null; }, respond: value => { response = value; } };
 }
@@ -88,6 +89,8 @@ test('a stale anonymous draft object cannot bypass ownership after import', asyn
   await assert.rejects(service.messagingLinks(anonymous), /account that saved/);
   await assert.rejects(service.reportMessages(anonymous), /account that saved/);
   await assert.rejects(service.unlinkReportMessaging(anonymous, 'link-a'), /account that saved/);
+  await assert.rejects(service.phoneUpdates(anonymous), /account that saved/);
+  await assert.rejects(service.sendPhoneUpdate(anonymous, 'Status'), /account that saved/);
 });
 
 
@@ -185,4 +188,78 @@ test('discard removes superseded metadata and unfinished files as well as the re
  const [restored] = await service.listDrafts(); await service.discardDraft(restored);
  assert.deepEqual(await service.listDrafts(), []); assert.equal(secrets.size, 0);
  assert.deepEqual([...files.keys()], ['file:///camera/photo.jpg']);
+});
+
+
+test('uncertain phone requests survive restart and an explicit retry reuses their command ID', async () => {
+ const app = setup(); const draft = await app.service.createDraft('file:///camera/photo.jpg', { title: 'A' });
+ const commands = [];
+ app.respond((_url, options) => {
+  if (options.method === 'GET') return Response.json({ enabled: true, phone_label: 'Phone ending 1234', latest_request: null });
+  commands.push(JSON.parse(options.body)); throw Error('response lost');
+ });
+ await assert.rejects(app.service.sendPhoneUpdate(draft, ' status '), /could not be confirmed/);
+ const restarted = app.reload();
+ const state = await restarted.phoneUpdates(draft);
+ assert.equal(state.pending, true); assert.equal(commands.length, 1, 'GET must not resend');
+ app.respond((_url, options) => {
+  commands.push(JSON.parse(options.body));
+  return Response.json({ id: commands.at(-1).command_id, status: 'queued', message: 'Report received.', created_at: '2026-10-18T00:00:00Z' });
+ });
+ await restarted.sendPhoneUpdate(draft, 'Status');
+ assert.equal(commands.length, 2); assert.deepEqual(commands[0], commands[1]);
+ assert.equal(app.secrets.has(`wastegrid.phone-update.${draft.id}`), false);
+});
+test('a matching GET receipt reconciles a saved phone request without resending it', async () => {
+ const app = setup(); const draft = await app.service.createDraft('file:///camera/photo.jpg', { title: 'A' });
+ let command, posts = 0;
+ app.respond((_url, options) => {
+  if (options.method === 'POST') { command = JSON.parse(options.body); posts++; throw Error('response lost'); }
+  return Response.json({ enabled: true, phone_label: 'Phone ending 1234', latest_request: { id: command.command_id, status: 'submitted', message: 'Report received.', created_at: '2026-10-18T00:00:00Z' } });
+ });
+ await assert.rejects(app.service.sendPhoneUpdate(draft, 'Status'));
+ const state = await app.reload().phoneUpdates(draft);
+ assert.equal(state.pending, false); assert.equal(state.latest_request.status, 'submitted'); assert.equal(posts, 1);
+ assert.equal(app.secrets.has(`wastegrid.phone-update.${draft.id}`), false);
+});
+test('concurrent phone taps share one send, while an account switch hides its result and preserves recovery', async () => {
+ const app = setup(); const draft = await app.service.createDraft('file:///camera/photo.jpg', { title: 'A' });
+ const entered = deferred(), finish = deferred(); let posts = 0, command;
+ app.respond(async (_url, options) => {
+  posts++; command = JSON.parse(options.body); entered.resolve(); await finish.promise;
+  return Response.json({ id: command.command_id, status: 'queued', message: 'Private update', created_at: '2026-10-18T00:00:00Z' });
+ });
+ const first = app.service.sendPhoneUpdate(draft, 'Status');
+ const second = app.service.sendPhoneUpdate(draft, 'STATUS');
+ assert.strictEqual(first, second);
+ await entered.promise; app.signIn('owner-b');
+ const rejected = assert.rejects(first, /account that saved/); finish.resolve(); await rejected;
+ assert.equal(posts, 1); assert.equal(app.secrets.has(`wastegrid.phone-update.${draft.id}`), true);
+ await assert.rejects(app.service.phoneUpdates(draft), /account that saved/);
+ await assert.rejects(app.service.sendPhoneUpdate(draft, 'Status'), /account that saved/);
+ assert.equal(posts, 1);
+});
+test('a definite phone-update rejection retires its request; unsupported input never creates one', async () => {
+ const app = setup(); const draft = await app.service.createDraft('file:///camera/photo.jpg', { title: 'A' });
+ let posts = 0;
+ app.respond(() => { posts++; return new Response(null, { status: 429 }); });
+ await assert.rejects(app.service.sendPhoneUpdate(draft, 'help'), /Type "Status"/);
+ assert.equal(posts, 0); assert.equal(app.secrets.has(`wastegrid.phone-update.${draft.id}`), false);
+ await assert.rejects(app.service.sendPhoneUpdate(draft, 'Status'), /limit/);
+ assert.equal(posts, 1); assert.equal(app.secrets.has(`wastegrid.phone-update.${draft.id}`), false);
+});
+
+
+test('HTTP 408 preserves the uncertain phone command across restart instead of creating another send', async () => {
+ const app = setup(); const draft = await app.service.createDraft('file:///camera/photo.jpg', { title: 'A' });
+ const commands = [];
+ app.respond((_url, options) => { commands.push(JSON.parse(options.body)); return new Response(null, { status: 408 }); });
+ await assert.rejects(app.service.sendPhoneUpdate(draft, 'Status'));
+ assert.equal(app.secrets.has(`wastegrid.phone-update.${draft.id}`), true);
+ app.respond((_url, options) => {
+  commands.push(JSON.parse(options.body));
+  return Response.json({ id: commands.at(-1).command_id, status: 'submitted', message: 'Report received.', created_at: '2026-10-18T00:00:00Z' });
+ });
+ await app.reload().sendPhoneUpdate(draft, 'Status');
+ assert.deepEqual(commands[0], commands[1]);
 });

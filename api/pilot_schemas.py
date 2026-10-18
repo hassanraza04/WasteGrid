@@ -80,3 +80,44 @@ class ResidentMessagingLinks(Contract):
     enabled: bool
     recipient: str | None
     links: list[ResidentMessagingLink]
+
+
+class PhoneUpdateCommand(Contract):
+    command_id: UUID
+    message: str = Field(min_length=1, max_length=100, repr=False)
+    consent: bool = Field(strict=True)
+
+    @field_validator("message")
+    @classmethod
+    def status_only(cls, value):
+        if value.strip().casefold() != "status":
+            raise ValueError("Type Status to request a phone update")
+        return "Status"
+
+    @field_validator("consent")
+    @classmethod
+    def explicit_consent(cls, value):
+        if value is not True:
+            raise ValueError("Consent is required to send a phone update")
+        return value
+
+
+class PhoneUpdateReceipt(Contract):
+    id: UUID
+    status: Literal[
+        "queued",
+        "sending",
+        "submitted",
+        "delivered",
+        "failed",
+        "uncertain",
+        "cancelled",
+    ]
+    message: str
+    created_at: datetime
+
+
+class PhoneUpdates(Contract):
+    enabled: bool
+    phone_label: str | None
+    latest_request: PhoneUpdateReceipt | None

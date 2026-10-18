@@ -156,6 +156,7 @@ def queue_text(
     conversation=None,
     event_id=None,
     allow_paused=False,
+    message_id=None,
 ):
     """Freeze text and destination in the same transaction as its business outcome."""
     if thread.paused and not allow_paused:
@@ -171,6 +172,7 @@ def queue_text(
             old.status = "superseded"
             old.lease_id = old.leased_until = None
     outgoing = MessagingOutgoing(
+        id=message_id or uuid4(),
         thread_id=thread.id,
         conversation_id=conversation.id if conversation else None,
         event_id=event_id,
@@ -250,6 +252,16 @@ def _ask(db, settings, thread, links):
         if references
         else "Open a report in WasteGrid and choose Get iMessage updates to link it."
     )
+    if not references and (
+        settings.messaging_pilot_peer_id == thread.peer_id
+        and settings.messaging_pilot_phone_label
+        and allowed_thread(settings, thread)
+    ):
+        text = (
+            "Your phone is connected. Open a report in WasteGrid and type Status "
+            "under Phone updates to receive its current status here. "
+            "Send STOP to pause phone updates."
+        )
     queue_text(db, thread, text)
 
 
@@ -521,9 +533,15 @@ def _eligible(db, settings, message, *, consent=True):
     thread = db.get(MessagingThread, message.thread_id)
     if not allowed_thread(settings, thread):
         return False
+    if message.kind == "phone_status" and (
+        not settings.messaging_pilot_peer_id
+        or thread.peer_id != settings.messaging_pilot_peer_id
+        or not settings.messaging_pilot_phone_label
+    ):
+        return False
     if message.conversation_id:
         link = db.get(Conversation, message.conversation_id)
-        if consent:
+        if consent and message.kind != "phone_status":
             if not allowed_link(db, settings, link):
                 return False
         elif (

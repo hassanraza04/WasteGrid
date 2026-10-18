@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     messaging_pilot_report_ids: list[UUID] = Field(default_factory=list, max_length=2)
     messaging_pilot_chat_ids: list[str] = Field(default_factory=list, max_length=1)
     messaging_imessage_recipient: str = ""
+    # Operator-verified direct-chat identity; never supplied by a resident client.
+    messaging_pilot_peer_id: str = Field(default="", max_length=200)
+    messaging_pilot_phone_label: str = Field(
+        default="",
+        pattern=r"^(?:Registered phone ending [0-9]{4})?$",
+    )
     photon_project_id: str = ""
     photon_agent_sender_id: str = ""
     organizer_routing_enabled: bool = False
