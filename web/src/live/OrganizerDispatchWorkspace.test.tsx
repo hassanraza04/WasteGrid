@@ -1,9 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
 import { OrganizerDispatchWorkspace } from "./OrganizerDispatchWorkspace";
-import { RoutingConflictError, type OrganizerApi, type OrganizerCrew, type OrganizerCurrentPlan, type OrganizerRoutePreview, type OrganizerRoutingJob } from "./organizerApi";
+import { AccessError, RoutingConflictError, type OrganizerApi, type OrganizerCrew, type OrganizerCurrentPlan, type OrganizerRoutePreview, type OrganizerRoutingJob } from "./organizerApi";
 
 const crew: OrganizerCrew = {
   id: "crew-1", name: "Crew One", equipment: ["gloves"], shift_minutes: 480, available: true,
@@ -28,8 +28,9 @@ function setup(result = preview(), currentPlan: OrganizerCurrentPlan = { plan: n
     sessionVersion: 1, crews: vi.fn().mockResolvedValue(crews), jobs: vi.fn().mockResolvedValue(jobs), currentPlan: vi.fn().mockResolvedValue(currentPlan),
     previewRouting: vi.fn().mockResolvedValue(result), dispatchRouting: vi.fn().mockResolvedValue({ preview_id: "preview-1", plan_id: "plan-1" }),
   } as unknown as OrganizerApi;
-  render(<OrganizerDispatchWorkspace api={api} onSessionExpired={vi.fn()} />);
-  return { api, user: userEvent.setup() };
+  const onSessionExpired = vi.fn();
+  const view = render(<OrganizerDispatchWorkspace api={api} onSessionExpired={onSessionExpired} />);
+  return { api, user: userEvent.setup(), unmount: view.unmount, onSessionExpired };
 }
 async function selectScope(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("button", { name: "Select Crew One (crew-1)" }));
@@ -136,7 +137,7 @@ test("reuses one frozen command after an uncertain dispatch result", async () =>
   await user.click(screen.getByRole("button", { name: "Confirm and dispatch" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Unable to reach WasteGrid");
 
-  await user.click(screen.getByRole("button", { name: "Confirm and dispatch" }));
+  await user.click(screen.getByRole("button", { name: "Recover dispatch" }));
   await waitFor(() => expect(api.dispatchRouting).toHaveBeenCalledTimes(2));
   const [[firstPreview, firstCommand], [secondPreview, secondCommand]] = vi.mocked(api.dispatchRouting).mock.calls;
   expect(secondPreview).toBe(firstPreview);
@@ -213,4 +214,123 @@ test("rechecks preview expiry when confirmation is submitted", async () => {
   } finally {
     clock.mockRestore();
   }
+});
+
+
+test.each(["manual", "failed refresh", "successful dispatch", "dispatch conflict"] as const)("keeps routing selection locked until a %s refresh settles", async trigger => {
+  const { api, user } = setup();
+  await selectScope(user);
+  let finish!: (jobs: OrganizerRoutingJob[]) => void;
+  let fail!: (error: Error) => void;
+  vi.mocked(api.jobs).mockReturnValueOnce(new Promise((resolve, reject) => { finish = resolve; fail = reject; }));
+  if (trigger === "manual" || trigger === "failed refresh") {
+    await user.click(screen.getByRole("button", { name: "Refresh routing state" }));
+  } else {
+    if (trigger === "dispatch conflict") vi.mocked(api.dispatchRouting).mockRejectedValueOnce(new RoutingConflictError("Routing state changed."));
+    await user.click(screen.getByRole("button", { name: "Compute route preview" }));
+    await user.click(await screen.findByRole("button", { name: "Review dispatch" }));
+    await user.click(screen.getByRole("button", { name: "Confirm and dispatch" }));
+  }
+  await screen.findByText("Loading routing state…");
+  const crewButton = screen.getByRole("button", { name: "Remove Crew One (crew-1)" });
+  const jobButton = screen.getByRole("button", { name: "Remove job General waste (job-1)" });
+  expect(crewButton).toBeDisabled();
+  expect(jobButton).toBeDisabled();
+  await user.click(crewButton);
+  await user.click(jobButton);
+  await act(async () => {
+    if (trigger === "failed refresh") fail(new Error("Unable to refresh routing state."));
+    else finish([job]);
+  });
+  expect(screen.queryByText("Loading routing state…")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Refresh routing state" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Compute route preview" })).toBeEnabled();
+  expect(crewButton).toBeEnabled();
+  expect(jobButton).toBeEnabled();
+});
+
+test("refresh clears an unsubmitted preview and its confirmation", async () => {
+  const { api, user } = setup();
+  await selectScope(user);
+  await user.click(screen.getByRole("button", { name: "Compute route preview" }));
+  await user.click(await screen.findByRole("button", { name: "Review dispatch" }));
+  await user.click(screen.getByRole("button", { name: "Refresh routing state" }));
+  await waitFor(() => expect(api.currentPlan).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole("button", { name: "Confirm and dispatch" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "Route preview" })).not.toBeInTheDocument();
+  expect(api.dispatchRouting).not.toHaveBeenCalled();
+});
+
+test.each(["committed", "not committed"] as const)("recovers a %s uncertain dispatch after expiry and a changed fleet refresh", async outcome => {
+  const result = preview();
+  const { api, user } = setup(result);
+  const send = vi.mocked(api.dispatchRouting).mockRejectedValueOnce(new Error("Dispatch response was lost."));
+  if (outcome === "not committed") send.mockRejectedValueOnce(new RoutingConflictError("Expired preview."));
+  await selectScope(user);
+  await user.click(screen.getByRole("button", { name: "Compute route preview" }));
+  await user.click(await screen.findByRole("button", { name: "Review dispatch" }));
+  await user.click(screen.getByRole("button", { name: "Confirm and dispatch" }));
+  await screen.findByText("Dispatch response was lost.");
+  expect(screen.getByRole("button", { name: "Remove Crew One (crew-1)" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Remove job General waste (job-1)" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Compute route preview" })).toBeDisabled();
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse(result.expires_at) + 1);
+  try {
+    // A refresh can remove completed jobs or unavailable crews from the new scope;
+    // replay must still use the original reviewed identity.
+    vi.mocked(api.crews).mockResolvedValueOnce([]);
+    vi.mocked(api.jobs).mockResolvedValueOnce([]);
+    await user.click(screen.getByRole("button", { name: "Refresh routing state" }));
+    await waitFor(() => expect(screen.queryByText("Loading routing state…")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Recover dispatch" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Recover dispatch" }));
+    await waitFor(() => expect(api.dispatchRouting).toHaveBeenCalledTimes(2));
+    const [first, second] = send.mock.calls;
+    expect(second).toEqual(first);
+    await waitFor(() => expect(api.currentPlan).toHaveBeenCalledTimes(3));
+    expect(screen.queryByRole("button", { name: "Recover dispatch" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Route preview" })).not.toBeInTheDocument();
+    expect(api.previewRouting).toHaveBeenCalledTimes(1);
+    if (outcome === "not committed") expect(screen.getByText(/Routing state changed. Review the refreshed routing state/)).toBeInTheDocument();
+  } finally { clock.mockRestore(); }
+});
+
+
+test("keeps uncertain dispatch recovery available when a routing refresh also fails", async () => {
+  const { api, user } = setup();
+  vi.mocked(api.dispatchRouting).mockRejectedValueOnce(new Error("Dispatch response was lost."));
+  await selectScope(user);
+  await user.click(screen.getByRole("button", { name: "Compute route preview" }));
+  await user.click(await screen.findByRole("button", { name: "Review dispatch" }));
+  await user.click(screen.getByRole("button", { name: "Confirm and dispatch" }));
+  await screen.findByText("Dispatch response was lost.");
+  vi.mocked(api.jobs).mockRejectedValueOnce(new Error("Unable to refresh routing state."));
+  await user.click(screen.getByRole("button", { name: "Refresh routing state" }));
+  await screen.findByText("Unable to refresh routing state.");
+  expect(screen.getByRole("button", { name: "Recover dispatch" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Compute route preview" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Recover dispatch" }));
+  await waitFor(() => expect(api.dispatchRouting).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(api.dispatchRouting).mock.calls[1]).toEqual(vi.mocked(api.dispatchRouting).mock.calls[0]);
+});
+
+test.each(["success", "access error"] as const)("ignores an old recovery %s after the workspace unmounts and the session changes", async outcome => {
+  const { api, user, unmount, onSessionExpired } = setup();
+  let finish!: (result: { preview_id: string; plan_id: string }) => void;
+  let fail!: (error: Error) => void;
+  vi.mocked(api.dispatchRouting).mockRejectedValueOnce(new Error("Dispatch response was lost.")).mockReturnValueOnce(new Promise((resolve, reject) => { finish = resolve; fail = reject; }));
+  await selectScope(user);
+  await user.click(screen.getByRole("button", { name: "Compute route preview" }));
+  await user.click(await screen.findByRole("button", { name: "Review dispatch" }));
+  await user.click(screen.getByRole("button", { name: "Confirm and dispatch" }));
+  await screen.findByText("Dispatch response was lost.");
+  await user.click(screen.getByRole("button", { name: "Recover dispatch" }));
+  unmount();
+  Object.assign(api, { sessionVersion: 2 });
+  await act(async () => {
+    if (outcome === "success") finish({ preview_id: "preview-1", plan_id: "plan-1" });
+    else fail(new AccessError("Old session expired."));
+  });
+  expect(api.currentPlan).toHaveBeenCalledTimes(1);
+  expect(onSessionExpired).not.toHaveBeenCalled();
 });

@@ -4,6 +4,7 @@ import { AccessError, RoutingConflictError, RoutingContractError, type Organizer
 
 type Props = { api: OrganizerApi; onSessionExpired: (error: AccessError) => void };
 type RoutingState = Awaited<ReturnType<typeof loadRoutingState>>;
+type DispatchCommand = { previewId: string; commandId: string; attempted: boolean };
 
 async function loadRoutingState(api: OrganizerApi) {
   const [crews, jobs, currentPlan] = await Promise.all([api.crews(), api.jobs(), api.currentPlan()]);
@@ -15,13 +16,14 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
   const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
   const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
   const [preview, setPreview] = useState<OrganizerRoutePreview | null>(null);
-  const [reviewing, setReviewing] = useState(false);
-  const [commandId, setCommandId] = useState<string | null>(null);
+  const [dispatchCommand, setDispatchCommand] = useState<DispatchCommand | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const generation = useRef(0);
   const mounted = useRef(true);
+  const recovering = dispatchCommand?.attempted === true;
+  const selectionDisabled = busy || loading || recovering;
 
   useEffect(() => {
     mounted.current = true;
@@ -36,6 +38,8 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
   async function refresh(preserveError = false) {
     const request = ++generation.current;
     const sessionVersion = api.sessionVersion;
+    // A submitted command stays frozen until the server confirms its outcome.
+    if (!recovering) { setPreview(null); setDispatchCommand(null); }
     setLoading(true); if (!preserveError) setError("");
     try {
       const next = await loadRoutingState(api);
@@ -56,15 +60,17 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
 
   function invalidatePreview() {
     generation.current++;
-    setPreview(null); setReviewing(false); setCommandId(null); setError("");
+    setPreview(null); setDispatchCommand(null); setError("");
   }
 
   function toggleCrew(id: string) {
+    if (selectionDisabled) return;
     invalidatePreview();
     setSelectedCrewIds(ids => ids.includes(id) ? ids.filter(value => value !== id) : ids.length < 5 ? [...ids, id] : ids);
   }
 
   function toggleJob(id: string) {
+    if (selectionDisabled) return;
     invalidatePreview();
     setSelectedJobIds(ids => ids.includes(id) ? ids.filter(value => value !== id) : ids.length < 25 ? [...ids, id] : ids);
   }
@@ -80,12 +86,12 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
   }, [selectedCrewIds, selectedJobIds, state]);
 
   async function computePreview() {
-    if (busy || loading || !state || scopeIssue) return;
+    if (selectionDisabled || !state || scopeIssue) return;
     const request = ++generation.current;
     const sessionVersion = api.sessionVersion;
     const crewIds = [...selectedCrewIds];
     const jobIds = [...selectedJobIds];
-    setBusy(true); setError(""); setPreview(null); setReviewing(false); setCommandId(null);
+    setBusy(true); setError(""); setPreview(null); setDispatchCommand(null);
     try {
       const result = await api.previewRouting(crewIds, jobIds);
       if (!sameScope(result, crewIds, jobIds)) throw new RoutingContractError("The routing service did not confirm the selected job scope. Deploy scoped routing support and compute again.");
@@ -94,7 +100,7 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
       if (isCurrent(request, sessionVersion)) {
         if (caught instanceof AccessError) onSessionExpired(caught);
         else if (caught instanceof RoutingConflictError) {
-          setPreview(null); setReviewing(false); setCommandId(null); setBusy(false);
+          setPreview(null); setDispatchCommand(null); setBusy(false);
           void refresh(true);
           setError("Routing state changed. Review the refreshed routing state, then compute and review a new preview.");
         }
@@ -105,33 +111,34 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
     }
   }
 
-  const canDispatch = !!preview && !scopeIssue && preview.dispatchable && !preview.plan_id && Date.parse(preview.expires_at) > Date.now() && preview.routes.some(route => route.stops.length > 0);
+  const canDispatch = !!preview && (recovering || (!scopeIssue && preview.dispatchable && !preview.plan_id && Date.parse(preview.expires_at) > Date.now() && preview.routes.some(route => route.stops.length > 0)));
 
   async function dispatch() {
-    if (!preview || busy) return;
-    if (Date.parse(preview.expires_at) <= Date.now()) {
-      setPreview(null); setReviewing(false); setCommandId(null);
+    if (!preview || !dispatchCommand || busy || loading) return;
+    // Expiry prevents a new dispatch, but a lost response may hide a committed
+    // plan. The server can replay that exact command even after preview expiry.
+    if (!dispatchCommand.attempted && Date.parse(preview.expires_at) <= Date.now()) {
+      setPreview(null); setDispatchCommand(null);
       setError("This preview expired before dispatch. Compute and review a new preview.");
       return;
     }
     if (!canDispatch) return;
     const request = ++generation.current;
     const sessionVersion = api.sessionVersion;
-    const frozenPreviewId = preview.id;
-    const frozenCommandId = commandId ?? crypto.randomUUID();
-    if (!commandId) setCommandId(frozenCommandId);
+    const command = { ...dispatchCommand, attempted: true };
+    setDispatchCommand(command);
     setBusy(true); setError("");
     try {
-      await api.dispatchRouting(frozenPreviewId, frozenCommandId);
+      await api.dispatchRouting(command.previewId, command.commandId);
       if (isCurrent(request, sessionVersion)) {
-        setPreview(null); setReviewing(false); setCommandId(null); setBusy(false);
+        setPreview(null); setDispatchCommand(null); setBusy(false);
         await refresh();
       }
     } catch (caught) {
       if (isCurrent(request, sessionVersion)) {
         if (caught instanceof AccessError) onSessionExpired(caught);
         else if (caught instanceof RoutingConflictError) {
-          setPreview(null); setReviewing(false); setCommandId(null); setBusy(false);
+          setPreview(null); setDispatchCommand(null); setBusy(false);
           void refresh(true);
           setError("Routing state changed. Review the refreshed routing state, then compute and review a new preview.");
         }
@@ -162,7 +169,7 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
           const selected = selectedCrewIds.includes(crew.id);
           const crewLabel = `${crew.name} (${crew.id})`;
           return <article key={crew.id}>
-            <button onClick={() => toggleCrew(crew.id)} disabled={busy || (!selected && (!crew.available || selectedCrewIds.length >= 5))}>{selected ? `Remove ${crewLabel}` : `Select ${crewLabel}`}</button>
+            <button onClick={() => toggleCrew(crew.id)} disabled={selectionDisabled || (!selected && (!crew.available || selectedCrewIds.length >= 5))}>{selected ? `Remove ${crewLabel}` : `Select ${crewLabel}`}</button>
             <p>{crew.illustrative ? "Illustrative crew" : "Real crew"} · {crew.id} · {crew.available ? "available" : "unavailable"} · GPS {gpsAge(crew.location_recorded_at)}</p>
           </article>;
         })}
@@ -174,15 +181,15 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
           const jobLabel = `${job.category} (${job.id})`;
           const allowed = !job.assigned_crew_id || selectedCrewIds.includes(job.assigned_crew_id);
           return <article key={job.id}>
-            <button onClick={() => toggleJob(job.id)} disabled={busy || (!selected && (!allowed || job.status === "completed" || selectedJobIds.length >= 25))}>{selected ? `Remove job ${jobLabel}` : `Select job ${jobLabel}`}</button>
+            <button onClick={() => toggleJob(job.id)} disabled={selectionDisabled || (!selected && (!allowed || job.status === "completed" || selectedJobIds.length >= 25))}>{selected ? `Remove job ${jobLabel}` : `Select job ${jobLabel}`}</button>
             <p>{job.illustrative ? "Illustrative demo job" : "Real report job"} · {job.id} · {job.status} · {job.held ? "held work" : job.locked || job.status === "in_progress" ? "fixed work" : "movable work"} · {job.assigned_crew_id ?? "unassigned"}</p>
           </article>;
         })}
       </section>
-      {scopeIssue && <p role="alert">{scopeIssue}</p>}
-      <button onClick={() => void computePreview()} disabled={busy || loading || !!scopeIssue}>Compute route preview</button>
+      {scopeIssue && !recovering && <p role="alert">{scopeIssue}</p>}
+      <button onClick={() => void computePreview()} disabled={selectionDisabled || !!scopeIssue}>Compute route preview</button>
     </>}
-    {preview && <PreviewReview preview={preview} crewNames={new Map(state?.crews.map(crew => [crew.id, crew.name]))} reviewing={reviewing} canDispatch={canDispatch} busy={busy} onReview={() => { setReviewing(true); setCommandId(crypto.randomUUID()); }} onDispatch={() => void dispatch()} />}
+    {preview && <PreviewReview preview={preview} crewNames={new Map(state?.crews.map(crew => [crew.id, crew.name]))} reviewing={!!dispatchCommand} recovering={recovering} canDispatch={canDispatch} busy={busy || loading} onReview={() => { setDispatchCommand({ previewId: preview.id, commandId: crypto.randomUUID(), attempted: false }); }} onDispatch={() => void dispatch()} />}
   </section>;
 }
 
@@ -197,7 +204,7 @@ function sameScope(preview: OrganizerRoutePreview, crewIds: string[], jobIds: st
   }
 }
 
-function PreviewReview({ preview, crewNames, reviewing, canDispatch, busy, onReview, onDispatch }: { preview: OrganizerRoutePreview; crewNames: Map<string, string>; reviewing: boolean; canDispatch: boolean; busy: boolean; onReview: () => void; onDispatch: () => void }) {
+function PreviewReview({ preview, crewNames, reviewing, recovering, canDispatch, busy, onReview, onDispatch }: { preview: OrganizerRoutePreview; crewNames: Map<string, string>; reviewing: boolean; recovering: boolean; canDispatch: boolean; busy: boolean; onReview: () => void; onDispatch: () => void }) {
   return <section aria-label="Route preview">
     <h3>Route preview</h3>
     <p>{preview.travel_label} · expires {new Date(preview.expires_at).toLocaleTimeString()}</p>
@@ -209,8 +216,9 @@ function PreviewReview({ preview, crewNames, reviewing, canDispatch, busy, onRev
     </article>)}
     {[...preview.exclusions, ...preview.unassigned].map(issue => <p key={`${issue.job_id}:${issue.reason}`}>Excluded or unassigned {issue.job_id}: {issue.reason}</p>)}
     {preview.reassignments.map(change => <p key={change.job_id}>Reassignment {change.job_id}: {change.previous_crew_id ?? "unassigned"} to {change.proposed_crew_id}, stop {change.proposed_position + 1}</p>)}
+    {recovering && <p role="status">Dispatch confirmation is pending. Recover this dispatch before changing the selected work.</p>}
     {!canDispatch && <p role="alert">Dispatch unavailable. Compute a new preview after reviewing current routing state.</p>}
-    {!reviewing ? <button onClick={onReview} disabled={!canDispatch || busy}>Review dispatch</button> : <section aria-label="Dispatch confirmation"><p>Confirm this reviewed scope before dispatching.</p><button onClick={onDispatch} disabled={!canDispatch || busy}>Confirm and dispatch</button></section>}
+    {!reviewing ? <button onClick={onReview} disabled={!canDispatch || busy}>Review dispatch</button> : <section aria-label="Dispatch confirmation"><p>Confirm this reviewed scope before dispatching.</p><button onClick={onDispatch} disabled={!canDispatch || busy}>{recovering ? "Recover dispatch" : "Confirm and dispatch"}</button></section>}
   </section>;
 }
 
