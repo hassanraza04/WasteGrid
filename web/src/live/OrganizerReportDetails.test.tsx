@@ -17,7 +17,7 @@ const details: ReportDetails = {
     assessment: { description: "Bags block part of the path", size: "medium", obstruction: "walkway", obstruction_level: "partial", forces_people_into_traffic: "no", special_handling: "none_identified", visible_fire: "no", visible_sharp_objects: "unknown", confidence: 0.8, resident_context_agreement: "consistent", comparison_reason: "Matches the resident note", reason: "Waste is visible in the image." },
     triage: { category: "general waste", proposed_equipment: ["gloves", "trash_bags"], duplicate_candidate_id: null, duplicate_confirmed: false, hazard: false, evidence_sufficient: true, missing_information: [], decision_summary: "Collection is needed.", evidence_report_ids: ["report-123"], next_action: "review", estimated_service_minutes: 20 },
   },
-  events: [{ id: "event-1", kind: "report.assessed", actor: "organizer-id", created_at: "2026-10-18T02:00:00Z", details: { assessment_status: "needs_review", priority: "medium", nested: { hidden: true } } }],
+  events: [{ id: "event-1", kind: "report.assessed", actor: "organizer-id", created_at: "2026-10-18T02:00:00Z", details: { assessment_status: "needs_review", priority: "medium", photo_url: "https://private.example/signed", nested: { hidden: true } } }],
 };
 
 function setup() {
@@ -34,6 +34,7 @@ test("shows the complete persisted assessment, triage, and activity without load
   expect(screen.getByText((_, element) => element?.tagName === "P" && element.textContent === "Resident fire: false")).toBeInTheDocument();
   expect(screen.getByText((_, element) => element?.tagName === "P" && element.textContent === "Evidence sufficient: true")).toBeInTheDocument();
   expect(screen.getByText("report.assessed")).toBeInTheDocument();
+  expect(screen.queryByText((_, element) => element?.tagName === "P" && element.textContent?.includes("https://private.example/signed") === true)).not.toBeInTheDocument();
   expect(screen.queryByAltText("Reported waste")).not.toBeInTheDocument();
   expect(api.photo).not.toHaveBeenCalled();
 });

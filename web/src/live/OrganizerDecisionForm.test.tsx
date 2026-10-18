@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { OrganizerDecisionForm } from "./OrganizerDecisionForm";
-import type { OrganizerApi, OrganizerReport } from "./organizerApi";
+import { AccessError, type OrganizerApi, type OrganizerReport } from "./organizerApi";
 
 const report: OrganizerReport = {
   id: "report-1", public_reference: "WG-123", title: "Overflowing bin", address: null,
@@ -46,6 +46,11 @@ test("requires review before sending an organiser decision and then uses the ret
   expect(screen.queryByRole("button", { name: "Apply organiser decision" })).not.toBeInTheDocument();
   await prepareReview(user, true);
   expect(screen.getByText(/Category:/)).toHaveTextContent("general waste");
+  expect(screen.getByText(/Decision summary:/)).toHaveTextContent("Collection is needed.");
+  expect(screen.getByText(/Duplicate confirmed:/)).toHaveTextContent("false");
+  expect(screen.getByText(/Hazard:/)).toHaveTextContent("false");
+  expect(screen.getByText(/Evidence sufficient:/)).toHaveTextContent("false");
+  expect(screen.getByText(/Priority reason:/)).toHaveTextContent("Blocks the entrance");
   expect(api.applyDecision).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
   expect(api.applyDecision).toHaveBeenCalledWith("report-1", expect.objectContaining({ command_id: "decision-id", expected_version: 7, report_id: "report-1", proposed_equipment: ["gloves"] }));
@@ -72,4 +77,29 @@ test("does not send a priority request when the organiser leaves priority unchan
   await prepareReview(user);
   await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
   expect(api.setPriority).not.toHaveBeenCalled();
+});
+
+test("keeps the draft but requires a fresh review after a stale decision response", async () => {
+  vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("decision-id") });
+  const applyDecision = vi.fn().mockRejectedValue(new Error("This report changed or is not ready for that decision. Reload it and review the latest details."));
+  const { onReload, user } = setup({ applyDecision });
+  await prepareReview(user);
+  await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
+  await user.click(screen.getByRole("button", { name: "Reload latest report" }));
+  expect(onReload).toHaveBeenCalled();
+  expect(screen.getByLabelText("Category")).toHaveValue("general waste");
+  expect(screen.queryByRole("button", { name: "Apply organiser decision" })).not.toBeInTheDocument();
+});
+
+test("expires the organiser view instead of displaying a rejected mutation error", async () => {
+  vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("decision-id") });
+  const onSessionExpired = vi.fn();
+  const applyDecision = vi.fn().mockRejectedValue(new AccessError("Your session expired or access was denied. Please sign in again."));
+  const api = { applyDecision, setPriority: vi.fn() } as unknown as OrganizerApi;
+  render(<OrganizerDecisionForm report={report} api={api} onReportUpdated={vi.fn()} onReload={vi.fn()} onSessionExpired={onSessionExpired} />);
+  const user = userEvent.setup();
+  await prepareReview(user);
+  await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
+  expect(onSessionExpired).toHaveBeenCalledWith(expect.any(AccessError));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

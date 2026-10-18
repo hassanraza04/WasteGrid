@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { AccessError, type LiveReport, type OrganizerApi } from "./organizerApi";
+import { OrganizerPhoto } from "./OrganizerPhoto";
 
 export function OrganizerReportList({ api, onSessionExpired }: { api: OrganizerApi; onSessionExpired: (error: AccessError) => void }) {
   const [reports, setReports] = useState<LiveReport[]>([]);
@@ -42,26 +43,9 @@ export function OrganizerReportList({ api, onSessionExpired }: { api: OrganizerA
       <p>{report.address ?? "Address not supplied"}</p>
       {report.note && <p>{report.note}</p>}
       {report.illustrative && <p>Illustrative demo report</p>}
-      <Photo api={api} id={report.photo_id} />
+      <OrganizerPhoto api={api} id={report.photo_id} width={240} onSessionExpired={onSessionExpired} />
     </li>)}</ul>
     <button disabled={busy || offset === 0} onClick={() => void load(Math.max(0, offset - 50))}>Previous page</button>
     <button disabled={busy || reports.length < 50} onClick={() => void load(offset + 50)}>Next page</button>
   </>;
-}
-
-function Photo({ api, id }: { api: OrganizerApi; id: string }) {
-  const [url, setUrl] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  async function load() {
-    setBusy(true); setError("");
-    try { setUrl(await api.photo(id)); }
-    catch { setError("Photo unavailable. Try loading it again."); }
-    finally { setBusy(false); }
-  }
-  return <div>
-    <button disabled={busy} onClick={() => void load()}>Load photo</button>
-    {url && <img src={url} alt="Reported waste" width={240} onError={() => { setUrl(""); setError("Photo link expired. Load it again."); }} />}
-    {error && <p role="alert">{error}</p>}
-  </div>;
 }
