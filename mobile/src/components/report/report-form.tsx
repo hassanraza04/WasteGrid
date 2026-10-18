@@ -19,8 +19,6 @@ type Props = {
   onConfirmPin: (coords: Coords) => void;
   caption: string;
   onCaptionChange: (caption: string) => void;
-  describing: boolean;
-  onGenerateCaption: () => void;
   canSubmit: boolean;
   busy: boolean;
   frozen: boolean;
@@ -33,7 +31,7 @@ type Props = {
 
 // Photo preview + location + caption, shown after the photo is taken.
 export function ReportForm(props: Props) {
-  const { photoUri, location, locating, caption, describing, canSubmit } = props;
+  const { photoUri, location, locating, caption, canSubmit } = props;
   const coords = location?.coords;
   const [picking, setPicking] = useState(false);
 
@@ -89,16 +87,6 @@ export function ReportForm(props: Props) {
       <TextField
         label="Caption"
         editable={!props.frozen}
-        labelAction={
-          <Button
-            label={describing ? "Describing…" : "Describe photo"}
-            icon="zap"
-            variant="ghost"
-            onPress={props.onGenerateCaption}
-            loading={describing}
-            disabled={props.frozen}
-          />
-        }
         value={caption}
         onChangeText={props.onCaptionChange}
         placeholder="What's the problem? e.g. overflowing bin, dumped bags"

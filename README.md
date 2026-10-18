@@ -42,6 +42,12 @@ backend mode. It defaults to
 `PHOTON_DELIVERY_DB_PATH` to change the path. `.env` and the checkpoint database
 are ignored by Git. Never commit `.env`.
 
+## Hackathon operation
+
+Use [the one-phone finish checklist](docs/backend/hackathon-finish.md) for the
+Android resident → crew → resident sequence and the browser organiser console.
+Public web intake is not connected; the web landing explains the Android entry.
+
 ## Connected resident and organiser flow
 
 The native mobile app uploads photos, a caption and GPS coordinates or an
@@ -102,7 +108,8 @@ npm start
 ```
 
 Use a native development build or compatible Expo Go. Capture a photo, allow GPS,
-enter a caption and submit. If GPS is denied, enter an address manually. Wait for backend confirmation;
+enter a caption and submit. If GPS is denied, choose and confirm the location on the map. An address alone
+is insufficient. Wait for backend confirmation;
 a failed upload remains available under **My reports**. Keep this device's app
 storage: the public reference cannot recover a lost resident token.
 
@@ -128,7 +135,7 @@ Unsupported city/shift/max-stop/return-to-start controls are absent from the liv
 flow. Crew completion requires a started stop and explicit confirmation; a cleanup
 photo is optional. There is no ordinary crew undo action. Saved command IDs and any
 submitted evidence recover lost responses.
-City statistics remain labelled demo previews. The resident Explore map reads
+Illustrative city statistics are hidden from the live navigation. The resident Explore map reads
 `GET /map/markers` while focused and refreshes when reopened or brought to the
 foreground. The public feed contains only approximately 100 m rounded coordinates
 for committed, non-illustrative reports, including reports awaiting assessment or

@@ -136,6 +136,9 @@ const preview = {
 
 async function fixtures(page: Page) {
   let command = "";
+  let decision: Record<string, unknown> | null = null;
+  let completed = false;
+  let decisionCalls = 0;
   await page.route("https://auth.fixture.test/**", async (route) =>
     route.fulfill({
       json: {
@@ -154,18 +157,31 @@ async function fixtures(page: Page) {
   );
   await page.route("https://api.fixture.test/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
+    expect(route.request().headers().authorization).toBe("Bearer fixture-access");
+    const currentReport = {
+      ...report,
+      state: decision ? "linked_to_job" : report.state,
+      display_status: completed ? "completed" : command ? "assigned" : decision ? "unassigned" : report.display_status,
+      dashboard_status: completed ? "resolved" : command ? "in-progress" : "submitted",
+      needs_review: !decision,
+      job_id: decision ? jid : null,
+      version: decision ? 3 : report.version,
+      triage: decision,
+      completion_photo_ids: completed ? ["completion-photo"] : [],
+    };
+    const currentJob = { ...job, status: completed ? "completed" : command ? "assigned" : "unassigned", assigned_crew_id: command ? cid : null, route_position: command ? 0 : null };
     let data: unknown;
     if (path === "/auth/me")
       data = { user_id: uid, role: "organizer", crew_id: null };
     else if (path === "/organizer/overview")
       data = {
         counts: {
-          needs_review: 1,
+          needs_review: decision ? 0 : 1,
           high_priority_jobs: 0,
           in_progress_jobs: 0,
           available_crews: 1,
           blocked_jobs: 0,
-          completed_24h: 0,
+          completed_24h: completed ? 1 : 0,
           awaiting_assessment: 0,
         },
         include_illustrative: false,
@@ -196,22 +212,31 @@ async function fixtures(page: Page) {
       data = {
         items: [
           {
-            ...report,
+            ...currentReport,
             title: "Litter · WG-A1B2C3D4E5F6",
             category: "litter",
-            crew_id: null,
-            crew_name: null,
-            route_position: null,
-            job_status: null,
+            crew_id: command ? cid : null,
+            crew_name: command ? crew.name : null,
+            route_position: command ? 0 : null,
+            job_status: decision ? currentJob.status : null,
           },
         ],
         total: 1,
         limit: 25,
         offset: 0,
       };
+    else if (path === `/organizer/reports/${rid}/decision`) {
+      const body = route.request().postDataJSON();
+      expect(route.request().method()).toBe("POST");
+      expect(body).toMatchObject({ report_id: rid, expected_version: 2, next_action: "create_job", category: "litter", evidence_sufficient: true, proposed_equipment: ["gloves"], estimated_service_minutes: 5, evidence_report_ids: [rid] });
+      expect(body.command_id).toMatch(/^[0-9a-f-]{36}$/);
+      decision = body;
+      decisionCalls++;
+      data = { ...currentReport, state: "linked_to_job", display_status: "unassigned", needs_review: false, job_id: jid, version: 3, triage: decision };
+    }
     else if (path === `/organizer/reports/${rid}`)
       data = {
-        report,
+        report: currentReport,
         events: [
           {
             id: "event",
@@ -228,12 +253,18 @@ async function fixtures(page: Page) {
         },
       };
     else if (path.startsWith("/photos/"))
-      data = { url: "https://photo.fixture.test/image.svg" };
+      data = { url: path.includes("completion-photo") ? "https://photo.fixture.test/after.svg" : "https://photo.fixture.test/image.svg" };
     else if (path === "/crews") data = [crew];
     else if (path === "/organizer/job-index")
-      data = { items: [job], total: 1, limit: 100, offset: 0 };
+      data = { items: decision && !completed ? [currentJob] : [], total: decision && !completed ? 1 : 0, limit: 100, offset: 0 };
+    else if (path === `/jobs/${jid}`) {
+      expect(decision).not.toBeNull();
+      data = { job: currentJob, photo_ids: ["photo"], events: [] };
+    }
     else if (path === "/plans/current") data = { plan: null };
     else if (path.endsWith("/dispatch")) {
+      expect(decisionCalls).toBe(1);
+      expect(decision).not.toBeNull();
       command = route.request().postDataJSON().command_id;
       data = { preview_id: preview.id, plan_id: "fixture-plan" };
     } else if (path.includes("/geometry/"))
@@ -249,7 +280,11 @@ async function fixtures(page: Page) {
         },
         retry_after_seconds: null,
       };
-    else if (path.startsWith("/routing/previews"))
+    else if (path.startsWith("/routing/previews")) {
+      if (route.request().method() === "POST") {
+        expect(decisionCalls).toBe(1);
+        expect(route.request().postDataJSON()).toMatchObject({ crew_ids: [cid], job_ids: [jid] });
+      }
       data = {
         ...preview,
         plan_id: command ? "fixture-plan" : null,
@@ -262,6 +297,7 @@ async function fixtures(page: Page) {
             }
           : null,
       };
+    }
     else
       return route.fulfill({
         status: 404,
@@ -278,12 +314,19 @@ async function fixtures(page: Page) {
   await page.route("https://tile.openstreetmap.org/**", (route) =>
     route.abort(),
   );
+  return {
+    completeCleanup() {
+      // Simulates the server update from the Android crew app, not a live integration.
+      expect(command).not.toBe("");
+      completed = true;
+    },
+  };
 }
 
-test("organiser walkthrough with fixture data at each viewport", async ({
+test("fixture walkthrough approves a report, dispatches its job, and displays simulated crew evidence", async ({
   page,
 }, testInfo) => {
-  await fixtures(page);
+  const backend = await fixtures(page);
   const capture = async (name: string) => {
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.evaluate(() => document.fonts.ready);
@@ -291,13 +334,17 @@ test("organiser walkthrough with fixture data at each viewport", async ({
   };
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/admin");
+  await page.goto("/report/new");
+  await expect(page.getByRole("heading", { name: "Residents and crews" })).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  await page.goto("/admin/sign-in");
   await page.getByLabel("Email", { exact: true }).fill("organizer@example.com");
   await page.getByLabel("Password", { exact: true }).fill("fixture-password");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Every report. A clearer next step." }),
   ).toBeVisible();
+  await expect(page).toHaveURL(/\/admin$/);
   await capture("overview.png");
   await page.getByRole("link", { name: "Reports", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/reports$/);
@@ -311,6 +358,17 @@ test("organiser walkthrough with fixture data at each viewport", async ({
     page.getByText("Fixture evidence retained exactly.", { exact: true }),
   ).toBeVisible();
   await capture("report-review.png");
+  await page.getByLabel("Category", { exact: true }).fill("litter");
+  await page.getByRole("checkbox", { name: "Gloves", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Evidence sufficient", exact: true }).check();
+  await page.getByLabel("Decision summary", { exact: true }).fill("Fixture organizer approves collection after reviewing evidence.");
+  await page.getByRole("combobox", { name: "Next action", exact: true }).selectOption("create_job");
+  await page.getByLabel("Estimated service minutes", { exact: true }).fill("5");
+  await page.getByRole("button", { name: "Review decision", exact: true }).click();
+  await page.getByRole("button", { name: "Apply organiser decision", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Linked job", exact: true })).toContainText(jid);
+  await expect(page.getByText("This report is already linked to a job. Its priority can be reviewed separately.")).toBeVisible();
+  await capture("report-approved.png");
   await page.getByRole("link", { name: "Routing dispatch" }).click();
   await expect(
     page.getByRole("heading", { name: "Routing workspace" }),
@@ -334,8 +392,15 @@ test("organiser walkthrough with fixture data at each viewport", async ({
     page.getByRole("heading", { name: "Dispatch confirmed" }),
   ).toBeVisible();
   await capture("routing-committed.png");
-  await page.getByRole("link", { name: "Routing dispatch" }).click();
-  await expect(page).toHaveURL(/\/admin\/dispatch$/);
+  backend.completeCleanup();
+  await page.getByRole("link", { name: "Reports", exact: true }).click();
+  await page.getByRole("link", { name: report.public_reference, exact: true }).click();
+  const evidence = page.getByRole("region", { name: "Cleanup evidence", exact: true });
+  await expect(evidence).toContainText("Crew reported complete");
+  await evidence.scrollIntoViewIfNeeded();
+  await expect(evidence.getByAltText("Cleanup completion photo 1")).toBeVisible();
+  await expect(evidence.getByAltText("Cleanup completion photo 1")).toHaveAttribute("src", "https://photo.fixture.test/after.svg");
+  await capture("cleanup-evidence.png");
   await expect
     .poll(() =>
       page.evaluate(

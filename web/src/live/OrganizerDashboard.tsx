@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import { AccessError, type OrganizerApi } from "./organizerApi";
 import { OrganizerReportDetails } from "./OrganizerReportDetails";
@@ -201,6 +201,7 @@ export function OrganizerDashboard({ api }: { api: OrganizerApi }) {
         <main id="organizer-content" className="wg-page" tabIndex={-1}>
           <h1 className="wg-visually-hidden">Organiser dashboard</h1>
           <Routes>
+            <Route path="sign-in" element={<Navigate to="/admin" replace />} />
             <Route
               index
               element={

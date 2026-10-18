@@ -7,7 +7,6 @@ import { getSession, useSession } from "@/auth/session";
 import { CameraStep } from "@/components/report/camera-step";
 import { ReportForm } from "@/components/report/report-form";
 import { SubmissionReceipt } from "@/components/report/submission-receipt";
-import { describePhoto } from "@/utils/describe-photo";
 import { getPhotoLocation, type PhotoLocation } from "@/utils/location";
 
 export default function Report() {
@@ -17,7 +16,6 @@ export default function Report() {
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [caption, setCaption] = useState("");
-  const [describing, setDescribing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<ReportDraft | null>(null);
@@ -26,12 +24,10 @@ export default function Report() {
   const submitting = useRef(false);
   const mounted = useRef(true);
   const locationRequest = useRef(0);
-  const photoRevision = useRef(0);
   useEffect(() => {
     mounted.current = true;
     const locationRequests = locationRequest;
-    const photoRevisions = photoRevision;
-    return () => { mounted.current = false; locationRequests.current++; photoRevisions.current++; };
+    return () => { mounted.current = false; locationRequests.current++; };
   }, []);
   useEffect(() => {
     if (receiptReference && receiptOwner.current !== (session?.userId ?? null)) {
@@ -52,28 +48,13 @@ export default function Report() {
   };
 
   const onCapture = (uri: string) => {
-    photoRevision.current++;
     setPhotoUri(uri);
     void locate(true);
   };
 
-  const generateCaption = async () => {
-    if (!photoUri) return;
-    const revision = photoRevision.current;
-    setDescribing(true);
-    try {
-      const description = await describePhoto(photoUri);
-      if (revision === photoRevision.current) {
-        if (description) setCaption(description);
-        else setError("Photo descriptions are not connected yet. Please enter a caption.");
-      }
-    } catch { setError("Unable to describe this photo. Please enter a caption."); }
-    finally { setDescribing(false); }
-  };
-
   let fields: Record<string, string> | undefined;
   try { fields = reportFields(caption, location); } catch { /* Form is incomplete. */ }
-  const canSubmit = !busy && !describing && !draft?.rejection && (!!draft || !!fields);
+  const canSubmit = !busy && !draft?.rejection && (!!draft || !!fields);
 
   const onSubmit = async () => {
     if (submitting.current || !photoUri || !canSubmit) return;
@@ -123,10 +104,9 @@ export default function Report() {
       locationRequest.current++; setLocating(false); setLocationError("");
       setLocation(prev => ({ coords, address: prev?.address ?? "" }));
     }}
-    describing={describing} onGenerateCaption={generateCaption}
     canSubmit={canSubmit} busy={busy} frozen={busy || !!draft} error={error}
     onEditRejected={draft?.rejection ? editRejected : undefined}
-    onRetake={() => { photoRevision.current++; locationRequest.current++; setPhotoUri(null); setLocation(null); setLocating(false); setLocationError(""); setError(""); }}
+    onRetake={() => { locationRequest.current++; setPhotoUri(null); setLocation(null); setLocating(false); setLocationError(""); setError(""); }}
     onSubmit={onSubmit} onClose={() => router.back()}
   />;
 }

@@ -6,11 +6,13 @@ export function OrganizerPhoto({
   api,
   id,
   width,
+  alt = "Reported waste",
   onSessionExpired,
 }: {
   api: OrganizerApi;
   id: string;
   width: number;
+  alt?: string;
   onSessionExpired?: (error: AccessError) => void;
 }) {
   const [url, setUrl] = useState("");
@@ -79,7 +81,7 @@ export function OrganizerPhoto({
       {url ? (
         <img
           src={url}
-          alt="Reported waste"
+          alt={alt}
           width={width}
           loading="lazy"
           onError={() => {

@@ -1,12 +1,6 @@
 import { useState } from "react";
-import { Link, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Route, Routes } from "react-router-dom";
 import { ReportErrorBoundary } from "../app/ReportErrorBoundary";
-import { CreateReportPage } from "../customer/CreateReportPage";
-import { CustomerHomePage } from "../customer/CustomerHomePage";
-import { ReportDetailPage } from "../customer/ReportDetailPage";
-import { TrackReportPage } from "../customer/TrackReportPage";
-import { BrowserReportRepository } from "../data/browserReportRepository";
-import type { ReportRepository } from "../data/reportRepository";
 import { createOrganizerApi, type OrganizerApi } from "./organizerApi";
 import { OrganizerDashboard } from "./OrganizerDashboard";
 
@@ -14,7 +8,30 @@ function OrganizerConfigurationPage({ message }: { message: string }) {
   return <main><h1>Organiser sign in</h1><p role="alert">{message}</p></main>;
 }
 
-export function LiveApp({ api: suppliedApi, repository }: { api?: OrganizerApi; repository?: ReportRepository }) {
+function WelcomePage() {
+  return (
+    <main className="wg-app wg-login">
+      <section className="wg-card wg-login-card wg-stack">
+        <p className="wg-eyebrow">Community cleanup</p>
+        <h1>WasteGrid</h1>
+        <p>Report waste. Coordinate a crew. Follow the cleanup.</p>
+        <div className="wg-info-panel wg-stack">
+          <h2>Residents and crews</h2>
+          <p>Use the WasteGrid Android app to submit a photo, follow your report, or complete an assigned cleanup.</p>
+          <p className="wg-muted">For this supervised demo, ask the demo host for the installed Android app.</p>
+        </div>
+        <div className="wg-stack">
+          <h2>Organisers</h2>
+          <p>Sign in here to review submitted reports, coordinate routes, and see cleanup evidence.</p>
+          <Link className="wg-button" to="/admin">Organiser sign in</Link>
+        </div>
+        <p className="wg-muted wg-small">Report submission and tracking are available in the Android app. Earlier browser-local prototype reports were never submitted to the shared service.</p>
+      </section>
+    </main>
+  );
+}
+
+export function LiveApp({ api: suppliedApi }: { api?: OrganizerApi }) {
   const [dashboard] = useState(() => {
     if (suppliedApi) return { api: suppliedApi, configurationError: "" };
     try { return { api: createOrganizerApi(), configurationError: "" }; }
@@ -28,28 +45,9 @@ export function LiveApp({ api: suppliedApi, repository }: { api?: OrganizerApi; 
     }
   });
   return <ReportErrorBoundary><Routes>
-    <Route path="/" element={<CustomerHomeRoute repository={repository} />} />
-    <Route path="/report/new" element={<CreateReportRoute repository={repository} />} />
-    <Route path="/report/track" element={<TrackReportPage />} />
-    <Route path="/report/:reference" element={<ReportDetailRoute repository={repository} />} />
+    <Route path="/" element={<WelcomePage />} />
+    <Route path="/report/*" element={<Navigate to="/" replace />} />
     <Route path="/admin/*" element={dashboard.api ? <OrganizerDashboard api={dashboard.api} /> : <OrganizerConfigurationPage message={dashboard.configurationError} />} />
     <Route path="*" element={<main><h1>Page not found</h1><Link to="/">Home</Link></main>} />
   </Routes></ReportErrorBoundary>;
-}
-
-function useCustomerRepository(repository?: ReportRepository) {
-  const [resolved] = useState<ReportRepository>(() => repository ?? new BrowserReportRepository(window.localStorage));
-  return resolved;
-}
-
-function CustomerHomeRoute({ repository }: { repository?: ReportRepository }) {
-  return <CustomerHomePage repository={useCustomerRepository(repository)} />;
-}
-
-function CreateReportRoute({ repository }: { repository?: ReportRepository }) {
-  return <CreateReportPage repository={useCustomerRepository(repository)} />;
-}
-
-function ReportDetailRoute({ repository }: { repository?: ReportRepository }) {
-  return <ReportDetailPage repository={useCustomerRepository(repository)} />;
 }
