@@ -12,15 +12,15 @@ export function OrganizerReportDetails({ api, onSessionExpired }: { api: Organiz
   const [error, setError] = useState("");
   const generation = useRef(0);
 
-  async function load(preserveVisible = false): Promise<boolean> {
-    if (!reportId) { setError("A report reference is required."); setBusy(false); return false; }
+  async function load(preserveVisible = false): Promise<OrganizerReport | null> {
+    if (!reportId) { setError("A report reference is required."); setBusy(false); return null; }
     const request = ++generation.current;
-    let loaded = false;
+    let loaded: OrganizerReport | null = null;
     if (!preserveVisible) { setDetails(null); setBusy(true); }
     setError("");
     try {
       const result = await api.report(reportId);
-      if (request === generation.current) { setDetails(result); loaded = true; }
+      if (request === generation.current) { setDetails(result); loaded = result.report; }
     } catch (caught) {
       if (request === generation.current) {
         const error = caught as Error;

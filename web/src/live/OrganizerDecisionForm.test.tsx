@@ -22,7 +22,7 @@ function setup(overrides: Partial<OrganizerApi> = {}) {
     ...overrides,
   } as unknown as OrganizerApi;
   const onReportUpdated = vi.fn();
-  const onReload = vi.fn().mockResolvedValue(true);
+  const onReload = vi.fn().mockResolvedValue(report);
   render(<OrganizerDecisionForm report={report} api={api} onReportUpdated={onReportUpdated} onReload={onReload} />);
   return { api, onReportUpdated, onReload, user: userEvent.setup() };
 }
@@ -95,13 +95,28 @@ test("does not permit a stale decision to be edited or resent until reload succe
   vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("decision-id") });
   const applyDecision = vi.fn().mockRejectedValue(new Error("This report changed or is not ready for that decision. Reload it and review the latest details."));
   const { onReload, user } = setup({ applyDecision });
-  onReload.mockResolvedValue(false);
+  onReload.mockResolvedValue(null);
   await prepareReview(user);
   await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
   await user.click(screen.getByRole("button", { name: "Reload latest report" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Unable to refresh the latest report");
   expect(screen.queryByRole("button", { name: "Edit decision" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Apply organiser decision" })).not.toBeInTheDocument();
+});
+
+test("retries only priority with a fresh version when triage already succeeded", async () => {
+  vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("decision-id").mockReturnValueOnce("priority-id") });
+  const applyDecision = vi.fn().mockResolvedValue({ ...report, version: 8 });
+  const setPriority = vi.fn().mockRejectedValueOnce(new Error("This report changed or is not ready for that decision. Reload it and review the latest details.")).mockResolvedValueOnce({ ...report, version: 10, priority: "high" });
+  const { api, onReload, user } = setup({ applyDecision, setPriority });
+  onReload.mockResolvedValue({ ...report, version: 9 });
+  await prepareReview(user, true);
+  await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
+  await user.click(screen.getByRole("button", { name: "Reload latest report" }));
+  await user.click(await screen.findByRole("button", { name: "Apply priority update" }));
+  expect(api.applyDecision).toHaveBeenCalledTimes(1);
+  expect(api.setPriority).toHaveBeenNthCalledWith(1, "report-1", expect.objectContaining({ command_id: "priority-id", expected_version: 8 }));
+  expect(api.setPriority).toHaveBeenNthCalledWith(2, "report-1", expect.objectContaining({ command_id: "priority-id", expected_version: 9 }));
 });
 
 test("expires the organiser view instead of displaying a rejected mutation error", async () => {

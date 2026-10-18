@@ -16,7 +16,7 @@ type Draft = {
 
 type PendingDecision = { decision: DecisionCommand; priority: { commandId: string; priority: Priority; reason: string } | null };
 
-export function OrganizerDecisionForm({ report, api, onReportUpdated, onReload, onSessionExpired }: { report: OrganizerReport; api: OrganizerApi; onReportUpdated: (report: OrganizerReport) => void; onReload: () => Promise<boolean>; onSessionExpired?: (error: AccessError) => void }) {
+export function OrganizerDecisionForm({ report, api, onReportUpdated, onReload, onSessionExpired }: { report: OrganizerReport; api: OrganizerApi; onReportUpdated: (report: OrganizerReport) => void; onReload: () => Promise<OrganizerReport | null>; onSessionExpired?: (error: AccessError) => void }) {
   const [draft, setDraft] = useState<Draft>(() => fromReport(report));
   const [validation, setValidation] = useState("");
   const [pending, setPending] = useState<PendingDecision | null>(null);
@@ -75,7 +75,10 @@ export function OrganizerDecisionForm({ report, api, onReportUpdated, onReload, 
   async function reloadAfterStale() {
     setSaving(true); setError("");
     const refreshed = await onReload();
-    if (refreshed) clear();
+    if (refreshed && decisionSaved) {
+      setDecisionSaved({ ...decisionSaved, version: refreshed.version });
+      setStale(false);
+    } else if (refreshed) clear();
     else setError("Unable to refresh the latest report. Keep this draft and retry the reload.");
     setSaving(false);
   }
@@ -91,7 +94,7 @@ export function OrganizerDecisionForm({ report, api, onReportUpdated, onReload, 
     <p>Priority: {pending.priority?.priority ?? "Unchanged"}</p><p>Priority reason: {pending.priority?.reason ?? "Not recorded"}</p>
     <p>Applying this decision creates an attributed organiser event. It does not start a worker or send a message.</p>
     {error && <p role="alert">{error}</p>}
-    {stale ? <button disabled={saving} onClick={() => void reloadAfterStale()}>Reload latest report</button> : <button disabled={saving} onClick={() => void apply()}>{error ? "Retry organiser decision" : "Apply organiser decision"}</button>}
+    {stale ? <button disabled={saving} onClick={() => void reloadAfterStale()}>Reload latest report</button> : <button disabled={saving} onClick={() => void apply()}>{decisionSaved ? (error ? "Retry priority update" : "Apply priority update") : (error ? "Retry organiser decision" : "Apply organiser decision")}</button>}
     {!stale && <button disabled={saving} onClick={clear}>Edit decision</button>}
   </section>;
 
