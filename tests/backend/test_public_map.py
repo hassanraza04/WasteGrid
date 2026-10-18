@@ -41,13 +41,14 @@ def test_public_map_marker_follows_report_and_job_lifecycle(client, png):
         )
         db.add(job)
         db.flush()
-        saved.job_id = job.id
+        job_id = job.id
+        saved.job_id = job_id
         saved.state = "linked_to_job"
         db.commit()
 
     assert len(client.get("/map/markers", params=BOUNDS).json()["items"]) == 1
     with Session(client.app.state.engine) as db:
-        db.get(Job, job.id).status = "completed"
+        db.get(Job, job_id).status = "completed"
         db.commit()
     assert client.get("/map/markers", params=BOUNDS).json()["items"] == []
 
