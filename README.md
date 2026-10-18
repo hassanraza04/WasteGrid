@@ -122,11 +122,12 @@ Run checks with Node 22.18 or newer (CI uses the current Node 22 release):
 ```
 
 The integration includes Nikolas's UI branch and keeps resident uploads in
-`mobile/src/services/reports.ts` and `report-client.ts`. Live dispatch uses all
-eligible jobs and selected crews, following the backend's priority-aware road-time
-objective. Unsupported city/shift/max-stop/return-to-start controls are absent from
-the live flow. Crew completion requires a start and cleanup photo; there is no
-ordinary crew undo action. Saved command IDs and evidence recover lost responses.
+`mobile/src/services/reports.ts` and `report-client.ts`. Live dispatch uses explicitly
+selected jobs and crews, following the backend's priority-aware road-time objective.
+Unsupported city/shift/max-stop/return-to-start controls are absent from the live
+flow. Crew completion requires a started stop and explicit confirmation; a cleanup
+photo is optional. There is no ordinary crew undo action. Saved command IDs and any
+submitted evidence recover lost responses.
 City statistics remain labelled demo previews. The resident Explore map reads
 `GET /map/markers` while focused and refreshes when reopened or brought to the
 foreground. The public feed contains only approximately 100 m rounded coordinates

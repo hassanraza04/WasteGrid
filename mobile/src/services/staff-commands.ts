@@ -3,15 +3,18 @@ import type { Job, StaffClient } from "./staff-client";
 export type StaffCommand = {
   command_id: string; kind: "start" | "completion" | "dispatch" | "release"; resource_id: string;
   ownerId: string; crewId?: string; apiUrl: string; expected_version?: number;
-  photoUri?: string; rejected?: boolean; reason?: string;
+  photoUri?: string; rejected?: boolean; reason?: string; recomputeRequired?: boolean; reconciled?: boolean; dispatchAttemptPending?: boolean;
 };
 
 // Recover by command identity, not merely by a matching status: another actor may
 // have completed/started the job. Completion evidence must never be claimed as ours.
-export async function recoverOrSend(command: StaffCommand, api: StaffClient, photo?: Blob): Promise<Job | { plan_id: string }> {
+export async function recoverOrSend(command: StaffCommand, api: StaffClient, photo?: Blob, beforeDispatch?: () => Promise<void>): Promise<Job | { plan_id: string }> {
   if (command.kind === "dispatch") {
+    if (command.recomputeRequired || command.reconciled) throw new Error("This preview was rejected. Refresh routing state and compute a new preview.");
     const preview = await api.preview(command.resource_id);
     if (preview.plan_id) return { plan_id: preview.plan_id };
+    if (command.dispatchAttemptPending) throw new Error("Dispatch confirmation is still unknown. Keep the saved action and check its result; do not resubmit this preview.");
+    await beforeDispatch?.();
     return api.json<{ plan_id: string }>(`/routing/previews/${encodeURIComponent(command.resource_id)}/dispatch`, { command_id: command.command_id });
   }
   const details = await api.job(command.resource_id);
@@ -25,10 +28,11 @@ export async function recoverOrSend(command: StaffCommand, api: StaffClient, pho
       ...(command.kind === "release" ? { reason: command.reason } : {}),
     }, "PATCH");
   }
-  if (!photo) throw new Error("The saved cleanup photo is unavailable. Keep the submission for review.");
+  if (command.photoUri !== undefined && (!command.photoUri || !photo || photo.size <= 0)) throw new Error("The saved cleanup photo is unavailable. Keep the submission for review.");
+  if (command.photoUri === undefined && photo) throw new Error("This saved completion does not include a photo. Keep its original submission details.");
   const body = new FormData();
   body.append("command_id", command.command_id);
   body.append("expected_version", String(command.expected_version));
-  body.append("photo", photo, command.photoUri?.split("/").pop() ?? "cleanup.jpg");
+  if (photo) body.append("photo", photo, command.photoUri!.split("/").pop() ?? "cleanup.jpg");
   return api.request<Job>(`/jobs/${encodeURIComponent(command.resource_id)}/completion`, { method: "POST", body });
 }

@@ -267,7 +267,7 @@ class JobPatch(Command):
 
 
 class CompletionCommand(Command):
-    photo_hash: str
+    photo_hash: str | None
     note: str | None
 
 
@@ -332,6 +332,7 @@ class UnassignedJob(Contract):
     job_id: UUID
     reason_code: Literal[
         "no_eligible_crew",
+        "outside_scope",
         "shift_limit",
         "held",
         "hazard_review",

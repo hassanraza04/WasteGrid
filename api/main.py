@@ -154,6 +154,15 @@ def report_access(
             job_access(db, report.job_id, staff)
 
 
+async def optional_completion_photo(
+    request: Request, photo: UploadFile | None = File(default=None)
+) -> UploadFile | None:
+    # FastAPI normalizes empty file/form fields to None. Only omission opts out.
+    if photo is None and "photo" in await request.form():
+        raise HTTPException(422, "Omit the photo field or supply a valid image")
+    return photo
+
+
 def upload_commit(request: Request, db: Session, path: str, content: bytes, mime: str):
     cloud = request.app.state.cloud
     try:
@@ -695,7 +704,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def complete_job(
         job_id: UUID,
         request: Request,
-        photo: UploadFile = File(),
+        photo: UploadFile | None = Depends(optional_completion_photo),
         command_id: UUID = Form(),
         expected_version: int = Form(ge=1),
         note: str | None = Form(default=None, max_length=2000),
@@ -705,11 +714,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if staff.role != "crew":
             raise HTTPException(403, "Assigned crew account required")
         job = job_access(db, job_id, staff, lock=True)
-        content, mime = read_photo(photo, settings.photo_max_bytes)
+        content, mime = (
+            read_photo(photo, settings.photo_max_bytes)
+            if photo is not None
+            else (None, None)
+        )
         body = CompletionCommand(
             command_id=command_id,
             expected_version=expected_version,
-            photo_hash=sha256(content).hexdigest(),
+            photo_hash=sha256(content).hexdigest() if content is not None else None,
             note=note,
         )
         seen, fingerprint = command_seen(db, job.id, body, "job.completed")
@@ -718,36 +731,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         assert_version(job.version, expected_version)
         if job.status != "in_progress":
             raise HTTPException(409, "Start the job before submitting completion")
-        photo_id = uuid4()
-        path = f"jobs/{job_id}/{photo_id}"
-        db.add(
-            Photo(
-                id=photo_id,
-                job_id=job_id,
-                object_path=path,
-                content_type=mime,
-                size_bytes=len(content),
+        photo_id = uuid4() if photo is not None else None
+        path = f"jobs/{job_id}/{photo_id}" if photo_id else None
+        if photo_id is not None:
+            db.add(
+                Photo(
+                    id=photo_id,
+                    job_id=job_id,
+                    object_path=path,
+                    content_type=mime,
+                    size_bytes=len(content),
+                )
             )
-        )
         job.status = "completed"
         job.version += 1
-        record = event(
+        event(
             db,
             "job.completed",
             job_id=job.id,
             command_id=command_id,
             request_hash=fingerprint,
+            actor=str(staff.user_id),
+            details={
+                "note": note,
+                "photo_id": str(photo_id) if photo_id else None,
+                "verification": "crew_submitted",
+                "crew_id": str(job.assigned_crew_id),
+                "consumed_minutes": job.estimated_service_minutes + job.travel_minutes,
+            },
         )
-        record.details = {
-            "note": note,
-            "photo_id": str(photo_id),
-            "verification": "crew_submitted",
-            "crew_id": str(job.assigned_crew_id),
-            "consumed_minutes": job.estimated_service_minutes + job.travel_minutes,
-        }
-        record.actor = str(staff.user_id)
         invalidate_plan(db)
-        upload_commit(request, db, path, content, mime)
+        if photo_id is not None:
+            upload_commit(request, db, path, content, mime)
+        else:
+            db.commit()
         return job
 
     @app.get("/crews", response_model=list[CrewView])

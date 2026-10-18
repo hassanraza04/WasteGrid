@@ -134,13 +134,19 @@
             "title": "Note"
           },
           "photo": {
-            "contentMediaType": "application/octet-stream",
-            "title": "Photo",
-            "type": "string"
+            "anyOf": [
+              {
+                "contentMediaType": "application/octet-stream",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photo"
           }
         },
         "required": [
-          "photo",
           "command_id",
           "expected_version"
         ],
@@ -362,6 +368,23 @@
             "minItems": 1,
             "title": "Crew Ids",
             "type": "array"
+          },
+          "job_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 25,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Ids"
           }
         },
         "required": [
@@ -2659,6 +2682,23 @@
             "title": "Id",
             "type": "string"
           },
+          "job_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 25,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Ids"
+          },
           "matrix_id": {
             "anyOf": [
               {
@@ -3127,6 +3167,7 @@
           "reason_code": {
             "enum": [
               "no_eligible_crew",
+              "outside_scope",
               "shift_limit",
               "held",
               "hazard_review",

@@ -53,7 +53,7 @@ ID merely to bypass a conflict.
 | `GET /jobs` | Staff | Organizer jobs or own crew's jobs, ordered by crew/stop position; MVP cap 100 |
 | `GET /jobs/{id}` | Organizer/assigned crew | Job, photo IDs, audit events including completion/recheck reasons |
 | `PATCH /jobs/{id}` | Organizer/assigned crew | `JobPatch`; see transition rules below |
-| `POST /jobs/{id}/completion` | Assigned crew | Multipart after-photo, command_id, expected_version, optional note |
+| `POST /jobs/{id}/completion` | Assigned crew | Form command_id, expected_version; optional note and multipart after-photo; native UI confirms before submission |
 | `GET /crews`, `PATCH /crews/{id}` | Organizer | Crew state; versioned availability/equipment/shift/start-location edits |
 | `GET /plans/current` | Organizer | Current plan or null, with stale flag and estimate label |
 | `POST /plans/generate` | Organizer | `{command_id}` → 202 `TaskView` |
