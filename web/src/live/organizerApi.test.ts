@@ -70,7 +70,7 @@ test("loads every active job page and sends an explicit reviewed routing scope",
 test.each([
   [422, RoutingContractError],
   [409, RoutingConflictError],
-] as const)("classifies routing HTTP %s without exposing the server response", async (status, ErrorType) => {
+] as const)("classifies routing HTTP %s with a fallback for non-JSON responses", async (status, ErrorType) => {
   const { api, fetcher } = setup();
   fetcher.mockResolvedValue(new Response("private server response", { status }));
 
@@ -375,4 +375,22 @@ test("records only redacted bounded diagnostics for invalid responses and timeou
   for (let i = 0; i < 45; i++) await api.reports(0);
   const records = organizerDiagnostics(); expect(records).toHaveLength(40);
   expect(Object.keys(records[0]).sort()).toEqual(["category", "durationMs", "operation", "status"]);
+});
+
+test.each([
+  "Hackathon Demo Crew’s GPS is stale",
+  "Illustrative Crew A has no timestamped location",
+  "Selected job is not eligible",
+])("preserves backend routing conflict detail: %s", async detail => {
+  const { api, fetcher } = setup(); fetcher.mockImplementation(async () => Response.json({ detail }, { status: 409 }));
+  await expect(api.previewRouting(["crew-1"], ["job-1"])).rejects.toThrow(detail);
+  await expect(api.dispatchRouting("preview-1", "command-1")).rejects.toThrow(detail);
+});
+test.each([null, 3, [], { field: "invalid" }, "   "])("falls back for non-message routing detail %j", async detail => {
+  const { api, fetcher } = setup(); fetcher.mockResolvedValue(Response.json({ detail }, { status: 409 }));
+  await expect(api.previewRouting(["crew-1"], ["job-1"])).rejects.toThrow("Routing state changed");
+});
+test("shows the backend routing dependency failure", async () => {
+  const { api, fetcher } = setup(); fetcher.mockResolvedValue(Response.json({ detail: "Configure ROUTING_OSRM_BASE_URL for road travel times" }, { status: 503 }));
+  await expect(api.previewRouting(["crew-1"], ["job-1"])).rejects.toThrow("ROUTING_OSRM_BASE_URL");
 });

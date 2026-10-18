@@ -6,7 +6,7 @@ import { routePreview } from "../test/routingFixtures";
 import type { OrganizerApi } from "./organizerApi";
 const leaflet = vi.hoisted(() => {
   const map = { setView: vi.fn().mockReturnThis(), fitBounds: vi.fn(), remove: vi.fn() };
-  const layer = { addTo: vi.fn().mockReturnThis() };
+  const layer = { addTo: vi.fn().mockReturnThis(), on: vi.fn().mockReturnThis() };
   const bounds = { extend: vi.fn(), isValid: vi.fn().mockReturnValue(true) };
   return { map, layer, bounds, createMap: vi.fn(() => map), tileLayer: vi.fn(() => layer), polyline: vi.fn(() => layer), latLng: vi.fn((lat, lng) => ({ lat, lng })), latLngBounds: vi.fn(() => bounds) };
 });
@@ -83,4 +83,14 @@ test("navigation cancels a scheduled cooldown retry", async () => {
   await act(async () => { await Promise.resolve(); }); view.unmount();
   await act(async () => vi.advanceTimersByTimeAsync(20_000));
   expect(client.geometry).toHaveBeenCalledTimes(1); expect(leaflet.polyline).not.toHaveBeenCalled();
+});
+
+
+test("reports blocked OpenStreetMap tiles separately from successful road geometry", async () => {
+  const client = api(); render(<OrganizerRouteMap api={client} preview={routePreview()} />);
+  await screen.findByText(/1 road route displayed/);
+  const handler = leaflet.layer.on.mock.calls.find(([event]) => event === "tileerror")![1] as () => void;
+  act(() => handler());
+  expect(screen.getByRole("alert")).toHaveTextContent("tile.openstreetmap.org");
+  expect(screen.getByText(/1 road route displayed/)).toBeInTheDocument();
 });

@@ -79,6 +79,7 @@ const crew = {
   location_recorded_at: at,
   location_received_at: at,
   location_revision: 1,
+  location_checked_at: at,
 };
 const preview = {
   id: "40000000-0000-4000-8000-000000000001",

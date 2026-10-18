@@ -6,6 +6,33 @@ unapproved assessment and suspected-handling review remain outside automatic
 assignment. If several approved reports link to one job, use the highest priority
 and schedule that job once. The API keeps `routine`; the UI may label it Low.
 
+## Dashboard readiness and demo handoff
+
+The routing workspace displays backend conflict details, including crew GPS and
+job eligibility failures. Crew cards label missing or stale GPS and cannot select
+those crews for a new preview. A saved selection also blocks preview when either
+its observation or receipt expires. `GET /crews` includes
+`location_max_age_seconds`, matching the API configuration (120 seconds by
+default), and `location_checked_at` from the server. The dashboard advances that
+reference with monotonic elapsed time, so an inaccurate organiser device clock
+does not block fresh GPS. Older APIs without that reference leave age validation
+to the backend. Routing metadata stays out of the legacy `PlanningInput` contract.
+Refresh routing state after a crew shares a new foreground observation.
+
+For the hosted demo, use the dedicated account provisioned with
+`scripts/provision_demo_crew.py`. Sign into **My route** in the existing mobile app,
+allow foreground location and wait for a confirmed `POST /crews/me/location`.
+Choose that crew and an approved, unheld demo job near its actual location in the
+organiser workspace, compute a preview, then open its map. Keep the crew screen
+in the foreground during the walkthrough. A fixture depot pin alone is not a
+live location; do not use the organiser's GPS as the crew's position.
+
+The API needs routing enabled and a working OSRM Table and Route service. The
+browser separately needs access to `https://tile.openstreetmap.org`. A failed tile
+request now produces a visible map error even when road geometry succeeds.
+Provisioning the two demo scenarios is separate from these dashboard changes;
+this fix does not create accounts or jobs, seed shared data, or refresh crew GPS.
+
 ## Enable and configure
 
 Apply migrations through `0012_organizer_routing.sql`. Set on **both API and worker**:

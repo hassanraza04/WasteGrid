@@ -1228,3 +1228,22 @@ def test_dispatch_provenance_reads_do_not_scale_per_unselected_job(
 ):
     monkeypatch.setattr("api.routing.mutation_lock", lambda db: None)
     verify_batched_dispatch_reads(assessment_db, extra)
+
+
+@pytest.mark.parametrize("kind", ["missing", "stale"])
+def test_gps_conflict_names_the_crew(kind):
+    from api.routing import fresh_location
+
+    at = now()
+    crew = SimpleNamespace(
+        name="Hackathon Demo Crew",
+        location_recorded_at=None if kind == "missing" else at - timedelta(seconds=121),
+        location_received_at=at,
+    )
+    with pytest.raises(HTTPException) as caught:
+        fresh_location(crew, Settings(_env_file=None), at)
+    assert caught.value.status_code == 409
+    assert "Hackathon Demo Crew" in caught.value.detail
+    assert (
+        "no timestamped location" if kind == "missing" else "GPS is stale"
+    ) in caught.value.detail

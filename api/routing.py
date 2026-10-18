@@ -58,11 +58,11 @@ def digest(value):
 def fresh_location(crew, settings, at):
     recorded, received = crew.location_recorded_at, crew.location_received_at
     if recorded is None or received is None:
-        raise HTTPException(409, f"Crew {crew.id} needs a timestamped location update")
+        raise HTTPException(409, f"{crew.name} has no timestamped location")
     for value in (recorded, received):
         age = (at - utc(value)).total_seconds()
         if age < 0 or age > settings.routing_location_max_age_seconds:
-            raise HTTPException(409, f"Crew {crew.id} location is stale or invalid")
+            raise HTTPException(409, f"{crew.name}’s GPS is stale or invalid")
 
 
 def snapshot(db, crew_ids, settings, at, job_ids=None, constraints=None):

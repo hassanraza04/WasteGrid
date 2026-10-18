@@ -160,7 +160,7 @@ test("mismatched receipt blocks recovery without generating another command", as
 test("definite dispatch conflict refreshes and requires a new preview", async () => {
   const { api, user } = setup(); vi.mocked(api.dispatchRouting).mockRejectedValueOnce(new RoutingConflictError("State changed"));
   await review(user); await confirm(user);
-  await screen.findByText(/Routing state changed. Review refreshed state/);
+  await screen.findByText(/Review the refreshed crews and jobs/);
   expect(screen.queryByRole("region", { name: "Route preview" })).not.toBeInTheDocument();
   await waitFor(() => expect(api.currentPlan).toHaveBeenCalledTimes(2));
   expect((await journal.readJournal(ENVIRONMENT, ACTOR))?.stage).toBe("conflict");
@@ -394,4 +394,66 @@ test("a pending new-review storage write cannot restore the previous account's s
   expect(api.currentPlan).toHaveBeenCalledTimes(readsForNewAccount);
   expect(await journal.readJournal(ENVIRONMENT, "next-organizer")).toBeNull();
   expect(api.dispatchRouting).toHaveBeenCalledTimes(1);
+});
+
+
+test.each([
+  ["missing recorded timestamp", { location_recorded_at: null }, "GPS not shared"],
+  ["missing received timestamp", { location_received_at: null }, "GPS not shared"],
+  ["stale GPS", { location_recorded_at: new Date(Date.now() - 121_000).toISOString() }, "GPS stale"],
+  ["stale receipt", { location_received_at: new Date(Date.now() - 121_000).toISOString() }, "GPS stale"],
+  ["invalid timestamp", { location_recorded_at: "invalid" }, "GPS stale or invalid"],
+  ["future timestamp", { location_recorded_at: new Date(Date.now() + 60_000).toISOString() }, "GPS stale or invalid"],
+] as const)("labels and prevents preview for %s", async (_label, changes, message) => {
+  const { api, user } = setup(routePreview(), [{ ...crew, ...changes }]);
+  const button = await screen.findByRole("button", { name: "Select Crew One (crew-1)" });
+  expect(button).toBeDisabled(); expect(screen.getByText(new RegExp(message))).toBeInTheDocument();
+  await user.click(button); await user.click(screen.getByRole("button", { name: "Compute route preview" }));
+  expect(api.previewRouting).not.toHaveBeenCalled();
+});
+test("a restored crew selection with stale GPS blocks preview and explains recovery", async () => {
+  await journal.writeJournal(ENVIRONMENT, ACTOR, { ...journal.emptyJournal(), crewIds: [crew.id], jobIds: [job.id] });
+  const { api } = setup(routePreview(), [{ ...crew, location_received_at: null }]);
+  await screen.findByRole("button", { name: "Remove Crew One (crew-1)" });
+  expect(screen.getByRole("button", { name: "Compute route preview" })).toBeDisabled();
+  expect(screen.getByText(/Crew One: GPS not shared/)).toHaveTextContent("crew’s mobile screen");
+  expect(api.previewRouting).not.toHaveBeenCalled();
+});
+test("uses the server freshness limit and blocks an already selected crew as GPS ages", async () => {
+  const { api, user } = setup(routePreview(), [{ ...crew, location_max_age_seconds: 10 }]);
+  await selectScope(user); expect(screen.getByRole("button", { name: "Compute route preview" })).toBeEnabled();
+  vi.spyOn(performance, "now").mockReturnValue(performance.now() + 11_000);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Compute route preview" })).toBeDisabled(), { timeout: 2000 });
+  expect(screen.getByText(/Crew One: GPS stale/)).toBeInTheDocument();
+  expect(api.previewRouting).not.toHaveBeenCalled();
+  vi.useRealTimers();
+});
+test("shows the backend reason when preview races a GPS update or job eligibility change", async () => {
+  const { api, user } = setup(); vi.mocked(api.previewRouting).mockRejectedValueOnce(new RoutingConflictError("Selected job is not eligible"));
+  await selectScope(user); await user.click(screen.getByRole("button", { name: "Compute route preview" }));
+  expect(await screen.findByText("Selected job is not eligible")).toBeInTheDocument();
+  await waitFor(() => expect(api.currentPlan).toHaveBeenCalledTimes(2));
+});
+
+test("refreshing after the crew shares GPS enables preview for its saved selection", async () => {
+  await journal.writeJournal(ENVIRONMENT, ACTOR, { ...journal.emptyJournal(), crewIds: [crew.id], jobIds: [job.id] });
+  const { api, user } = setup(routePreview(), [{ ...crew, location_recorded_at: null }]);
+  await screen.findByRole("button", { name: "Remove Crew One (crew-1)" });
+  expect(screen.getByRole("button", { name: "Compute route preview" })).toBeDisabled();
+  const fresh = new Date().toISOString();
+  vi.mocked(api.crews).mockResolvedValueOnce([{ ...crew, location_checked_at: fresh, location_recorded_at: fresh, location_received_at: fresh }]);
+  await user.click(screen.getByRole("button", { name: "Refresh routing state" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Compute route preview" })).toBeEnabled());
+  await user.click(screen.getByRole("button", { name: "Compute route preview" }));
+  await waitFor(() => expect(api.previewRouting).toHaveBeenCalledTimes(1));
+});
+
+
+test.each([-3_600_000, 3_600_000])("organiser clock offset %s does not block a fresh server GPS observation", async offset => {
+  const { api, user } = setup();
+  vi.spyOn(Date, "now").mockReturnValue(Date.now() + offset);
+  await selectScope(user);
+  expect(screen.getByRole("button", { name: "Compute route preview" })).toBeEnabled();
+  await user.click(screen.getByRole("button", { name: "Compute route preview" }));
+  await waitFor(() => expect(api.previewRouting).toHaveBeenCalledTimes(1));
 });

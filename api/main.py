@@ -101,6 +101,7 @@ from api.schemas import (
     ReportUpdates,
     ReportView,
     ResidentAnswers,
+    RoutingCrewView,
     Snapshot,
     TaskView,
     TriageRecommendation,
@@ -778,9 +779,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             db.commit()
         return job
 
-    @app.get("/crews", response_model=list[CrewView])
+    @app.get("/crews", response_model=list[RoutingCrewView])
     def crews(db: Session = Depends(get_db), staff: Principal = Depends(organizer)):
-        return db.scalars(select(Crew).order_by(Crew.name)).all()
+        checked_at = now()
+        return [
+            RoutingCrewView(
+                **CrewView.model_validate(crew).model_dump(),
+                location_max_age_seconds=settings.routing_location_max_age_seconds,
+                location_checked_at=checked_at,
+            )
+            for crew in db.scalars(select(Crew).order_by(Crew.name))
+        ]
 
     @app.patch("/crews/{crew_id}", response_model=CrewView)
     def update_crew(

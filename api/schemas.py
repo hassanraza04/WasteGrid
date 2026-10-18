@@ -251,6 +251,13 @@ class CrewView(Contract):
     location_revision: int = 0
 
 
+class RoutingCrewView(CrewView):
+    """Routing metadata must not change the external legacy planning contract."""
+
+    location_max_age_seconds: int
+    location_checked_at: datetime
+
+
 class CrewPatch(Command):
     available: bool | None = None
     equipment: list[Equipment] | None = None

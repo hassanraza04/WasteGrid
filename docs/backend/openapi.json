@@ -3812,6 +3812,99 @@
         "title": "RoutingConstraints",
         "type": "object"
       },
+      "RoutingCrewView": {
+        "additionalProperties": false,
+        "description": "Routing metadata must not change the external legacy planning contract.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "equipment": {
+            "items": {
+              "$ref": "#/components/schemas/Equipment"
+            },
+            "title": "Equipment",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "illustrative": {
+            "title": "Illustrative",
+            "type": "boolean"
+          },
+          "location_checked_at": {
+            "format": "date-time",
+            "title": "Location Checked At",
+            "type": "string"
+          },
+          "location_max_age_seconds": {
+            "title": "Location Max Age Seconds",
+            "type": "integer"
+          },
+          "location_received_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Received At"
+          },
+          "location_recorded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Recorded At"
+          },
+          "location_revision": {
+            "default": 0,
+            "title": "Location Revision",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "shift_minutes": {
+            "title": "Shift Minutes",
+            "type": "integer"
+          },
+          "start_location": {
+            "$ref": "#/components/schemas/Location"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "equipment",
+          "shift_minutes",
+          "available",
+          "start_location",
+          "illustrative",
+          "version",
+          "location_max_age_seconds",
+          "location_checked_at"
+        ],
+        "title": "RoutingCrewView",
+        "type": "object"
+      },
       "RoutingIssue": {
         "additionalProperties": false,
         "properties": {
@@ -4527,7 +4620,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/CrewView"
+                    "$ref": "#/components/schemas/RoutingCrewView"
                   },
                   "title": "Response Crews Crews Get",
                   "type": "array"
