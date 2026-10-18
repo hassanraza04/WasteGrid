@@ -4,96 +4,152 @@
 
 # WasteGrid
 
-### From reported waste to coordinated cleanup.
+### Cleaner streets. Smarter coordination. A response people can follow.
 
-WasteGrid connects the person who spots waste with the people who can clear it.
-A resident takes a photo, an organizer reviews the situation and plans a response,
-and a crew carries out the cleanup. The resident can then follow what happened to
-the report they submitted.
+**WasteGrid is an AI-assisted waste response platform that connects community
+reports to coordinated cleanup operations.**
 
-**One connected journey: report → assess → coordinate → collect → follow up.**
+For local authorities, cleanup operators, and organizations responsible for shared
+spaces, the challenge extends beyond collecting waste: knowing where to act,
+what needs attention first, and how to put limited crews to work.
 
-[Explore the demo](docs/demo.md) · [How we built it](#how-we-built-it) ·
-[Run it locally](docs/development.md#getting-started)
+WasteGrid brings resident reporting, photo assessment, route planning, and
+cleanup updates into one shared workflow. Its business goal is straightforward:
+help organizations turn available people and equipment into a more responsive,
+accountable cleanup service.
 
-![WasteGrid organizer console showing report activity, review work, and crew readiness](docs/images/organizer-overview.png)
+**Report → Prioritize → Coordinate → Collect → Close the loop**
 
-*The organizer console, shown with illustrative demo data.*
+![WasteGrid organizer workspace showing report activity, review work, and crew readiness](docs/images/organizer-overview.png)
 
-## Why we built it
+*The organizer workspace with sample records.*
 
-Spotting dumped waste is easy. Coordinating a response takes more: a usable
-location, an understanding of urgency, the right equipment, an available crew,
-and a way to tell the resident what happened.
+## The problem: a report needs a response
 
-We built WasteGrid to bring those decisions together. Residents get a clear way
-to report a problem and follow its progress. Organizers get the context to act.
-Crews get a practical route and a clear next stop.
+Imagine a resident spotting waste blocking a footpath. They can describe the
+problem and share a photo, but someone still needs to establish the location,
+judge its urgency, find a suitable crew, and fit the job into the day's work.
+The resident then needs an answer about what happened.
 
-## The experience
+Each handoff creates coordination work. A photo needs context. A list of reports
+needs priorities. Available crews need feasible assignments. A completed task
+needs to make its way back to the person who raised it.
 
-1. **See it. Report it.** A resident captures a photo, adds a caption, and confirms
-   the location with GPS or a map pin. The app saves their report so an interrupted
-   upload can be recovered.
-2. **Understand what needs attention.** Photo analysis identifies visible conditions.
-   Backend rules calculate priority, while hazards, uncertainty, and possible
-   duplicates go to organizer review.
-3. **Turn reports into a response.** The organizer reviews the evidence, selects
-   jobs and crews, and previews routes using road travel times, equipment needs,
-   and available capacity. They approve the plan before anyone is dispatched.
-4. **Give crews a clear next step.** Crews see their ordered stops on mobile,
-   start a job, and report completion, optionally adding a cleanup photo.
-5. **Bring the update back.** The resident sees the report's progress, history,
-   and any submitted cleanup photos. With phone updates enabled, typing **Status**
-   also returns an in-app reply and sends a copy to the registered phone.
+WasteGrid connects those handoffs around the same report, giving the organization
+a path from incoming demand to action and giving residents visibility afterward.
 
-## What makes the build distinctive
+## What WasteGrid does
 
-- **AI with a clear role.** The model helps interpret the photo; explicit rules
-  determine priority, and organizers retain control over review and dispatch.
-- **Planning around real work.** Routes account for roads, equipment, crew capacity,
-  and work already underway. Organizers can inspect what fits, what remains
-  unassigned, and why before approving a plan.
-- **Continuity when connections fail.** Saved uploads and recoverable actions
-  protect the same report and dispatch from being duplicated after a lost response.
-- **A visible outcome for the resident.** Reporting, collection, and follow-up share
-  the same case history. Completion stays labeled as crew-reported, with photos
-  shown when they were actually submitted.
+### Reporting that gives teams something to act on
 
-## How we built it
+Residents capture a photo, add context, and confirm a location on their phone.
+Organizers receive an actionable case with evidence and a place to send a crew.
+Saved submissions can be recovered when connectivity interrupts the process.
 
-| Part of the experience | What powers it |
+### Prioritization with human judgment
+
+Photo analysis identifies visible conditions, and explicit rules translate those
+observations into priority. Suspected hazards, uncertainty, and possible
+duplicates are surfaced for review. Organizers keep control of the decisions
+that commit people and resources.
+
+### Dispatch built around available capacity
+
+Organizers bring jobs and crews together in a routing workspace. Plans account
+for road travel times, equipment, crew capacity, and work already underway.
+They can inspect the proposed response, see work that does not fit, and approve
+dispatch with a clear view of the tradeoffs.
+
+### A visible path to completion
+
+Crews receive ordered stops, start their assignments, and report completion,
+optionally adding a cleanup photo. Residents can follow the original report's
+progress and history. Consented iMessage status updates provide another way to
+receive that information.
+
+## Who it is built for
+
+| Intended customer or user | Value WasteGrid is designed to offer |
 | --- | --- |
-| Resident and crew app | **Expo + React Native** for photo capture, location, reporting, and crew execution. |
-| Organizer console | **React + Leaflet** for report review, operational views, route maps, and dispatch. |
-| Photo understanding | **Chalk Model Gateway** for structured vision output, validated before Python priority rules use it. |
-| Cleanup planning | **OSRM road travel times + a custom routing heuristic**, balancing priority, resources, and route constraints. |
-| Shared case history | **FastAPI + Supabase** for reports, private photos, staff roles, assignments, and updates. |
-| Phone updates | **Photon** for consented iMessage copies and delivery tracking in the supervised messaging flow. |
+| **Local authorities and sanitation teams** | A shared view of reported problems, priorities, assigned work, and unresolved demand. |
+| **Cleanup operators and contractors** | A way to organize field crews around actual jobs, travel, equipment, and capacity. |
+| **Campuses, housing communities, and facilities teams** | A reporting and response workflow for the shared spaces they manage. |
+| **Community organizations** | A way to coordinate cleanup activity and keep participating residents informed. |
+| **Residents** | A simple way to raise a concern and follow the response to it. |
 
-The engineering challenge was keeping the whole journey consistent: a report
-must remain the same report through AI assessment, human review, route changes,
-crew execution, and retries. The implementation preserves that connection across
-the mobile app, browser console, and backend.
+The organization responsible for delivering the service is the prospective
+customer. Residents and crews are the people whose participation makes that
+service work.
 
-## Follow the demo
+## The business value
 
-The hackathon walkthrough follows **one report from submission to resident-visible
-completion**. Residents and crews use the Android app; the organizer uses the
-browser console. A single phone can demonstrate both roles by switching accounts
-while keeping the original report.
+WasteGrid is designed to improve four parts of the operating model:
 
-Start with the [product walkthrough](docs/demo.md). The
-[one-phone demo guide](docs/backend/hackathon-finish.md) covers the complete sequence
-and the configured assessment session.
+- **Less coordination overhead.** Photos, locations, review decisions, assignments,
+  and updates stay connected, reducing the need to reconstruct a case across
+  separate conversations and lists.
+- **Better use of crew capacity.** Planning considers travel and resource needs
+  before dispatch, helping organizations make deliberate choices about what
+  their teams can complete.
+- **Clearer service accountability.** A shared history makes it possible to follow
+  a report through review, assignment, and crew-reported completion, including
+  evidence when a photo is supplied.
+- **A stronger resident feedback loop.** People can see progress after submitting,
+  giving the organization a consistent way to communicate its response.
 
-This is a supervised prototype. Assessment and phone messaging need their configured
-services, and cleanup completion is reported by the crew. Citywide deployment and
-measured environmental impact are future validation work.
+The commercial opportunity is to make coordination itself a useful service:
+helping an organization direct its existing cleanup resources more effectively
+while making its work visible to the community.
 
-## Explore the project
+## Business model and path to adoption
 
-- [Mobile app](mobile/README.md): resident reporting, crew routes, and account roles.
-- [Organizer console](web/README.md): review, maps, and dispatch.
-- [Development guide](docs/development.md): local setup, architecture, tests, and deployment.
-- [Documentation index](docs/README.md): backend contracts, routing, assessment, and messaging.
+A proposed **B2B/B2G subscription model** would charge the organization operating
+the service while keeping resident reporting free. Plans could scale with the
+number of active crews or the service areas managed. Future paid capabilities
+could include multi-area reporting, service-level analytics, and integrations
+with an organization's existing work-order systems.
+
+An initial rollout could focus on one campus, managed community, or local
+service area with a clear operational owner. The first goal would be to prove
+value within that team's existing workflow before expanding to additional crews
+or locations.
+
+A rollout would measure time from report to resolution, travel time per completed
+job, crew workload, and resident follow-up engagement. These are validation
+targets for the business case, rather than claimed field results.
+
+## Why this approach matters
+
+**The full response stays connected.** Community reporting, operational planning,
+crew execution, and resident communication share the same case.
+
+**AI supports the people doing the work.** Photo understanding helps organize
+incoming information; human review and dispatch approval remain central.
+
+**The workflow accounts for field conditions.** Equipment requirements, road
+travel, existing assignments, and recoverable submissions shape the response.
+
+Together, these choices make WasteGrid a foundation for running a cleanup
+service with a clearer connection between community needs and operational action.
+
+## Technology with a purpose
+
+**Expo and React Native** power the resident and crew app; **React and Leaflet**
+power the organizer workspace. **FastAPI and Supabase** maintain shared reports,
+private photos, roles, and job history. **Chalk Model Gateway** supports structured
+photo understanding, **OSRM** supplies road travel times for the custom routing
+heuristic, and **Photon** powers consented iMessage updates.
+
+## Our vision
+
+A resident should be able to point out a problem and follow a meaningful response.
+A cleanup team should be able to turn that signal into a practical plan.
+
+WasteGrid's ambition is to make that connection part of everyday community
+infrastructure: cleaner shared spaces, better-coordinated field work, and a more
+visible relationship between public concerns and the service delivered.
+
+---
+
+[Mobile app](mobile/README.md) · [Organizer workspace](web/README.md) ·
+[Development guide](docs/development.md) · [Project documentation](docs/README.md)
