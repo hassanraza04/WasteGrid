@@ -38,14 +38,14 @@ test('crew GPS uses observed timestamps, prevents overlaps and never publishes a
  const state={currentState:'active',addEventListener:(_event,fn)=>{onState=fn;return{remove(){onState=undefined}}}};
  const {useCrewLocation}=load('hooks/use-crew-location.ts',{
   'react-native':{AppState:state},'expo-router':{useFocusEffect:callback=>React.useEffect(callback,[callback])},
-  'expo-location':{Accuracy:{High:4},requestForegroundPermissionsAsync:async()=>({status:'granted'}),getCurrentPositionAsync:()=>{const pending=deferred();observations.push(pending);return pending.promise;}},
+  'expo-location':{Accuracy:{High:4},requestForegroundPermissionsAsync:async()=>({status:'granted'}),watchPositionAsync:async(_options,callback,error)=>{const watch={resolve:callback,error,removed:0,remove(){this.removed++;}};observations.push(watch);return watch;}},
   '@/auth/session':{getSession:()=>owner,useSession:()=>owner},'@/services/staff':{staffApi:{location:async(...args)=>{posts.push(args);}}},
  });
  function Probe(){result=useCrewLocation();return null;}
  const view=mount(Probe,{});const observed={timestamp:1700000000000,coords:{latitude:24,longitude:67}};
  try{
   await view.render();assert.equal(observations.length,1);await act(async()=>result.refresh());assert.equal(observations.length,1);
-  state.currentState='background';await act(async()=>observations[0].resolve(observed));assert.equal(posts.length,0);
+  state.currentState='background';await act(async()=>onState('background'));assert.equal(observations[0].removed,1);await act(async()=>observations[0].resolve(observed));assert.equal(posts.length,0);
   state.currentState='active';await act(()=>onState('active'));await act(async()=>observations[1].resolve(observed));assert.deepEqual(posts,[[observed.coords,new Date(observed.timestamp).toISOString()]]);
   await act(async()=>{void result.refresh();await Promise.resolve();});assert.equal(observations.length,3);await view.close();await act(async()=>observations[2].resolve(observed));assert.equal(posts.length,1);
  }finally{observations.forEach(pending=>pending.resolve(observed));if(view.container.isConnected)await view.close();}
@@ -75,7 +75,7 @@ test('a mutation refresh queued behind an old read fetches the new server state'
  }finally{await view.close();}
 });
 
-test('timed-out native GPS remains guarded through manual, foreground and scheduled refreshes',async()=>{
+test('timed-out GPS watches are removed and manual, foreground and scheduled retries recover',async()=>{
  const owner={role:'crew'};let result,onState,timeout,scheduled;const observations=[],posts=[];
  const originalTimeout=globalThis.setTimeout,originalInterval=globalThis.setInterval;
  globalThis.setTimeout=(fn,ms,...args)=>ms===15000?(timeout=fn,undefined):originalTimeout(fn,ms,...args);
@@ -83,15 +83,38 @@ test('timed-out native GPS remains guarded through manual, foreground and schedu
  const {useCrewLocation}=load('hooks/use-crew-location.ts',{
   'react-native':{AppState:{currentState:'active',addEventListener:(_event,fn)=>{onState=fn;return{remove(){}}}}},
   'expo-router':{useFocusEffect:callback=>React.useEffect(callback,[callback])},
-  'expo-location':{Accuracy:{High:4},requestForegroundPermissionsAsync:async()=>({status:'granted'}),getCurrentPositionAsync:()=>{const pending=deferred();observations.push(pending);return pending.promise;}},
+  'expo-location':{Accuracy:{High:4},requestForegroundPermissionsAsync:async()=>({status:'granted'}),watchPositionAsync:async(_options,callback,error)=>{assert.ok(observations.every(watch=>watch.removed===1));const watch={resolve:callback,error,removed:0,remove(){this.removed++;}};observations.push(watch);return watch;}},
   '@/auth/session':{getSession:()=>owner,useSession:()=>owner},'@/services/staff':{staffApi:{location:async(...args)=>posts.push(args)}},
  });function Probe(){result=useCrewLocation();return null;}
  const view=mount(Probe,{});const fix={timestamp:1700000000000,coords:{latitude:24,longitude:67}};
  try{
-  await view.render();await act(async()=>timeout());assert.match(result.message,/GPS timed out/);
-  await act(async()=>{void result.refresh();onState('active');scheduled();});assert.equal(observations.length,1);
-  await act(async()=>observations[0].resolve(fix));assert.equal(posts.length,0);
-  await act(async()=>{void result.refresh();});assert.equal(observations.length,2);
-  await act(async()=>observations[1].resolve(fix));assert.equal(posts.length,1);
- }finally{observations.forEach(item=>item.resolve(fix));await view.close();globalThis.setTimeout=originalTimeout;globalThis.setInterval=originalInterval;}
+  await view.render();
+  for(const retry of [()=>{void result.refresh();},()=>onState('active'),()=>scheduled()]){
+   const previous=observations.at(-1);
+   await act(async()=>timeout());assert.match(result.message,/GPS timed out/);assert.equal(previous.removed,1);
+   await act(async()=>retry());const current=observations.at(-1);assert.notEqual(current,previous);
+   await act(async()=>previous.resolve(fix));assert.equal(posts.length,0);
+   await act(async()=>{void result.refresh();});assert.equal(observations.at(-1),current);
+  }
+  await act(async()=>observations.at(-1).resolve(fix));assert.equal(posts.length,1);assert.ok(observations.every(watch=>watch.removed===1));
+  await act(async()=>{void result.refresh();});await act(async()=>observations.at(-1).error('GPS unavailable'));assert.match(result.message,/GPS unavailable/);assert.equal(observations.at(-1).removed,1);
+  await act(async()=>{void result.refresh();});await view.close();assert.equal(observations.at(-1).removed,1);
+ }finally{if(view.container.isConnected)await view.close();globalThis.setTimeout=originalTimeout;globalThis.setInterval=originalInterval;}
+});
+
+test('GPS removes subscriptions even when a fix arrives before registration or registration finishes after blur',async()=>{
+ const owner={role:'crew'};let result;let delayed=false,removed=0;const registration=deferred(),posts=[];
+ const fix={timestamp:1700000000000,coords:{latitude:24,longitude:67}};
+ const {useCrewLocation}=load('hooks/use-crew-location.ts',{
+  'react-native':{AppState:{currentState:'active',addEventListener:()=>({remove(){}})}},
+  'expo-router':{useFocusEffect:callback=>React.useEffect(callback,[callback])},
+  'expo-location':{Accuracy:{High:4},requestForegroundPermissionsAsync:async()=>({status:'granted'}),watchPositionAsync:async(_options,callback)=>{if(delayed)return registration.promise;callback(fix);return{remove(){removed++;}};}},
+  '@/auth/session':{getSession:()=>owner,useSession:()=>owner},'@/services/staff':{staffApi:{location:async()=>{assert.equal(removed,1);posts.push(fix);}}},
+ });function Probe(){result=useCrewLocation();return null;}
+ const view=mount(Probe,{});
+ try{
+  await view.render();assert.equal(posts.length,1);assert.equal(removed,1);
+  delayed=true;await act(async()=>{void result.refresh();});await view.close();
+  await act(async()=>registration.resolve({remove(){removed++;}}));assert.equal(removed,2);assert.equal(posts.length,1);
+ }finally{registration.resolve({remove(){}});if(view.container.isConnected)await view.close();}
 });

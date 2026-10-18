@@ -92,4 +92,4 @@ records and preserve the shared illustrative fixture.
 
 Dispatch reads `/plans/current` with each fleet refresh, including after approval or pending-action recovery. The saved plan lists all assignments, including preserved work for unselected crews; current active job statuses identify ongoing and locked stops. Preview stops show individual travel and service durations alongside cumulative completion time.
 
-A GPS timeout reports failure without releasing ownership of the native location request. Manual, scheduled and foreground refreshes remain guarded until that request settles; a late timed-out observation is discarded.
+GPS uses a cancellable one-fix location watch. After 15 seconds without a fix, it removes the subscription and releases the guard so manual, scheduled and foreground refreshes can retry. Success, provider errors, backgrounding and blur also remove the watch; late callbacks are ignored.
