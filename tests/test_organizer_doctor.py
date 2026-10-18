@@ -1,5 +1,7 @@
 """Startup checks distinguish configuration from worker/model readiness."""
 
+import json
+
 import httpx
 import pytest
 
@@ -28,6 +30,67 @@ def test_valid_configuration_contains_no_ai_ready_claim():
 
 
 @pytest.mark.parametrize(
+    "origin",
+    [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "https://wastegrid-organizer.onrender.com",
+        "https://organizer.example:8443",
+        "https://[2001:db8::1]:8443",
+    ],
+)
+def test_dashboard_accepts_exact_local_or_https_origin(origin):
+    values = {
+        **configuration(),
+        "DASHBOARD_ORIGIN": origin,
+        "CORS_ORIGINS": json.dumps([origin]),
+    }
+    assert public_configuration(values) == []
+    values["CORS_ORIGINS"] = '["https://another-organizer.example"]'
+    assert any("CORS_ORIGINS" in issue for issue in public_configuration(values))
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://organizer.example",
+        "https://organizer.example/",
+        "https://organizer.example/reports",
+        "https://organizer.example?token=never-echo",
+        "https://organizer.example?",
+        "https://organizer.example#reports",
+        "https://organizer.example#",
+        "https://never-echo@organizer.example",
+        "https://user:never-echo@organizer.example",
+        "https://organizer.example:invalid",
+        "https://organizer.example:99999",
+        "https://organizer.example:",
+        "https://organizer.example:443",
+        "https://ORGANIZER.example",
+        "https://organizer^example",
+        "https://organizer.example\x00",
+        "https://[::1",
+        "https://",
+        "https://organizer .example",
+        "https://organizer.example\\reports",
+        "https://*.example",
+        "https://%65xample.com",
+    ],
+)
+def test_dashboard_rejects_url_instead_of_origin_even_when_cors_matches(origin):
+    issues = public_configuration(
+        {
+            **configuration(),
+            "DASHBOARD_ORIGIN": origin,
+            "CORS_ORIGINS": json.dumps([origin]),
+        }
+    )
+    assert any("DASHBOARD_ORIGIN" in issue for issue in issues)
+    assert origin not in str(issues)
+    assert "never-echo" not in str(issues)
+
+
+@pytest.mark.parametrize(
     "field,value",
     [
         ("VITE_API_BASE_URL", "https://secret@example.com"),
@@ -48,7 +111,10 @@ def test_mismatches_are_reported_without_values(field, value):
     assert value not in str(issues) or not value or value in ("true", "false")
 
 
-def test_deployed_contract_revision_flags_and_exact_cors():
+@pytest.mark.parametrize(
+    "origin", ["http://127.0.0.1:5173", "https://wastegrid-organizer.onrender.com"]
+)
+def test_deployed_contract_revision_flags_and_exact_cors(origin):
     def handler(request):
         if request.url.path == "/ready":
             return httpx.Response(
@@ -76,20 +142,14 @@ def test_deployed_contract_revision_flags_and_exact_cors():
                     },
                 },
             )
-        return httpx.Response(
-            200, headers={"access-control-allow-origin": "http://127.0.0.1:5173"}
-        )
+        return httpx.Response(200, headers={"access-control-allow-origin": origin})
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        assert (
-            deployed_checks(
-                client, "https://api.example", "http://127.0.0.1:5173", "a" * 40
-            )
-            == []
-        )
+        assert deployed_checks(client, "https://api.example", origin, "a" * 40) == []
         assert deployed_checks(
-            client, "https://api.example", "http://localhost:5173", "b" * 40
-        )
+            client, "https://api.example", "https://another-organizer.example", "a" * 40
+        ) == ["Deployed CORS does not allow the exact dashboard origin"]
+        assert deployed_checks(client, "https://api.example", origin, "b" * 40)
 
 
 @pytest.mark.parametrize(

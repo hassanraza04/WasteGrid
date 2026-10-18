@@ -5,6 +5,62 @@ isolated crew, the organiser browser and one phone. This checklist adds crew
 preparation to [the organiser prototype runbook](organizer-prototype.md); it does
 not activate an assessment session or establish live acceptance by itself.
 
+## Public organizer deployment
+
+1. Merge and push the reviewed revision before creating or updating services.
+   The existing API service is manually managed. `render.dev.yaml` is its
+   reproducible API-only configuration, not an automatically synced Blueprint.
+   Apply its routing-enabled, messaging-disabled and OSRM values to the existing
+   service while preserving private environment values. Apply migration 0015 and
+   deploy the exact API revision using the [prototype runbook](organizer-prototype.md).
+   Blueprint adoption/sync requires a deliberate separate step; do not select the
+   legacy `render.yaml`.
+2. Create `wastegrid-organizer` as a separate Render static site on the same
+   repository's `main` branch. With the MCP creation tool, which does not expose
+   a root directory, use build `cd web && npm ci && npm run build` and publish
+   path `web/dist`. Set `NODE_VERSION=22`, `SKIP_INSTALL_DEPS=true` and the three
+   public values `VITE_API_BASE_URL`, `VITE_SUPABASE_URL` and
+   `VITE_SUPABASE_PUBLISHABLE_KEY` from the reviewed client configuration. These
+   enter the browser bundle; never supply database, service-role, API-agent or
+   Chalk credentials. Keep automatic deploys off.
+
+   The MCP tool does not expose redirect/rewrite rules. In the static site's
+   Render Dashboard, add **Rewrite** from `/*` to `/index.html` before checking
+   direct browser routes.
+
+   Alternatively, deliberately create a separate Blueprint with **Blueprint Path
+   `render.organizer.yaml`** after it is merged. It declares only the static site,
+   with root `web`, build `npm ci && npm run build`, publish `dist`, Node 22,
+   automatic deploys off and the SPA rewrite already included. It is a reproducible
+   alternative to manual creation; do not create a second site for the same demo.
+3. Copy the actual HTTPS site origin from Render (scheme and host, no trailing
+   slash). Add that exact origin to the API's `CORS_ORIGINS` JSON array while
+   preserving existing local origins, then deploy the API with the new settings.
+   Set the same `DASHBOARD_ORIGIN` and `CORS_ORIGINS` in the doctor's local env
+   file. For Blueprint users, `sync: false` prompts only during initial creation;
+   update existing service values in Render's Environment settings. Vite
+   configuration changes require a fresh static-site build.
+4. From the clean checkout of the deployed API revision, run:
+
+   ```sh
+   python -m scripts.organizer_doctor \
+     --env-file /home/omerh/WasteGrid/.env \
+     --expected-revision FULL_DEPLOYED_API_COMMIT_SHA
+   ```
+
+   Open the public site's `/admin` route, sign in as the organizer, and reload
+   `/admin/reports/REPORT_ID` directly to check the SPA rewrite. Confirm the
+   expected report and crew appear. This publishes the UI and checks API/CORS;
+   the assessment window still starts only with the explicitly approved session
+   commands below.
+
+The Blueprint paths follow Render's [monorepo root-directory rules](https://render.com/docs/monorepo-support)
+and [static-site rewrite rules](https://render.com/docs/redirects-rewrites).
+Both files were validated against Render's public JSON schema. The Render CLI
+was unavailable for platform validation; when available, run
+`render blueprints validate render.dev.yaml` and
+`render blueprints validate render.organizer.yaml` before syncing.
+
 ## Before starting the assessment window
 
 1. Merge/review and deploy the intended API revision, apply migration 0015, and run
