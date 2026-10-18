@@ -278,6 +278,15 @@ export class RoutingContractError extends Error {}
 
 export class RoutingConflictError extends Error {}
 
+export class OrganizerMutationRejectedError extends Error {
+  constructor(
+    message: string,
+    readonly status: 409 | 422,
+  ) {
+    super(message);
+  }
+}
+
 export class OrganizerApi {
   private authenticationVersion = 0;
   private organizerId: string | null = null;
@@ -615,11 +624,15 @@ export class OrganizerApi {
           "This report is no longer available. Refresh the reports list.",
         );
       if (action === "mutation" && response.status === 409)
-        throw new Error(
+        throw new OrganizerMutationRejectedError(
           "This report changed or is not ready for that decision. Reload it and review the latest details.",
+          409,
         );
       if (action === "mutation" && response.status === 422)
-        throw new Error("Check the decision fields and try again.");
+        throw new OrganizerMutationRejectedError(
+          "Check the decision fields and try again.",
+          422,
+        );
       if (action === "mutation")
         throw new Error("Unable to save the organiser decision. Please retry.");
       if (action === "routing" && response.status === 409)

@@ -701,3 +701,165 @@ def test_demo_preserves_nearby_illustrative_assignment_and_held_report(
             )
             is None
         )
+
+
+@pytest.mark.parametrize("owner_change", ["expired", "taken_over"])
+@pytest.mark.parametrize("outcome", ["success", "failure"])
+@pytest.mark.parametrize("held", [False, True])
+def test_revoked_owner_cannot_commit_inference_outcome_or_replay(
+    demo, owner_change, outcome, held
+):
+    from api.models import Event
+
+    activate(demo)
+    replacement = uuid4()
+    expected_report = []
+
+    def report_state(report):
+        return (
+            report.version,
+            report.state,
+            report.assessment_status,
+            report.assessment,
+            report.priority,
+            report.priority_reason,
+            report.needs_review,
+            report.organizer_review_required,
+            report.job_id,
+        )
+
+    def revoke_during_inference():
+        with Session(demo.engine) as db:
+            mutation_lock(db)
+            task = db.scalar(select(Task).where(Task.status == "running"))
+            assert task.attempts == 1 and task.leased_until > now()
+            run = db.get(AssessmentDemoRun, demo.run_id)
+            run.worker_lease_until = now() - timedelta(seconds=1)
+            if owner_change == "taken_over":
+                acquire_owner(db, demo.run_id, replacement)
+            report = db.get(Report, demo.report_ids[0])
+            if held:
+                report.needs_review = report.organizer_review_required = True
+                report.state = "needs_review"
+                report.priority_reason = "Existing organiser hold must remain unchanged"
+                report.version += 1
+            expected_report.append(report_state(report))
+            db.commit()
+
+    model, calls = assessment_client(
+        revoke_during_inference,
+        error=TimeoutError() if outcome == "failure" else None,
+    )
+    assert process(demo, model)
+    assert len(calls) == 1
+    with Session(demo.engine) as db:
+        report = db.get(Report, demo.report_ids[0])
+        assert report_state(report) == expected_report[0]
+        assert db.scalar(select(Task).where(Task.kind == "triage")) is None
+        assert db.scalar(select(Job)) is None
+        assert (
+            db.scalar(
+                select(Event.id).where(
+                    Event.report_id == report.id,
+                    Event.kind.in_(("report.assessed", "report.assessment_failed")),
+                )
+            )
+            is None
+        )
+        run = db.get(AssessmentDemoRun, demo.run_id)
+        assert run.used_attempts == 1 and run.last_success_at is None
+        task = db.scalar(select(Task).where(Task.status == "running"))
+        assert task.attempts == 1 and task.leased_until > now()
+        assert task.result is None and task.last_error is None
+        task_id = task.id
+
+        # The current owner must respect the still-live task lease. After lease
+        # expiry it may terminalize interruption, without refunding/replaying.
+        mutation_lock(db)
+        acquire_owner(db, demo.run_id, replacement)
+        stop_run(db, demo.run_id)
+        db.commit()
+    demo.owner = replacement
+    assert not process(demo, model)
+    with Session(demo.engine) as db:
+        mutation_lock(db)
+        db.get(Task, task_id).leased_until = now() - timedelta(seconds=1)
+        db.commit()
+    assert process(demo, model)
+    assert not process(demo, model)
+    assert len(calls) == 1 and status(demo)["used_attempts"] == 1
+    with Session(demo.engine) as db:
+        task = db.get(Task, task_id)
+        assert task.status == "failed" and task.last_error == "assessment_interrupted"
+        report = db.get(Report, demo.report_ids[0])
+        assert report.needs_review and report.organizer_review_required is held
+        assert report.assessment is None and report.job_id is None
+        assert db.get(AssessmentDemoRun, demo.run_id).last_success_at is None
+
+
+def test_inflight_result_and_earned_triage_survive_window_expiry_with_live_owner(
+    demo, monkeypatch
+):
+    # Start a still-active approval near the end of its immutable window. The
+    # inference finishes just after expiry, within both ownership/task leases.
+    started = now() - timedelta(minutes=59, seconds=50)
+    with Session(demo.engine) as db:
+        mutation_lock(db)
+        with monkeypatch.context() as clock:
+            clock.setattr("api.assessment_demo.now", lambda: started)
+            run = create_run(db, REVISION)
+        demo.run_id = run.id
+        acquire_owner(db, demo.run_id, demo.owner)
+        db.commit()
+    finished = now() + timedelta(seconds=20)
+
+    def expire_window_only():
+        monkeypatch.setattr("api.assessment_demo.now", lambda: finished)
+        monkeypatch.setattr("api.worker.now", lambda: finished)
+
+    model, calls = assessment_client(expire_window_only)
+    assert process(demo, model)
+    with Session(demo.engine) as db:
+        report = db.get(Report, demo.report_ids[0])
+        assert report.assessment_status == "assessed" and report.assessment is not None
+        run = db.get(AssessmentDemoRun, demo.run_id)
+        assert run.last_success_at == finished and run.used_attempts == 1
+        assert run.worker_owner == demo.owner and run.worker_lease_until > finished
+    assert process(demo, model)  # Already-earned deterministic triage may drain.
+    assert not process(demo, model)
+    assert len(calls) == 1
+    assert status(demo)["status"] == "closed"
+    assert status(demo)["reason"] == "window_expired"
+    with Session(demo.engine) as db:
+        assert db.get(Report, demo.report_ids[0]).job_id is not None
+        assert db.get(Report, demo.report_ids[1]).assessment_status == "pending"
+
+
+def test_expired_task_cannot_commit_result_even_when_owner_is_retained(demo):
+    activate(demo)
+
+    def expire_task_only():
+        with Session(demo.engine) as db:
+            mutation_lock(db)
+            task = db.scalar(select(Task).where(Task.status == "running"))
+            task.leased_until = now() - timedelta(seconds=1)
+            stop_run(db, demo.run_id)
+            db.commit()
+
+    model, calls = assessment_client(expire_task_only)
+    assert process(demo, model)
+    with Session(demo.engine) as db:
+        report = db.get(Report, demo.report_ids[0])
+        assert report.assessment is None and report.assessment_status == "pending"
+        assert db.get(AssessmentDemoRun, demo.run_id).last_success_at is None
+        assert db.scalar(select(Task).where(Task.kind == "triage")) is None
+    assert process(demo, model)  # Current owner performs no-replay cleanup.
+    assert not process(demo, model)
+    assert len(calls) == 1 and status(demo)["used_attempts"] == 1
+    with Session(demo.engine) as db:
+        report = db.get(Report, demo.report_ids[0])
+        assert report.assessment_status == "failed" and report.needs_review
+        assert (
+            db.scalar(select(Task).where(Task.status == "failed")).last_error
+            == "assessment_interrupted"
+        )

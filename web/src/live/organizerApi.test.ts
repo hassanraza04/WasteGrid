@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import { AccessError, createOrganizerApi, OrganizerApi, RoutingConflictError, RoutingContractError, type DecisionCommand, type OrganizerJobDetails, type OrganizerReportDetails, type StaffAuth } from "./organizerApi";
+import { AccessError, OrganizerMutationRejectedError, createOrganizerApi, OrganizerApi, RoutingConflictError, RoutingContractError, type DecisionCommand, type OrganizerJobDetails, type OrganizerReportDetails, type StaffAuth } from "./organizerApi";
 vi.mock("@supabase/supabase-js", () => ({ createClient: vi.fn() }));
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.clearAllMocks(); });
 function setup() {
@@ -90,6 +90,8 @@ test("sets priority as authenticated JSON and returns the updated report", async
 });
 test.each([[409, "changed or is not ready"], [422, "Check the decision fields"]])("keeps decision HTTP %s errors safe and action-specific", async (status, message) => {
   const { api, fetcher } = setup(); fetcher.mockResolvedValue(new Response("private server response", { status }));
+  await expect(api.applyDecision("report-id", decision)).rejects.toMatchObject({ status });
+  await expect(api.applyDecision("report-id", decision)).rejects.toBeInstanceOf(OrganizerMutationRejectedError);
   await expect(api.applyDecision("report-id", decision)).rejects.toThrow(message);
   await expect(api.applyDecision("report-id", decision)).rejects.not.toThrow("private server response");
 });

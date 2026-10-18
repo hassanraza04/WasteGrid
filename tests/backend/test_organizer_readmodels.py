@@ -377,3 +377,79 @@ def test_report_index_reports_job_event_recency_without_audit_payload(reads, eng
     item = get(reads, "/organizer/report-index")["items"][0]
     assert datetime.fromisoformat(item["updated_at"]) == event_at
     assert "PRIVATE" not in str(item)
+
+
+def test_approved_assessment_history_leaves_current_review_queue(reads, engine):
+    with Session(engine) as db:
+        row = seed_report(
+            db,
+            state="needs_review",
+            location={"latitude": 24.92, "longitude": 67.09},
+            assessment_status="needs_review",
+            assessment=assessment().model_dump(),
+            priority="routine",
+            needs_review=True,
+            organizer_review_required=True,
+        )
+        report_id, version = str(row.id), row.version
+        db.commit()
+    assert get(reads, "/organizer/overview")["counts"]["needs_review"] == 1
+    assert get(reads, "/organizer/report-index", view="needs_review")["total"] == 1
+    approved = reads.post(
+        f"/organizer/reports/{report_id}/decision",
+        headers=auth("org"),
+        json={
+            "command_id": str(uuid4()),
+            "report_id": report_id,
+            "expected_version": version,
+            "category": "litter",
+            "proposed_equipment": ["gloves", "trash_bags"],
+            "evidence_sufficient": True,
+            "missing_information": [],
+            "decision_summary": "Reviewed the original evidence and approved collection.",
+            "evidence_report_ids": [report_id],
+            "next_action": "create_job",
+            "estimated_service_minutes": 10,
+        },
+    )
+    assert approved.status_code == 200, approved.text
+    value = approved.json()
+    assert value["state"] == "linked_to_job"
+    assert value["assessment_status"] == "needs_review"  # original AI outcome retained
+    assert value["needs_review"] is False
+    assert get(reads, "/organizer/overview")["counts"]["needs_review"] == 0
+    assert get(reads, "/organizer/report-index", view="needs_review")["total"] == 0
+    summary = get(reads, "/organizer/report-index")["items"][0]
+    assert summary["needs_review"] is False
+    assert summary["assessment_status"] == "needs_review"
+    assert get(reads, "/organizer/job-index")["items"][0]["eligible"] is True
+    # A later current hold still wins over the historical organiser approval.
+    with Session(engine) as db:
+        db.get(Report, UUID(report_id)).organizer_review_required = True
+        db.commit()
+    assert get(reads, "/organizer/overview")["counts"]["needs_review"] == 1
+    assert get(reads, "/organizer/report-index", view="needs_review")["total"] == 1
+    assert get(reads, "/organizer/report-index")["items"][0]["needs_review"] is True
+    assert get(reads, "/organizer/job-index")["items"][0]["eligible"] is False
+
+
+@pytest.mark.parametrize(
+    "changes,expected",
+    [
+        ({}, False),
+        ({"needs_review": True}, True),
+        ({"organizer_review_required": True}, True),
+        ({"state": "needs_review"}, True),
+    ],
+)
+def test_review_count_filter_and_summary_share_current_holds(
+    reads, engine, changes, expected
+):
+    with Session(engine) as db:
+        seed_report(db, assessment_status="needs_review", **changes)
+        db.commit()
+    assert get(reads, "/organizer/overview")["counts"]["needs_review"] == int(expected)
+    assert get(reads, "/organizer/report-index", view="needs_review")["total"] == int(
+        expected
+    )
+    assert get(reads, "/organizer/report-index")["items"][0]["needs_review"] is expected

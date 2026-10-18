@@ -4,6 +4,7 @@ import { Dialog } from "./OrganizerUI";
 
 import {
   AccessError,
+  OrganizerMutationRejectedError,
   type DecisionCommand,
   type Equipment,
   type NextAction,
@@ -47,7 +48,12 @@ type Props = {
 };
 type PendingDecision = {
   decision: DecisionCommand | null;
-  priority: { commandId: string; priority: Priority; reason: string } | null;
+  priority: {
+    commandId: string;
+    priority: Priority;
+    reason: string;
+    expectedVersion: number;
+  } | null;
   sessionVersion: number | undefined;
   api: OrganizerApi;
   reportSnapshot: OrganizerReport;
@@ -70,7 +76,12 @@ function DecisionForm({
   onReload,
   onSessionExpired,
 }: Props) {
+  // Background refreshes update the evidence, never the version of an existing draft.
+  const [draftReport, setDraftReport] = useState(report);
   const [draft, setDraft] = useState<Draft>(() => fromReport(report));
+  const [attempted, setAttempted] = useState(false);
+  const [priorityStage, setPriorityStage] = useState(false);
+  const [reloadNotice, setReloadNotice] = useState("");
   const [validation, setValidation] = useState("");
   const [pending, setPending] = useState<PendingDecision | null>(null);
   const [decisionSaved, setDecisionSaved] = useState<OrganizerReport | null>(
@@ -98,9 +109,19 @@ function DecisionForm({
       mounted.current = false;
     };
   }, []);
-  const priorityOnly = report.state === "linked_to_job";
+  const priorityOnly = draftReport.state === "linked_to_job" || priorityStage;
+  const draftChanged = report.version > draftReport.version;
+  // A later version can be the result of our own uncertain request. In that case
+  // retain the original command/version and recover it through an exact retry.
+  const confirmationChanged =
+    !!pending && !attempted && report.version > pending.reportSnapshot.version;
+  const reviewStale = stale || confirmationChanged;
+  const staleNotice =
+    "This report changed since this draft was prepared. Reload the latest report and inspect its evidence before a new review.";
 
-  function isCurrent(operation: PendingDecision) {
+  function isCurrent(
+    operation: Pick<PendingDecision, "api" | "sessionVersion">,
+  ) {
     return (
       mounted.current &&
       currentApi.current === operation.api &&
@@ -120,6 +141,7 @@ function DecisionForm({
   }
 
   function review() {
+    if (draftChanged || saving) return;
     const invalid = validate(draft, priorityOnly);
     if (invalid) {
       setValidation(invalid);
@@ -137,8 +159,8 @@ function DecisionForm({
       ? null
       : {
           command_id: crypto.randomUUID(),
-          expected_version: report.version,
-          report_id: report.id,
+          expected_version: draftReport.version,
+          report_id: draftReport.id,
           category: draft.category.trim(),
           proposed_equipment: draft.selectedEquipment,
           duplicate_candidate_id: candidate,
@@ -157,6 +179,8 @@ function DecisionForm({
     setError("");
     setOutcome("");
     setDecisionSaved(null);
+    setAttempted(false);
+    setReloadNotice("");
     setPending({
       decision,
       priority: draft.priority
@@ -164,35 +188,45 @@ function DecisionForm({
             commandId: crypto.randomUUID(),
             priority: draft.priority,
             reason: draft.priorityReason.trim(),
+            expectedVersion: draftReport.version + (decision ? 1 : 0),
           }
         : null,
       sessionVersion: api.sessionVersion,
       api,
-      reportSnapshot: report,
+      reportSnapshot: draftReport,
     });
   }
 
   async function apply() {
-    if (!pending || saving || !isCurrent(pending)) return;
+    if (!pending || saving || reviewStale || !isCurrent(pending)) return;
     const operation = pending;
+    setAttempted(true);
     setSaving(true);
     setError("");
     try {
       const decisionResult =
         decisionSaved ??
         (operation.decision
-          ? await api.applyDecision(report.id, operation.decision)
+          ? await api.applyDecision(
+              operation.reportSnapshot.id,
+              operation.decision,
+            )
           : operation.reportSnapshot);
       if (!isCurrent(operation)) return;
       if (operation.priority) {
         const command: PriorityCommand = {
           command_id: operation.priority.commandId,
-          expected_version: decisionResult.version,
+          // A triage replay may return a later current report. It cannot rebase
+          // the independent priority intent onto evidence that was never reviewed.
+          expected_version: operation.priority.expectedVersion,
           priority: operation.priority.priority,
           reason: operation.priority.reason,
         };
         try {
-          const priorityResult = await api.setPriority(report.id, command);
+          const priorityResult = await api.setPriority(
+            operation.reportSnapshot.id,
+            command,
+          );
           if (!isCurrent(operation)) return;
           setOutcome(
             `Priority update recorded. Current priority: ${priorityResult.priority}. ${reportOutcome(priorityResult)}`,
@@ -213,6 +247,11 @@ function DecisionForm({
             `${operation.decision ? "The triage decision was saved. " : ""}${safeMessage(caught)} Retry the priority update when ready.`,
           );
           setStale(isStale(caught));
+          if (
+            caught instanceof OrganizerMutationRejectedError &&
+            caught.status === 422
+          )
+            setAttempted(false);
           if (operation.decision) onReportUpdated(decisionResult);
         }
       } else {
@@ -228,35 +267,57 @@ function DecisionForm({
       }
       setError(safeMessage(caught));
       setStale(isStale(caught));
+      if (
+        caught instanceof OrganizerMutationRejectedError &&
+        caught.status === 422
+      )
+        setAttempted(false);
     } finally {
       if (isCurrent(operation)) setSaving(false);
     }
   }
 
   function clear(saved?: OrganizerReport) {
-    if (saved) setDraft(fromReport(saved));
+    if (saved) {
+      setDraft(fromReport(saved));
+      setDraftReport(saved);
+      setPriorityStage(false);
+    } else if (decisionSaved) {
+      // Editing a rejected priority request cannot repeat an already saved triage.
+      setDraftReport(decisionSaved);
+      setPriorityStage(true);
+    }
     setPending(null);
     setDecisionSaved(null);
+    setAttempted(false);
     setError("");
     setStale(false);
+    setReloadNotice("");
   }
   async function reloadAfterStale() {
-    if (!pending || saving || !isCurrent(pending)) return;
-    const operation = pending;
+    const operation = pending ?? { api, sessionVersion: api.sessionVersion };
+    if (saving || !isCurrent(operation)) return;
+    const remainingPriority =
+      priorityStage || !!(pending?.priority && decisionSaved);
     setSaving(true);
     setError("");
     try {
       const refreshed = await onReload();
       if (!isCurrent(operation)) return;
-      if (refreshed && decisionSaved) {
-        // A definite conflict did not commit this priority command, so its version may be rebased.
-        setDecisionSaved(refreshed);
-        setStale(false);
-      } else if (refreshed) clear();
-      else
+      if (refreshed && refreshed.id === draftReport.id) {
+        // An explicit reload preserves this report's edits, but requires a fresh
+        // review/confirmation with a new identity before using its newer version.
+        clear();
+        setDraftReport(refreshed);
+        setPriorityStage(remainingPriority);
+        setReloadNotice(
+          "Latest report loaded. Your draft is preserved. Inspect the updated evidence, then review and confirm it again.",
+        );
+      } else {
         setError(
           "Unable to refresh the latest report. Keep this draft and retry the reload.",
         );
+      }
     } catch (caught) {
       if (!isCurrent(operation)) return;
       if (caught instanceof AccessError) onSessionExpired?.(caught);
@@ -270,8 +331,10 @@ function DecisionForm({
     return (
       <Dialog
         title="Review organiser decision"
-        busy={saving}
-        onClose={() => clear()}
+        busy={saving || attempted}
+        onClose={() => {
+          if (!attempted) clear();
+        }}
       >
         <section
           className="wg-confirmation"
@@ -322,6 +385,12 @@ function DecisionForm({
             saved decision may still require review or more information. It does
             not start a worker or send a message.
           </p>
+          <p>Reviewed report version: {pending.reportSnapshot.version}</p>
+          {confirmationChanged && (
+            <p className="wg-alert" role="alert">
+              {staleNotice}
+            </p>
+          )}
           {outcome && (
             <p className="wg-success" role="status">
               {outcome}
@@ -332,7 +401,14 @@ function DecisionForm({
               {error}
             </p>
           )}
-          {stale ? (
+          {attempted && !stale && error && (
+            <p className="wg-muted">
+              The result may already be committed. Retry keeps the original
+              command and version; editing stays disabled until its outcome is
+              known.
+            </p>
+          )}
+          {reviewStale ? (
             <button
               className="wg-button"
               disabled={saving}
@@ -355,7 +431,7 @@ function DecisionForm({
                   : "Apply organiser decision"}
             </button>
           )}
-          {!stale && (
+          {!reviewStale && !attempted && (
             <button
               className="wg-button"
               disabled={saving}
@@ -370,6 +446,25 @@ function DecisionForm({
 
   return (
     <section className="wg-form-grid" aria-label="Organiser decision form">
+      {(error || draftChanged) && (
+        <p className="wg-alert" role="alert">
+          {error || staleNotice}
+        </p>
+      )}
+      {draftChanged && (
+        <button
+          className="wg-button"
+          disabled={saving}
+          onClick={() => void reloadAfterStale()}
+        >
+          Reload latest report
+        </button>
+      )}
+      {reloadNotice && (
+        <p className="wg-success" role="status">
+          {reloadNotice}
+        </p>
+      )}
       {outcome && (
         <p className="wg-success" role="status">
           {outcome}
@@ -491,8 +586,9 @@ function DecisionForm({
       )}
       {priorityOnly && (
         <p>
-          This report is already linked to a job. Its priority can be reviewed
-          separately.
+          {draftReport.state === "linked_to_job"
+            ? "This report is already linked to a job. Its priority can be reviewed separately."
+            : "The triage decision was saved. Review its remaining priority update separately."}
         </p>
       )}
       <label>
@@ -524,7 +620,12 @@ function DecisionForm({
           {validation}
         </p>
       )}
-      <button ref={reviewTrigger} className="wg-button" onClick={review}>
+      <button
+        ref={reviewTrigger}
+        className="wg-button"
+        disabled={saving || draftChanged}
+        onClick={review}
+      >
         Review decision
       </button>
     </section>
@@ -598,8 +699,10 @@ function safeMessage(caught: unknown) {
 }
 function isStale(caught: unknown) {
   return (
-    caught instanceof Error &&
-    caught.message.includes("changed or is not ready")
+    (caught instanceof OrganizerMutationRejectedError &&
+      caught.status === 409) ||
+    (caught instanceof Error &&
+      caught.message.includes("changed or is not ready"))
   );
 }
 function reportOutcome(report: OrganizerReport) {

@@ -192,11 +192,22 @@ def owned_run(db: Session, run_id: UUID, owner: UUID) -> AssessmentDemoRun | Non
 
 
 def claim_is_current(
-    db: Session, run_id: UUID, owner: UUID, task_id: UUID, lease_id: UUID
+    db: Session,
+    run_id: UUID,
+    owner: UUID,
+    task_id: UUID,
+    lease_id: UUID,
+    *,
+    lock: bool = False,
 ) -> bool:
-    """Fence an old process immediately before external activity, without renewal."""
-    run = db.get(AssessmentDemoRun, run_id)
-    task = db.get(Task, task_id)
+    """Fence external calls and outcome writes, without renewing either lease.
+
+    Outcome callers hold the mutation lock and lock both rows until commit so
+    ownership cannot change between this check and applying success or failure.
+    Stop/window expiry do not revoke an already claimed task's live ownership.
+    """
+    run = db.get(AssessmentDemoRun, run_id, with_for_update=lock)
+    task = db.get(Task, task_id, with_for_update=lock)
     timestamp = now()
     return bool(
         run is not None

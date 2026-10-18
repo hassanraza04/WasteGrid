@@ -350,6 +350,12 @@ def process_one(
             output = FollowupResult.model_validate(provider.handle_followup(request))
         with Session(engine) as db:
             mutation_lock(db)
+            if demo_mode and not claim_is_current(
+                db, demo_run_id, demo_owner, task_id, lease_id, lock=True
+            ):
+                # A superseded or expired owner must not commit a late result.
+                # The charged task is left for the current owner's no-replay cleanup.
+                return True
             task = db.get(Task, task_id)
             if task is None or task.status != "running" or task.lease_id != lease_id:
                 return True
@@ -465,6 +471,12 @@ def process_one(
         )
         with Session(engine) as db:
             mutation_lock(db)
+            if demo_mode and not claim_is_current(
+                db, demo_run_id, demo_owner, task_id, lease_id, lock=True
+            ):
+                # Failure is also an outcome: stale owners cannot alter reports,
+                # retry state or review holds after ownership has been revoked.
+                return True
             task = db.get(Task, task_id)
             if (
                 task is not None

@@ -43,11 +43,15 @@ SAFE_TASK_ERRORS = frozenset(
 
 
 def review_condition():
+    """Current holds, independent of the original assessment outcome.
+
+    Organiser approval clears the flags/state while retaining assessment_status
+    as evidence; a historical model review must not reopen an approved report.
+    """
     return or_(
         Report.needs_review.is_(True),
         Report.organizer_review_required.is_(True),
         Report.state == "needs_review",
-        Report.assessment_status == "needs_review",
     )
 
 
@@ -328,7 +332,6 @@ def organizer_router(settings):
                         report.needs_review
                         or report.organizer_review_required
                         or report.state == "needs_review"
-                        or report.assessment_status == "needs_review"
                     ),
                     illustrative=report.illustrative,
                     job_id=report.job_id,
