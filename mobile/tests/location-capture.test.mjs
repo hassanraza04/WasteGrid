@@ -32,8 +32,10 @@ test('denied GPS exposes manual selection and a confirmed pin ignores a late GPS
   'expo-router': { router: { replace() {}, back() {} } },
   '@/services/reports': { createDraft: async () => {}, sendDraft: async () => {}, discardDraft: async () => {} },
   '@/services/report-client': client,
+  '@/auth/session': { getSession: () => null, useSession: () => null },
   '@/components/report/camera-step': { CameraStep: props => { camera = props; return null; } },
   '@/components/report/report-form': { ReportForm: props => { form = props; return null; } },
+  '@/components/report/submission-receipt': { SubmissionReceipt: () => null },
   '@/utils/describe-photo': { describePhoto: async () => null },
   '@/utils/location': { getPhotoLocation: () => { const pending = deferred(); requests.push(pending); return pending.promise; } },
  }).default;
