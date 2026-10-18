@@ -1,8 +1,8 @@
-"""Create, run/resume, inspect or stop the same bounded organiser demo approval.
+"""Create, reopen, run/resume, inspect or stop one bounded organiser demo approval.
 
 Run from the repository root with ``python -m scripts.assessment_demo``. Creation
 activates the 60-minute admission window. Status never starts a process. No image
-or message is sent by create/status/stop; only the explicitly started scoped run
+or message is sent by create/reopen/status/stop; only the explicitly started scoped run
 can invoke Chalk, and its persisted counter is reserved before each attempt.
 """
 
@@ -29,6 +29,7 @@ from api.assessment_demo import (
     heartbeat,
     processing_status,
     release_owner,
+    reopen_run,
     stop_run,
 )
 from api.config import Settings
@@ -48,8 +49,12 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def require_configuration(settings: Settings, revision: str, api_url: str) -> None:
-    if settings.messaging_pilot_enabled or not settings.organizer_routing_enabled:
+def require_configuration(
+    settings: Settings, revision: str, api_url: str, *, scoped_resume: bool = False
+) -> None:
+    if (
+        settings.messaging_pilot_enabled and not scoped_resume
+    ) or not settings.organizer_routing_enabled:
         raise DemoRefused(
             "Organizer routing must be on and messaging pilot must be off"
         )
@@ -96,7 +101,9 @@ def require_configuration(settings: Settings, revision: str, api_url: str) -> No
         raise DemoRefused("Run the reviewed code from a clean worker checkout")
     with httpx.Client(timeout=20) as client:
         try:
-            require_deployed_api(api_url, revision, client)
+            require_deployed_api(
+                api_url, revision, client, allow_messaging_pilot=scoped_resume
+            )
         except VerificationRefused as exc:
             raise DemoRefused(str(exc)) from exc
 
@@ -207,12 +214,13 @@ def main() -> None:
         "--env-file", default=".env", help="Ignored backend environment file"
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("create", "run"):
+    for name in ("create", "run", "reopen"):
         sub = commands.add_parser(name)
         sub.add_argument("--api-url", required=True)
         sub.add_argument("--expected-revision", required=True)
-        if name == "run":
+        if name in ("run", "reopen"):
             sub.add_argument("--run-id", type=UUID, required=True)
+        if name == "run":
             sub.add_argument("--once", action="store_true")
     commands.add_parser("status")
     stop = commands.add_parser("stop")
@@ -224,8 +232,13 @@ def main() -> None:
         raise SystemExit("DATABASE_URL is required")
     cloud = assessment = None
     try:
-        if args.command in ("create", "run"):
-            require_configuration(settings, args.expected_revision, args.api_url)
+        if args.command in ("create", "run", "reopen"):
+            require_configuration(
+                settings,
+                args.expected_revision,
+                args.api_url,
+                scoped_resume=args.command != "create",
+            )
             if args.command == "run":
                 with Session(engine) as db:
                     run = db.get(AssessmentDemoRun, args.run_id)
@@ -236,6 +249,14 @@ def main() -> None:
             cloud = SupabaseCloud(settings)
             if args.command == "create":
                 result = activate(engine, settings, args.expected_revision, cloud)
+            elif args.command == "reopen":
+                require_private_bucket(cloud, settings)
+                with Session(engine) as db:
+                    mutation_lock(db)
+                    require_migrations(db)
+                    reopen_run(db, args.run_id, args.expected_revision)
+                    db.commit()
+                    result = processing_status(db)
             else:
                 assessment = ChalkAssessmentClient(settings)
                 result = run_session(

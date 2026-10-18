@@ -98,12 +98,39 @@ def create_run(db: Session, revision: str) -> AssessmentDemoRun:
         revision=revision,
         model=MODEL,
         starts_at=activated,
+        current_window_started_at=activated,
         expires_at=activated + timedelta(minutes=60),
     )
     db.add(run)
     db.flush()
     for task in tasks:
         task.demo_run_id = run.id
+    db.flush()
+    return run
+
+
+def reopen_run(db: Session, run_id: UUID, revision: str) -> AssessmentDemoRun:
+    """Operator-authorized new hour on the same approval, with unchanged counters."""
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise DemoRefused("A verified full deployed revision is required")
+    run = db.get(AssessmentDemoRun, run_id, with_for_update=True)
+    timestamp = now()
+    if run is None or not (
+        run.status == "closed"
+        and run.reason == "window_expired"
+        and utc(run.expires_at) < timestamp
+        and run.worker_owner is None
+    ):
+        raise DemoRefused("Only the expired, fully drained original run can reopen")
+    if (
+        run.used_attempts >= run.max_attempts
+        or run.new_reports_admitted >= run.max_new_reports
+    ):
+        raise DemoRefused("The existing assessment budget is exhausted")
+    run.current_window_started_at = timestamp
+    run.expires_at = timestamp + timedelta(minutes=60)
+    run.revision = revision
+    run.status, run.reason = "active", None
     db.flush()
     return run
 

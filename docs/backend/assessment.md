@@ -271,3 +271,30 @@ Startup warns when assessments are disabled. Already-attempted interrupted work
 still terminalizes without another model call, preserving the one-call guarantee.
 Actual provider errors and malformed outputs remain failures requiring review;
 missing local configuration is not treated as a provider attempt.
+
+
+## Reopening the supervised assessment window
+
+After migration 0016, an operator may reopen the original expired, fully drained
+approval for another 60 minutes. This preserves its run ID, original start, frozen
+report IDs, model, all task bindings, used attempts, and admitted-report counters.
+The four-image/two-new-report limits remain unchanged. Reopening an exhausted or
+operator-stopped run is refused; it does not retry failed images. Each reopening
+records the prior/new revision, window and usage in append-only database history.
+
+After verifying the clean checkout matches the deployed API, run:
+
+```sh
+python -m scripts.assessment_demo --env-file .env reopen \
+  --run-id <original-run-id> --api-url <https-api-origin> \
+  --expected-revision <full-reviewed-deployed-commit-sha>
+python -m scripts.assessment_demo --env-file .env run \
+  --run-id <original-run-id> --api-url <https-api-origin> \
+  --expected-revision <full-reviewed-deployed-commit-sha>
+```
+
+Reopen performs configuration, migration and private-bucket checks but calls no
+model. Only the separately started scoped worker may spend the remaining budget.
+A scoped resume may coexist with the existing messaging pilot: it still claims
+only tasks bound to this original assessment run. Initial activation and generic
+one-report verification retain their messaging-disabled preflight requirement.

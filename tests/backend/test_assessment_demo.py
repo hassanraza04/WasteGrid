@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -19,9 +19,11 @@ from api.assessment_demo import (
     acquire_owner,
     bind_new_assessment,
     create_run,
+    finish_drain,
     heartbeat,
     processing_status,
     release_owner,
+    reopen_run,
     stop_run,
 )
 from api.db import mutation_lock
@@ -862,4 +864,128 @@ def test_expired_task_cannot_commit_result_even_when_owner_is_retained(demo):
         assert (
             db.scalar(select(Task).where(Task.status == "failed")).last_error
             == "assessment_interrupted"
+        )
+
+
+def expired_approval(demo, monkeypatch):
+    with monkeypatch.context() as clock:
+        clock.setattr("api.assessment_demo.now", lambda: now() - timedelta(hours=2))
+        activate(demo)
+    with Session(demo.engine) as db:
+        mutation_lock(db)
+        release_owner(db, demo.run_id, demo.owner)
+        run = db.get(AssessmentDemoRun, demo.run_id)
+        run.used_attempts, run.new_reports_admitted = 3, 1
+        for task in db.scalars(select(Task).where(Task.demo_run_id == run.id)):
+            task.status, task.attempts = "failed", 1
+        db.flush()
+        assert finish_drain(db, run)
+        db.commit()
+    return demo
+
+
+def test_expired_window_reopens_same_run_preserving_budget_and_auditing_revision(
+    demo, monkeypatch
+):
+    expired_approval(demo, monkeypatch)
+    with Session(demo.engine) as db:
+        mutation_lock(db)
+        before = db.get(AssessmentDemoRun, demo.run_id)
+        original_start, original_ids, old_expiry = (
+            before.starts_at,
+            before.report_ids,
+            before.expires_at,
+        )
+        reopened = reopen_run(db, demo.run_id, "b" * 40)
+        db.commit()
+        assert reopened.status == "active" and reopened.reason is None
+        assert (
+            reopened.starts_at == original_start and reopened.report_ids == original_ids
+        )
+        assert reopened.current_window_started_at > old_expiry
+        assert reopened.expires_at - reopened.current_window_started_at == timedelta(
+            minutes=60
+        )
+        assert reopened.used_attempts == 3 and reopened.max_attempts == 4
+        assert reopened.new_reports_admitted == 1 and reopened.max_new_reports == 2
+        history = db.execute(
+            text(
+                "select previous_revision,revision,used_attempts,new_reports_admitted from wastegrid.assessment_demo_window_history"
+            )
+        ).one()
+        assert tuple(history) == (REVISION, "b" * 40, 3, 1)
+        with pytest.raises(DemoRefused, match="expired"):
+            reopen_run(db, demo.run_id, "c" * 40)
+    with Session(demo.engine) as db:
+        mutation_lock(db)
+        report, task = add_report(db)
+        assert bind_new_assessment(db, report, task)
+        acquire_owner(db, demo.run_id, demo.owner)
+        db.commit()
+    model, calls = assessment_client()
+    assert process(demo, model)
+    assert len(calls) == 1 and status(demo)["used_attempts"] == 4
+    assert process(demo, model)  # Earned triage drains without a second image call.
+    assert not process(demo, model)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("change", ["operator_stopped", "exhausted"])
+def test_reopen_refuses_stopped_or_exhausted_original_approval(
+    demo, monkeypatch, change
+):
+    expired_approval(demo, monkeypatch)
+    with Session(demo.engine) as db:
+        mutation_lock(db)
+        run = db.get(AssessmentDemoRun, demo.run_id)
+        if change == "operator_stopped":
+            run.reason = "operator_stopped"
+        else:
+            run.used_attempts = 4
+        db.commit()
+        with pytest.raises(DemoRefused):
+            reopen_run(db, demo.run_id, "b" * 40)
+
+
+def test_reopening_cannot_reset_counters_or_rewrite_window_history(demo, monkeypatch):
+    expired_approval(demo, monkeypatch)
+    with Session(demo.engine) as db:
+        mutation_lock(db)
+        run = db.get(AssessmentDemoRun, demo.run_id)
+        run.status, run.reason = "active", None
+        run.current_window_started_at = now()
+        run.expires_at = run.current_window_started_at + timedelta(minutes=60)
+        run.used_attempts = 0
+        with pytest.raises(DBAPIError):
+            db.commit()
+        db.rollback()
+        mutation_lock(db)
+        reopen_run(db, demo.run_id, "b" * 40)
+        db.commit()
+        with pytest.raises(DBAPIError):
+            db.execute(text("delete from wastegrid.assessment_demo_window_history"))
+            db.commit()
+
+
+def test_only_scoped_resume_preflight_may_coexist_with_messaging():
+    import httpx
+
+    from scripts.verify_assessment import VerificationRefused, require_deployed_api
+
+    def ready(request):
+        return httpx.Response(
+            200,
+            json={"status": "ready"},
+            headers={
+                "X-WasteGrid-Revision": REVISION,
+                "X-WasteGrid-Organizer-Routing": "true",
+                "X-WasteGrid-Messaging-Pilot": "true",
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(ready)) as client:
+        with pytest.raises(VerificationRefused):
+            require_deployed_api("https://api.invalid", REVISION, client)
+        require_deployed_api(
+            "https://api.invalid", REVISION, client, allow_messaging_pilot=True
         )

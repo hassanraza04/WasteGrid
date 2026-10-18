@@ -328,7 +328,7 @@ def test_trusted_phone_hi_directs_to_in_app_status_without_link_or_ai(phone, eng
     phone.send("Hi")
     with Session(engine) as db:
         outgoing = db.scalar(select(MessagingOutgoing))
-        assert "Phone updates" in outgoing.text and "type Status" in outgoing.text
+        assert "Report updates" in outgoing.text and "type Status" in outgoing.text
         assert "LINK" not in outgoing.text and "iMessage" not in outgoing.text
         assert db.scalar(select(func.count()).select_from(Conversation)) == 0
         assert (
