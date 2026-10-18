@@ -69,7 +69,7 @@ optional. Starting a worker or Photon poller against shared data is a separate
 operator action, not a consequence of starting a client. The connected mobile app
 and organizer dashboard already have API adapters. See the
 [Swagger walkthrough](dashboard-handoff.md#local-swagger-walkthrough) for endpoint
-examples and [client setup](../../README.md#getting-started) for the current apps.
+examples and [client setup](../development.md#getting-started) for the current apps.
 
 ## 1. Local configuration
 
