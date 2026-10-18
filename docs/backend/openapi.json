@@ -925,6 +925,166 @@
         "title": "DeliveryStatus",
         "type": "object"
       },
+      "DemoProcessingStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "last_heartbeat_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Heartbeat At"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "max_attempts": {
+            "default": 4,
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "max_new_reports": {
+            "default": 2,
+            "title": "Max New Reports",
+            "type": "integer"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "new_reports_admitted": {
+            "default": 0,
+            "title": "New Reports Admitted",
+            "type": "integer"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/ProcessingQueue"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "status": {
+            "default": "inactive",
+            "enum": [
+              "inactive",
+              "active",
+              "draining",
+              "closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "used_attempts": {
+            "default": 0,
+            "title": "Used Attempts",
+            "type": "integer"
+          },
+          "worker_online": {
+            "default": false,
+            "title": "Worker Online",
+            "type": "boolean"
+          }
+        },
+        "title": "DemoProcessingStatus",
+        "type": "object"
+      },
+      "DispatchReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "accept_partial": {
+            "title": "Accept Partial",
+            "type": "boolean"
+          },
+          "actor_id": {
+            "format": "uuid",
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "command_id": {
+            "format": "uuid",
+            "title": "Command Id",
+            "type": "string"
+          },
+          "plan_id": {
+            "format": "uuid",
+            "title": "Plan Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "actor_id",
+          "plan_id",
+          "accept_partial"
+        ],
+        "title": "DispatchReceipt",
+        "type": "object"
+      },
       "DispatchRoutes": {
         "additionalProperties": false,
         "properties": {
@@ -1417,6 +1577,365 @@
         "title": "Location",
         "type": "object"
       },
+      "OrganizerConfiguration": {
+        "additionalProperties": false,
+        "properties": {
+          "messaging_pilot_enabled": {
+            "title": "Messaging Pilot Enabled",
+            "type": "boolean"
+          },
+          "organizer_routing_enabled": {
+            "title": "Organizer Routing Enabled",
+            "type": "boolean"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "string"
+          },
+          "road_service_configured": {
+            "title": "Road Service Configured",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revision",
+          "organizer_routing_enabled",
+          "road_service_configured",
+          "messaging_pilot_enabled"
+        ],
+        "title": "OrganizerConfiguration",
+        "type": "object"
+      },
+      "OrganizerCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "available_crews": {
+            "title": "Available Crews",
+            "type": "integer"
+          },
+          "awaiting_assessment": {
+            "title": "Awaiting Assessment",
+            "type": "integer"
+          },
+          "blocked_jobs": {
+            "title": "Blocked Jobs",
+            "type": "integer"
+          },
+          "completed_24h": {
+            "title": "Completed 24H",
+            "type": "integer"
+          },
+          "high_priority_jobs": {
+            "title": "High Priority Jobs",
+            "type": "integer"
+          },
+          "in_progress_jobs": {
+            "title": "In Progress Jobs",
+            "type": "integer"
+          },
+          "needs_review": {
+            "title": "Needs Review",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "needs_review",
+          "high_priority_jobs",
+          "in_progress_jobs",
+          "available_crews",
+          "blocked_jobs",
+          "completed_24h",
+          "awaiting_assessment"
+        ],
+        "title": "OrganizerCounts",
+        "type": "object"
+      },
+      "OrganizerIndexedJob": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "assigned_crew_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned Crew Id"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "decision_summary": {
+            "title": "Decision Summary",
+            "type": "string"
+          },
+          "eligibility_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Eligibility Reasons",
+            "type": "array"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "estimated_service_minutes": {
+            "title": "Estimated Service Minutes",
+            "type": "integer"
+          },
+          "held": {
+            "title": "Held",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "illustrative": {
+            "title": "Illustrative",
+            "type": "boolean"
+          },
+          "location": {
+            "$ref": "#/components/schemas/Location"
+          },
+          "locked": {
+            "title": "Locked",
+            "type": "boolean"
+          },
+          "photo_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photo Id"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "high",
+                  "medium",
+                  "routine"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "public_references": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Public References",
+            "type": "array"
+          },
+          "required_equipment": {
+            "items": {
+              "$ref": "#/components/schemas/Equipment"
+            },
+            "title": "Required Equipment",
+            "type": "array"
+          },
+          "route_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route Position"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobState"
+          },
+          "travel_minutes": {
+            "title": "Travel Minutes",
+            "type": "number"
+          },
+          "unassigned_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unassigned Reason"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "location",
+          "category",
+          "required_equipment",
+          "estimated_service_minutes",
+          "assigned_crew_id",
+          "locked",
+          "held",
+          "route_position",
+          "travel_minutes",
+          "decision_summary",
+          "unassigned_reason",
+          "version",
+          "illustrative",
+          "priority",
+          "eligible",
+          "eligibility_reasons",
+          "public_references",
+          "address",
+          "photo_id"
+        ],
+        "title": "OrganizerIndexedJob",
+        "type": "object"
+      },
+      "OrganizerJobIndex": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizerIndexedJob"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "OrganizerJobIndex",
+        "type": "object"
+      },
+      "OrganizerOverview": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/OrganizerConfiguration"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/OrganizerCounts"
+          },
+          "include_illustrative": {
+            "title": "Include Illustrative",
+            "type": "boolean"
+          },
+          "processing": {
+            "$ref": "#/components/schemas/DemoProcessingStatus"
+          }
+        },
+        "required": [
+          "counts",
+          "include_illustrative",
+          "configuration",
+          "processing"
+        ],
+        "title": "OrganizerOverview",
+        "type": "object"
+      },
+      "OrganizerReportDetailsView": {
+        "additionalProperties": false,
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AuditEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "processing": {
+            "$ref": "#/components/schemas/ReportProcessing"
+          },
+          "report": {
+            "$ref": "#/components/schemas/OrganizerReportView"
+          }
+        },
+        "required": [
+          "report",
+          "events",
+          "processing"
+        ],
+        "title": "OrganizerReportDetailsView",
+        "type": "object"
+      },
+      "OrganizerReportIndex": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizerSummaryReport"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "OrganizerReportIndex",
+        "type": "object"
+      },
       "OrganizerReportView": {
         "additionalProperties": false,
         "description": "Organizer and trusted reasoning context, never a resident response.",
@@ -1640,6 +2159,177 @@
           "triage"
         ],
         "title": "OrganizerReportView",
+        "type": "object"
+      },
+      "OrganizerSummaryReport": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "assessment_status": {
+            "title": "Assessment Status",
+            "type": "string"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "crew_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crew Id"
+          },
+          "crew_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crew Name"
+          },
+          "display_status": {
+            "title": "Display Status",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "illustrative": {
+            "title": "Illustrative",
+            "type": "boolean"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "job_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Status"
+          },
+          "needs_review": {
+            "title": "Needs Review",
+            "type": "boolean"
+          },
+          "photo_id": {
+            "format": "uuid",
+            "title": "Photo Id",
+            "type": "string"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "high",
+                  "medium",
+                  "routine"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "public_reference": {
+            "title": "Public Reference",
+            "type": "string"
+          },
+          "route_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route Position"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "public_reference",
+          "category",
+          "title",
+          "address",
+          "photo_id",
+          "created_at",
+          "updated_at",
+          "display_status",
+          "state",
+          "assessment_status",
+          "priority",
+          "needs_review",
+          "illustrative",
+          "job_id",
+          "job_status",
+          "crew_id",
+          "crew_name",
+          "route_position"
+        ],
+        "title": "OrganizerSummaryReport",
         "type": "object"
       },
       "OutgoingView": {
@@ -2113,6 +2803,70 @@
         "title": "PriorityDecision",
         "type": "object"
       },
+      "ProcessingQueue": {
+        "additionalProperties": false,
+        "properties": {
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "pending": {
+            "default": 0,
+            "title": "Pending",
+            "type": "integer"
+          },
+          "running": {
+            "default": 0,
+            "title": "Running",
+            "type": "integer"
+          },
+          "succeeded": {
+            "default": 0,
+            "title": "Succeeded",
+            "type": "integer"
+          }
+        },
+        "title": "ProcessingQueue",
+        "type": "object"
+      },
+      "ProcessingTask": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "attempts",
+          "error_code"
+        ],
+        "title": "ProcessingTask",
+        "type": "object"
+      },
       "PublicMapMarker": {
         "additionalProperties": false,
         "description": "Approximate location only; never expose a resident report identifier or details.",
@@ -2256,25 +3010,48 @@
         "title": "ReportCreated",
         "type": "object"
       },
-      "ReportDetails": {
+      "ReportProcessing": {
         "additionalProperties": false,
         "properties": {
-          "events": {
-            "items": {
-              "$ref": "#/components/schemas/AuditEvent"
-            },
-            "title": "Events",
-            "type": "array"
+          "assessment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProcessingTask"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
-          "report": {
-            "$ref": "#/components/schemas/OrganizerReportView"
+          "demo_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Demo Run Id"
+          },
+          "triage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProcessingTask"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
-          "report",
-          "events"
+          "assessment",
+          "triage",
+          "demo_run_id"
         ],
-        "title": "ReportDetails",
+        "title": "ReportProcessing",
         "type": "object"
       },
       "ReportState": {
@@ -2716,6 +3493,48 @@
         "title": "RouteDispatchView",
         "type": "object"
       },
+      "RouteGeometry": {
+        "additionalProperties": false,
+        "properties": {
+          "geometry": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Geometry"
+          },
+          "retry_after_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After Seconds"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "unavailable",
+              "rate_limited"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "RouteGeometry",
+        "type": "object"
+      },
       "RoutePreviewView": {
         "additionalProperties": false,
         "properties": {
@@ -2723,6 +3542,16 @@
             "format": "date-time",
             "title": "Computed At",
             "type": "string"
+          },
+          "dispatch_receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DispatchReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "dispatchable": {
             "title": "Dispatchable",
@@ -6704,6 +7533,482 @@
         "summary": "Public Map Markers"
       }
     },
+    "/organizer/job-index": {
+      "get": {
+        "operationId": "job_index_organizer_job_index_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_illustrative",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Illustrative",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerJobIndex"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "ReportOrStaffBearer": []
+          }
+        ],
+        "summary": "Job Index"
+      }
+    },
+    "/organizer/overview": {
+      "get": {
+        "operationId": "overview_organizer_overview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_illustrative",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Illustrative",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "ReportOrStaffBearer": []
+          }
+        ],
+        "summary": "Overview"
+      }
+    },
+    "/organizer/report-index": {
+      "get": {
+        "operationId": "report_index_organizer_report_index_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 200,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "needs_review",
+                "awaiting_assessment",
+                "active_cleanup"
+              ],
+              "title": "View",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "priority",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "high",
+                    "medium",
+                    "routine"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Priority"
+            }
+          },
+          {
+            "in": "query",
+            "name": "assessment_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "assessed",
+                    "needs_review",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assessment Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "newest",
+              "enum": [
+                "newest",
+                "oldest",
+                "priority"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_illustrative",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Illustrative",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizerReportIndex"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "ReportOrStaffBearer": []
+          }
+        ],
+        "summary": "Report Index"
+      }
+    },
     "/organizer/reports": {
       "get": {
         "operationId": "list_reports_organizer_reports_get",
@@ -6853,7 +8158,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ReportDetails"
+                  "$ref": "#/components/schemas/OrganizerReportDetailsView"
                 }
               }
             },
@@ -8938,6 +10243,131 @@
           }
         ],
         "summary": "Dispatch"
+      }
+    },
+    "/routing/previews/{preview_id}/geometry/{crew_id}": {
+      "get": {
+        "operationId": "read_geometry_routing_previews__preview_id__geometry__crew_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "preview_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Preview Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "crew_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Crew Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RouteGeometry"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "ReportOrStaffBearer": []
+          }
+        ],
+        "summary": "Read Geometry"
       }
     },
     "/tasks": {

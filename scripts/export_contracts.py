@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import TypeAdapter
 
+from api import organizer_schemas as O
 from api import pilot_schemas as P
 from api import routing_schemas as R
 from api import schemas as S
@@ -108,13 +109,92 @@ def fixtures():
         channel="imessage",
         external_id="illustrative-photon-space",
     )
+    processing = O.ReportProcessing(
+        assessment=O.ProcessingTask(status="pending", attempts=0, error_code=None),
+        triage=None,
+        demo_run_id=None,
+    )
+    summary = O.OrganizerSummaryReport(
+        id=rid,
+        public_reference=report.public_reference,
+        category=None,
+        title="Cleanup report · " + report.public_reference,
+        address=report.address,
+        photo_id=pid,
+        created_at=instant,
+        updated_at=instant,
+        display_status="received",
+        state="received",
+        assessment_status="pending",
+        priority=None,
+        needs_review=False,
+        illustrative=True,
+        job_id=None,
+        job_status=None,
+        crew_id=None,
+        crew_name=None,
+        route_position=None,
+    )
     return {
         "report": report,
         "report-updates": S.ReportUpdates(
             items=[report.latest_update], limit=50, offset=0, total=1
         ),
         "organizer-report-list": [organizer_report],
-        "organizer-report-detail": S.ReportDetails(report=organizer_report, events=[]),
+        "organizer-report-detail": O.OrganizerReportDetailsView(
+            report=organizer_report, events=[], processing=processing
+        ),
+        "organizer-report-index": O.OrganizerReportIndex(
+            items=[summary], total=1, limit=25, offset=0
+        ),
+        "organizer-job-index": O.OrganizerJobIndex(
+            items=[
+                O.OrganizerIndexedJob(
+                    **job.model_dump(),
+                    priority=None,
+                    eligible=False,
+                    eligibility_reasons=["assessment_or_priority_review"],
+                    public_references=[],
+                    address=None,
+                    photo_id=None,
+                )
+            ],
+            total=1,
+            limit=100,
+            offset=0,
+        ),
+        "organizer-overview": O.OrganizerOverview(
+            counts=O.OrganizerCounts(
+                needs_review=0,
+                high_priority_jobs=0,
+                in_progress_jobs=0,
+                available_crews=1,
+                blocked_jobs=1,
+                completed_24h=0,
+                awaiting_assessment=1,
+            ),
+            include_illustrative=True,
+            configuration=O.OrganizerConfiguration(
+                revision="a" * 40,
+                organizer_routing_enabled=True,
+                road_service_configured=True,
+                messaging_pilot_enabled=False,
+            ),
+            processing=O.DemoProcessingStatus(),
+        ),
+        "assessment-demo-status": O.DemoProcessingStatus(
+            run_id=UUID("a0000000-0000-4000-8000-000000000001"),
+            status="active",
+            starts_at=instant,
+            expires_at=instant.replace(hour=23),
+            model="xai/grok-4.3",
+            used_attempts=2,
+            new_reports_admitted=1,
+            worker_online=True,
+            last_heartbeat_at=instant,
+            last_success_at=instant,
+            queue=O.ProcessingQueue(pending=1, succeeded=2),
+        ),
         "auth-me": Principal(
             user_id=UUID("60000000-0000-4000-8000-000000000002"),
             role="organizer",
@@ -341,6 +421,14 @@ def artifacts():
         "FollowupResult",
     ):
         result[f"schemas/{name}.json"] = getattr(S, name).model_json_schema()
+    for name in (
+        "OrganizerOverview",
+        "OrganizerReportIndex",
+        "OrganizerJobIndex",
+        "OrganizerReportDetailsView",
+        "DemoProcessingStatus",
+    ):
+        result[f"schemas/{name}.json"] = getattr(O, name).model_json_schema()
     result["schemas/FollowupIntent.json"] = FollowupIntent.model_json_schema()
     result.update(
         {

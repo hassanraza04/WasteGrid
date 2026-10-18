@@ -1,0 +1,164 @@
+{
+  "$defs": {
+    "ProcessingQueue": {
+      "additionalProperties": false,
+      "properties": {
+        "failed": {
+          "default": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "pending": {
+          "default": 0,
+          "title": "Pending",
+          "type": "integer"
+        },
+        "running": {
+          "default": 0,
+          "title": "Running",
+          "type": "integer"
+        },
+        "succeeded": {
+          "default": 0,
+          "title": "Succeeded",
+          "type": "integer"
+        }
+      },
+      "title": "ProcessingQueue",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "expires_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expires At"
+    },
+    "last_heartbeat_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Heartbeat At"
+    },
+    "last_success_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Last Success At"
+    },
+    "max_attempts": {
+      "default": 4,
+      "title": "Max Attempts",
+      "type": "integer"
+    },
+    "max_new_reports": {
+      "default": 2,
+      "title": "Max New Reports",
+      "type": "integer"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "new_reports_admitted": {
+      "default": 0,
+      "title": "New Reports Admitted",
+      "type": "integer"
+    },
+    "queue": {
+      "$ref": "#/$defs/ProcessingQueue"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "run_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Id"
+    },
+    "starts_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Starts At"
+    },
+    "status": {
+      "default": "inactive",
+      "enum": [
+        "inactive",
+        "active",
+        "draining",
+        "closed"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "used_attempts": {
+      "default": 0,
+      "title": "Used Attempts",
+      "type": "integer"
+    },
+    "worker_online": {
+      "default": false,
+      "title": "Worker Online",
+      "type": "boolean"
+    }
+  },
+  "title": "DemoProcessingStatus",
+  "type": "object"
+}

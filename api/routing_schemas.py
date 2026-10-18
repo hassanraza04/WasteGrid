@@ -86,6 +86,19 @@ class Reassignment(Contract):
     proposed_position: int
 
 
+class DispatchReceipt(Contract):
+    command_id: UUID
+    actor_id: UUID
+    plan_id: UUID
+    accept_partial: bool
+
+
+class RouteGeometry(Contract):
+    status: Literal["ready", "unavailable", "rate_limited"]
+    geometry: dict | None = None
+    retry_after_seconds: int | None = None
+
+
 class RoutePreviewView(Contract):
     id: UUID
     job_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=25)
@@ -102,6 +115,7 @@ class RoutePreviewView(Contract):
     reassignments: list[Reassignment]
     settings: dict
     plan_id: UUID | None = None
+    dispatch_receipt: DispatchReceipt | None = None
 
 
 class RouteDispatchView(Contract):

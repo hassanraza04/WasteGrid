@@ -79,7 +79,25 @@ def process_one(
     pilot_settings=None,
     report_scope: UUID | None = None,
     scoped_kind: str | None = None,
+    demo_run_id: UUID | None = None,
+    demo_owner: UUID | None = None,
 ) -> bool:
+    demo_mode = demo_run_id is not None
+    if demo_mode != (demo_owner is not None):
+        raise ValueError("Demo processing requires both run and worker ownership")
+    if demo_mode:
+        if (
+            report_scope is not None
+            or not organizer_routing
+            or (pilot_settings is not None and pilot_settings.messaging_pilot_enabled)
+        ):
+            raise ValueError(
+                "Demo processing requires organizer routing and no messaging/scoped mode"
+            )
+        # The image assessment is the only provider call in the approved session.
+        from api.decisions import AssessmentDecisionProvider
+
+        provider = AssessmentDecisionProvider(duplicate_radius_meters)
     if (
         report_scope is not None
         and pilot_settings is not None
@@ -106,6 +124,8 @@ def process_one(
         if not enabled(pilot_settings):
             return False
         supported_kinds = [k for k in supported_kinds if k in ("assessment", "triage")]
+    if demo_mode:
+        supported_kinds = [k for k in supported_kinds if k in ("assessment", "triage")]
     if report_scope is not None:
         supported_kinds = [k for k in supported_kinds if k in ("assessment", "triage")]
         if scoped_kind is not None:
@@ -127,6 +147,35 @@ def process_one(
             ):
                 raise ValueError("Scoped triage is no longer eligible")
         query = select(Task)
+        demo_run = None
+        if demo_mode:
+            from api.assessment_demo import owned_run
+
+            demo_run = owned_run(db, demo_run_id, demo_owner)
+            if demo_run is None:
+                return False
+            # Persist expiry even when no further task is admissible.
+            if db.scalar(
+                select(Task.id).where(
+                    Task.demo_run_id == demo_run_id,
+                    Task.status == "running",
+                    Task.leased_until >= now(),
+                )
+            ):
+                db.commit()
+                return False
+            query = query.where(
+                Task.demo_run_id == demo_run_id,
+                Task.kind.in_(("assessment", "triage")),
+            )
+            if (
+                demo_run.status != "active"
+                or demo_run.used_attempts >= demo_run.max_attempts
+            ):
+                query = query.where(or_(Task.kind == "triage", Task.attempts > 0))
+        else:
+            # A normal worker (including a scoped verifier) never steals this approval.
+            query = query.where(Task.demo_run_id.is_(None))
         if pilot_mode:
             query = query.join(
                 Report, cast(Report.id, String) == Task.payload["report_id"].as_string()
@@ -166,7 +215,28 @@ def process_one(
             .limit(1)
         )
         if task is None:
+            if demo_run is not None:
+                from api.assessment_demo import finish_drain
+
+                finish_drain(db, demo_run)
+                db.commit()
             return False
+        if demo_run is not None and task.kind == "assessment" and task.attempts == 0:
+            report = db.get(Report, UUID(task.payload["report_id"]))
+            if (
+                report is None
+                or report.illustrative
+                or report.job_id is not None
+                or report.assessment_status != "pending"
+            ):
+                task.status, task.last_error = "failed", "demo_report_changed"
+                db.commit()
+                return True
+            # Charge before signed-URL acquisition or any image-provider activity.
+            demo_run.used_attempts += 1
+            from api.assessment_demo import refresh_window
+
+            refresh_window(demo_run, now())
         if task.kind == "plan" and organizer_routing:
             task.status = "succeeded"
             task.result = {"organizer_dispatch_required": True}
@@ -207,6 +277,11 @@ def process_one(
     try:
         # Read and release DB transaction before any remote provider invocation.
         with Session(engine) as db:
+            if demo_mode:
+                from api.assessment_demo import claim_is_current
+
+                if not claim_is_current(db, demo_run_id, demo_owner, task_id, lease_id):
+                    return True
             if kind == "assessment":
                 report = db.get(Report, UUID(payload["report_id"]))
                 if report is None:
@@ -247,6 +322,14 @@ def process_one(
         if kind == "assessment":
             if assessment_client is None:
                 raise RuntimeError("Assessment client not configured")
+            if demo_mode:
+                # Storage may have stalled after the first fence. Do not let a
+                # resumed, superseded process submit its old image afterward.
+                with Session(engine) as db:
+                    if not claim_is_current(
+                        db, demo_run_id, demo_owner, task_id, lease_id
+                    ):
+                        return True
             output = WasteAssessment.model_validate(assessment_client.assess(*request))
         elif kind == "triage":
             output = (
@@ -304,12 +387,19 @@ def process_one(
                 report.version += 1
                 event(db, "report.assessed", report_id=report.id)
                 if not decision.needs_review and decision.priority is not None:
-                    enqueue(
+                    triage_task = enqueue(
                         db,
                         "triage",
                         f"triage:{report.id}:{report.version}",
                         {"report_id": str(report.id)},
                     )
+                    if task.demo_run_id is not None:
+                        triage_task.demo_run_id = task.demo_run_id
+                if task.demo_run_id is not None:
+                    from api.models import AssessmentDemoRun
+
+                    demo_run = db.get(AssessmentDemoRun, task.demo_run_id)
+                    demo_run.last_success_at = now()
                 result = {"report_id": str(report.id), **decision.model_dump()}
             elif kind == "triage":
                 report = (

@@ -14,15 +14,19 @@ from sqlalchemy.orm import Session
 from api.auth import Principal, get_staff, organizer
 from api.db import get_db, mutation_lock
 from api.models import Assignment, Crew, Event, Job, Plan, Report, RoutingPreview, now
+from api.organizer import job_routing_facts
 from api.road_times import OSRMRoadTimes, TravelDataUnavailable
+from api.route_geometry import PreviewGeometry
 from api.route_solver import PRIORITY_WEIGHTS, evaluate, solve
 from api.routing_schemas import (
     ComputeRoutes,
     CrewLocationUpdate,
     CrewLocationView,
+    DispatchReceipt,
     DispatchRoutes,
     PriorityDecision,
     RouteDispatchView,
+    RouteGeometry,
     RoutePreviewView,
     RoutingConstraints,
 )
@@ -34,7 +38,7 @@ from api.services import (
     invalidate_plan,
     organizer_report_view,
 )
-from api.workflows import assessment_allows_job, distance_km, job_assessment_approved
+from api.workflows import assessment_allows_job, distance_km
 
 
 def utc(value):
@@ -155,21 +159,10 @@ def snapshot(db, crew_ids, settings, at, job_ids=None, constraints=None):
     prefixes, jobs, exclusions, business = {cid: [] for cid in crew_ids}, [], [], []
     for job in candidates:
         reports = reports_by_job[job.id]
-        priorities = [r.priority for r in reports if r.priority in PRIORITY_WEIGHTS]
-        approved = bool(reports) and all(
-            job_assessment_approved(db, r, approval_events=approvals[r.id])
-            and r.priority in PRIORITY_WEIGHTS
-            for r in reports
+        priority, reasons = job_routing_facts(
+            db, job, reports, approval_events=approvals
         )
-        reason = (
-            "held"
-            if job.held
-            else (
-                job.status
-                if job.status in ("blocked", "recheck_requested")
-                else "assessment_or_priority_review" if not approved else None
-            )
-        )
+        reason = reasons[0] if reasons else None
         if reason is None or job.assigned_crew_id is not None:
             business.append(
                 {
@@ -226,7 +219,7 @@ def snapshot(db, crew_ids, settings, at, job_ids=None, constraints=None):
             dict(
                 id=str(job.id),
                 location=job.location,
-                priority=max(priorities, key=PRIORITY_WEIGHTS.get),
+                priority=priority,
                 required_equipment=sorted(job.required_equipment),
                 service=service,
                 service_source=source,
@@ -718,6 +711,7 @@ def preserved_assignments(db, jobs):
 
 def routing_router(settings):
     router = APIRouter()
+    geometry_cache = PreviewGeometry()
 
     def enabled():
         if not settings.organizer_routing_enabled:
@@ -852,7 +846,40 @@ def routing_router(settings):
         if preview is None:
             raise HTTPException(404, "Preview not found")
         view = RoutePreviewView.model_validate(preview.payload["view"])
-        return view.model_copy(update={"plan_id": preview.dispatched_plan_id})
+        receipt = None
+        if preview.dispatched_plan_id is not None:
+            receipt = DispatchReceipt(
+                command_id=preview.dispatch_command_id,
+                actor_id=preview.dispatched_by,
+                plan_id=preview.dispatched_plan_id,
+                accept_partial=preview.payload.get("dispatch_accept_partial", False),
+            )
+        return view.model_copy(
+            update={"plan_id": preview.dispatched_plan_id, "dispatch_receipt": receipt}
+        )
+
+    @router.get(
+        "/routing/previews/{preview_id}/geometry/{crew_id}",
+        response_model=RouteGeometry,
+    )
+    def read_geometry(
+        preview_id: UUID,
+        crew_id: UUID,
+        db: Session = Depends(get_db),
+        staff: Principal = Depends(organizer),
+    ):
+        preview = db.get(RoutingPreview, preview_id)
+        if preview is None:
+            raise HTTPException(404, "Preview not found")
+        result = geometry_cache.read(
+            preview,
+            crew_id,
+            settings.routing_osrm_base_url,
+            settings.routing_provider_timeout_seconds,
+        )
+        if result is None:
+            raise HTTPException(404, "Crew is outside this preview")
+        return result
 
     @router.post(
         "/routing/previews/{preview_id}/dispatch",

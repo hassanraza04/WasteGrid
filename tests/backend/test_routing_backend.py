@@ -233,3 +233,40 @@ def test_routed_job_completion_exposes_resident_evidence_once(
         == 200
     )
     assert client.get(f"/photos/{photo}/access", headers=auth("b")).status_code == 404
+
+
+def test_preview_read_receipt_and_geometry_authorization(engine):
+    ids, jobs = seed_routing(engine)
+    actor, settings = uuid4(), config()
+    app = create_app(settings)
+    app.state.engine = engine
+    app.dependency_overrides[get_staff] = lambda: Principal(actor, "organizer", None)
+    with Session(engine) as db:
+        mutation_lock(db)
+        view = compute_preview(
+            db, ids[:2], settings, FakeRoads(), str(actor), job_ids=[jobs[0], jobs[1]]
+        )
+    with TestClient(app) as client:
+        original = client.get(f"/routing/previews/{view.id}").json()
+        assert original["dispatch_receipt"] is None
+        command = uuid4()
+        result = client.post(
+            f"/routing/previews/{view.id}/dispatch", json={"command_id": str(command)}
+        )
+        assert result.status_code == 200, result.text
+        recovered = client.get(f"/routing/previews/{view.id}").json()
+        assert recovered["dispatch_receipt"] == {
+            "command_id": str(command),
+            "actor_id": str(actor),
+            "plan_id": result.json()["plan_id"],
+            "accept_partial": False,
+        }
+        assert (
+            client.get(f"/routing/previews/{view.id}/geometry/{uuid4()}").status_code
+            == 404
+        )
+        app.dependency_overrides[get_staff] = lambda: Principal(actor, "crew", ids[0])
+        assert (
+            client.get(f"/routing/previews/{view.id}/geometry/{ids[0]}").status_code
+            == 403
+        )
