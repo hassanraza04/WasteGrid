@@ -259,7 +259,7 @@ def _ask(db, settings, thread, links):
     ):
         text = (
             "Your phone is connected. Open a report in WasteGrid and type Status "
-            "under Phone updates to receive its current status here. "
+            "under Report updates to receive its current status here. "
             "Send STOP to pause phone updates."
         )
     queue_text(db, thread, text)

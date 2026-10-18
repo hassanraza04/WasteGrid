@@ -30,6 +30,8 @@ function PhoneUpdatesContent({ draft, owner }: { draft: ReportDraft; owner: stri
   const [error, setError] = useState("");
   const alive = useRef(true);
   const working = useRef(false);
+  const foreground = useRef(true);
+  const polling = useRef<{ id: string; until: number } | null>(null);
   const valid = useCallback(() => alive.current && getSession()?.userId === owner, [owner]);
   const run = useCallback(async (work: () => Promise<void>) => {
     if (working.current || !valid()) return;
@@ -47,12 +49,32 @@ function PhoneUpdatesContent({ draft, owner }: { draft: ReportDraft; owner: stri
     alive.current = true;
     void Promise.resolve().then(() => run(refresh));
     const subscription = AppState.addEventListener("change", value => {
-      if (value === "active") void run(refresh);
+      foreground.current = value === "active";
+      if (foreground.current) void run(refresh);
     });
     return () => { alive.current = false; subscription.remove(); };
   }, [refresh, run]);
   const receipt = state?.latest_request;
   const awaitingDelivery = !!receipt && ["queued", "sending", "uncertain"].includes(receipt.status);
+  const receiptId = receipt?.id;
+  const receiptStatus = receipt?.status;
+  useEffect(() => {
+    if (!receiptId || !receiptStatus || !["queued", "sending", "submitted", "uncertain"].includes(receiptStatus)) return;
+    if (polling.current?.id !== receiptId) polling.current = { id: receiptId, until: Date.now() + 90_000 };
+    const until = polling.current.until;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      if (stopped || Date.now() >= until) return;
+      timer = setTimeout(async () => {
+        if (stopped || !valid()) return;
+        if (foreground.current) await run(refresh);
+        schedule();
+      }, 3_000);
+    };
+    schedule();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [receiptId, receiptStatus, refresh, run, valid]);
   const send = (retry = false) => {
     if (!state || (retry ? !state.pending : !state.enabled || awaitingDelivery)) return;
     let text: string;
@@ -75,14 +97,16 @@ function PhoneUpdatesContent({ draft, owner }: { draft: ReportDraft; owner: stri
   };
   if (state && !state.enabled && !receipt && !state.pending && !error) return null;
   return <View style={s.section}>
-    <AppText variant="title">Phone updates</AppText>
-    <AppText tone="muted">Your report status stays available here in the app.</AppText>
+    <AppText variant="title">Report updates</AppText>
+    <AppText tone="muted">Type Status for a reply here. A copy also goes to the registered phone.</AppText>
     {state?.phone_label && <AppText>{state.phone_label}</AppText>}
     {error ? <AppText accessibilityRole="alert">{error}</AppText> : null}
     {state && !state.enabled && <AppText tone="muted">Phone updates are not available for this report right now. Keep tracking it here.</AppText>}
     {receipt && <View style={s.section}>
-      <AppText>{delivery[receipt.status]}</AppText>
-      <AppText tone="muted">{receipt.message}</AppText>
+      <AppText tone="muted">You: Status</AppText>
+      <AppText tone="muted">WasteGrid reply</AppText>
+      <AppText accessibilityLiveRegion="polite">{receipt.message}</AppText>
+      <AppText tone="muted">{delivery[receipt.status]}</AppText>
     </View>}
     {state?.pending && <View style={s.section}>
       <AppText tone="muted">Your last request is saved, but confirmation is missing. Check its status or retry the same request.</AppText>
@@ -91,8 +115,8 @@ function PhoneUpdatesContent({ draft, owner }: { draft: ReportDraft; owner: stri
     {state?.enabled && !state.pending && <>
       <TextField label="Message" accessibilityLabel="Message for phone update" placeholder="Type Status" value={message}
         onChangeText={setMessage} editable={!busy && !awaitingDelivery} autoCorrect={false} maxLength={100} />
-      <AppText tone="muted">Tapping Send to phone sends this report&apos;s current status to the registered phone shown above.</AppText>
-      <Button label="Send to phone" disabled={busy || awaitingDelivery || !message.trim()} onPress={() => send()} />
+      <AppText tone="muted">Tapping Send shows the current status here and sends a copy to the registered phone shown above.</AppText>
+      <Button label="Send" disabled={busy || awaitingDelivery || !message.trim()} onPress={() => send()} />
     </>}
     <Button label="Check delivery status" variant="outline" disabled={busy} onPress={() => void run(refresh)} />
     {busy && <AppText tone="muted">Checking phone updates…</AppText>}

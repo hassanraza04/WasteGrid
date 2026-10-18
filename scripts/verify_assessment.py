@@ -81,7 +81,11 @@ def unrelated_state(
 
 
 def require_deployed_api(
-    api_url: str, expected_revision: str, client: httpx.Client
+    api_url: str,
+    expected_revision: str,
+    client: httpx.Client,
+    *,
+    allow_messaging_pilot: bool = False,
 ) -> None:
     if not re.fullmatch(r"[0-9a-f]{40}", expected_revision):
         raise VerificationRefused(
@@ -108,7 +112,8 @@ def require_deployed_api(
     if (
         response.headers.get("X-WasteGrid-Revision") != expected_revision
         or response.headers.get("X-WasteGrid-Organizer-Routing") != "true"
-        or response.headers.get("X-WasteGrid-Messaging-Pilot") != "false"
+        or response.headers.get("X-WasteGrid-Messaging-Pilot")
+        not in (("true", "false") if allow_messaging_pilot else ("false",))
     ):
         raise VerificationRefused("Deployed revision or safety flags do not match")
 

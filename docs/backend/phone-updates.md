@@ -66,3 +66,11 @@ cancels unsent work, and prevents new app requests from resuming it; START from 
 phone resumes it. Keep unknown submissions in the ledger for reconciliation and
 never blindly resend them. Stop/drain the existing runner before disabling the
 API flag, retaining its private receipt ledger.
+
+
+The Android report screen shows the snapshot immediately as a WasteGrid reply.
+It checks that same receipt every three seconds while foregrounded, for up to
+90 seconds, stopping on delivery/failure/cancellation or unmount. These checks
+are authenticated reads and never create or resend a message. Provider acceptance
+remains "submitted" until an actual delivered receipt exists. Manual refresh is
+available after automatic checks end.

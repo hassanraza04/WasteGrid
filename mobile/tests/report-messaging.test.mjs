@@ -27,13 +27,16 @@ test('Phone updates starts empty, shows the registered phone, and sends normaliz
   await view.render();
   assert.match(view.container.textContent, /Registered phone ending 1234/);
   assert.equal(app.field().value, ''); assert.equal(app.field().placeholder, 'Type Status');
-  assert.equal(button(view.container, 'Send to phone').disabled, true);
-  assert.match(view.container.textContent, /Tapping Send to phone sends this report/);
+  assert.equal(button(view.container, 'Send').disabled, true);
+  assert.match(view.container.textContent, /Tapping Send shows the current status here/);
   assert.doesNotMatch(view.container.textContent, /iMessage|LINK|QR|Open Messages|Report conversation/);
   assert.deepEqual(app.sent, []);
-  await app.type('  sTaTuS '); await act(async () => button(view.container, 'Send to phone').click());
+  await app.type('  sTaTuS '); await act(async () => button(view.container, 'Send').click());
   assert.deepEqual(app.sent, [[draft, 'Status']]);
   assert.match(view.container.textContent, /Update queued/);
+  assert.match(view.container.textContent, /You: Status/);
+  assert.match(view.container.textContent, /WasteGrid reply/);
+  assert.match(view.container.textContent, /Cleanup is in progress/);
   assert.doesNotMatch(view.container.textContent, /Update delivered/);
   assert.equal(app.field().value, '');
  } finally { await view.close(); }
@@ -42,7 +45,7 @@ test('unsupported messages show clear guidance and never send', async () => {
  const app = setup(), view = mount(app.ReportMessaging, { draft });
  try {
   await view.render(); await app.type('Where is the crew?');
-  await act(async () => button(view.container, 'Send to phone').click());
+  await act(async () => button(view.container, 'Send').click());
   assert.match(view.container.textContent, /Type "Status"/);
   assert.deepEqual(app.sent, []);
  } finally { await view.close(); }
@@ -52,7 +55,7 @@ test('double taps send once and foreground refresh checks delivery without sendi
  const view = mount(app.ReportMessaging, { draft });
  try {
   await view.render(); await app.type('Status');
-  await act(() => { button(view.container, 'Send to phone').click(); button(view.container, 'Send to phone').click(); });
+  await act(() => { button(view.container, 'Send').click(); button(view.container, 'Send').click(); });
   assert.equal(app.sent.length, 1);
   await act(async () => pending.resolve(receipt('queued')));
   app.state({ ...initial, latest_request: receipt('delivered') });
@@ -70,7 +73,7 @@ test('all receipt states are honest and submitted permits a new explicit status 
    await view.render(); assert.ok(view.container.textContent.includes(text));
    if (status !== 'delivered') assert.doesNotMatch(view.container.textContent, /Update delivered/);
    await app.type('Status');
-   assert.equal(button(view.container, 'Send to phone').disabled, ['queued', 'sending', 'uncertain'].includes(status));
+   assert.equal(button(view.container, 'Send').disabled, ['queued', 'sending', 'uncertain'].includes(status));
    assert.deepEqual(app.sent, []);
   } finally { await view.close(); }
  }
@@ -81,7 +84,7 @@ test('an unknown request stays saved and only an explicit retry sends the same o
  const view = mount(app.ReportMessaging, { draft });
  try {
   await view.render(); await app.type('Status');
-  await act(async () => button(view.container, 'Send to phone').click());
+  await act(async () => button(view.container, 'Send').click());
   assert.match(view.container.textContent, /last request is saved/);
   assert.equal(app.sent.length, 1);
   await act(async () => button(view.container, 'Retry request').click());
@@ -108,7 +111,7 @@ test('disabled reports hide the empty feature while existing receipts remain vis
   app.state({ ...initial, enabled: false, latest_request: receipt('submitted') });
   await act(async () => app.foreground());
   assert.match(view.container.textContent, /Update submitted/);
-  assert.doesNotMatch(view.container.textContent, /Send to phone/);
+  assert.doesNotMatch(view.container.textContent, /Tapping Send/);
  } finally { await view.close(); }
 });
 test('refresh failure preserves an existing receipt and remains retryable', async () => {
@@ -128,9 +131,9 @@ test('a 409 conflict refreshes the existing receipt instead of suggesting anothe
  const view = mount(app.ReportMessaging, { draft });
  try {
   await view.render(); app.state({ ...initial, latest_request: receipt('sending') });
-  await app.type('Status'); await act(async () => button(view.container, 'Send to phone').click());
+  await app.type('Status'); await act(async () => button(view.container, 'Send').click());
   assert.match(view.container.textContent, /Submitting update/); assert.equal(app.reads.length, 2);
-  assert.equal(button(view.container, 'Send to phone').disabled, true); assert.equal(app.sent.length, 1);
+  assert.equal(button(view.container, 'Send').disabled, true); assert.equal(app.sent.length, 1);
  } finally { await view.close(); }
 });
 test('account changes and unmounts hide late registered phone and receipt responses', async () => {
@@ -144,9 +147,36 @@ test('account changes and unmounts hide late registered phone and receipt respon
   const result = deferred(); const second = setup({ sendPhoneUpdate: () => result.promise });
   const screen = mount(second.ReportMessaging, { draft });
   await screen.render(); await second.type('Status');
-  await act(() => button(screen.container, 'Send to phone').click());
+  await act(() => button(screen.container, 'Send').click());
   if (change === 'unmount') await screen.close(); else { second.owner('owner-b'); await screen.render(); }
   await act(async () => result.resolve(receipt('delivered')));
   if (change === 'account') { assert.equal(screen.container.textContent, ''); await screen.close(); }
  }
+});
+
+
+test('the Android reply appears immediately and automatic receipt refresh never sends again', async t => {
+ const ticks = [], realTimeout = globalThis.setTimeout, realClear = globalThis.clearTimeout;
+ t.mock.method(globalThis, 'setTimeout', (callback, delay, ...args) => {
+  if (delay === 3000) { const handle = { callback }; ticks.push(handle); return handle; }
+  return realTimeout(callback, delay, ...args);
+ });
+ t.mock.method(globalThis, 'clearTimeout', handle => {
+  const index = ticks.indexOf(handle);
+  if (index >= 0) ticks.splice(index, 1); else realClear(handle);
+ });
+ const app = setup(), view = mount(app.ReportMessaging, { draft });
+ try {
+  await view.render(); await app.type('Status');
+  await act(async () => button(view.container, 'Send').click());
+  assert.match(view.container.textContent, /WasteGrid reply/);
+  assert.match(view.container.textContent, /Cleanup is in progress/);
+  assert.match(view.container.textContent, /Update queued/);
+  assert.equal(app.sent.length, 1); assert.equal(ticks.length, 1);
+  app.state({ ...initial, latest_request: receipt('delivered') });
+  await act(async () => ticks.shift().callback());
+  assert.match(view.container.textContent, /Update delivered to the registered phone/);
+  assert.equal(app.sent.length, 1); assert.equal(app.reads.length, 2);
+  assert.equal(ticks.length, 0);
+ } finally { await view.close(); }
 });

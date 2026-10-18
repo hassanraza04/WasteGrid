@@ -38,7 +38,7 @@ export function OrganizerRouteMap({
   useEffect(() => {
     let cancelled = false;
     const version = api.sessionVersion;
-    const map = L.map(element.current!, { scrollWheelZoom: false }).setView(
+    const map = L.map(element.current!, { scrollWheelZoom: false, zoomAnimation: false }).setView(
       [24.92, 67.09],
       12,
     );
@@ -96,7 +96,7 @@ export function OrganizerRouteMap({
           points.forEach((point) => bounds.extend(point));
           ready++;
           if (bounds.isValid())
-            map.fitBounds(bounds, { padding: [24, 24], maxZoom: 16 });
+            map.fitBounds(bounds, { padding: [24, 24], maxZoom: 16, animate: false });
         } else failed++;
         setStatus(
           `${ready} road route${ready === 1 ? "" : "s"} displayed${failed ? ` · ${failed} unavailable; approved estimates unchanged` : ""}. OSRM estimates; no live traffic.`,
