@@ -1,6 +1,6 @@
 // Account sign-in; staff roles and crew ownership come from the backend.
 import { useEffect, useRef, useState } from "react";
-import { View, StyleSheet, Platform, type TextInputInstance } from "react-native";
+import { View, StyleSheet, Platform, Image, type TextInputInstance } from "react-native";
 import { router, usePreventRemove } from "expo-router";
 
 import { AppText, Button, IconButton, Screen, ScreenHeader, TextField } from "@/components/ui";
@@ -48,6 +48,13 @@ export default function Login() {
           <IconButton icon="x" variant="sunken" size="sm" accessibilityLabel="Close" disabled={busy} onPress={() => router.back()} />
         </View>
       }>
+      <Image
+        source={require("@/assets/images/wastegrid-logo.png")}
+        style={s.brand}
+        resizeMode="contain"
+        accessible
+        accessibilityLabel="WasteGrid"
+      />
       <ScreenHeader title="Log in" subtitle="Report waste and track cleanups. Crews see their routes; admins plan them." />
 
       <TextField
@@ -87,6 +94,7 @@ export default function Login() {
 
 const s = StyleSheet.create({
   header: { flexDirection: "row", paddingHorizontal: Layout.screenPadding, paddingTop: Spacing.md },
+  brand: { width: 230, height: 82, alignSelf: "center", marginBottom: Spacing.md },
   submit: { marginTop: Spacing.sm },
   crewPicker: { gap: Spacing.sm },
   crewLabel: { paddingHorizontal: Spacing.xs },

@@ -13,7 +13,7 @@ function WelcomePage() {
     <main className="wg-app wg-login">
       <section className="wg-card wg-login-card wg-stack">
         <p className="wg-eyebrow">Community cleanup</p>
-        <h1>WasteGrid</h1>
+        <h1 className="wg-welcome-brand"><img src="/brand/wastegrid-logo.png" alt="WasteGrid" /></h1>
         <p>Report waste. Coordinate a crew. Follow the cleanup.</p>
         <div className="wg-info-panel wg-stack">
           <h2>Residents and crews</h2>

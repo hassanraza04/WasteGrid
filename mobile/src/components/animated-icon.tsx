@@ -35,7 +35,7 @@ export function AnimatedSplashOverlay() {
     },
   });
 
-  const image = <Image style={styles.splashImage} source={require('@/assets/images/splash-wordmark.png')} />;
+  const image = <Image style={styles.splashImage} source={require('@/assets/images/wastegrid-logo.png')} />;
 
   return animate ? (
     <Animated.View
@@ -88,25 +88,12 @@ const logoKeyframe = new Keyframe({
   },
 });
 
-const glowKeyframe = new Keyframe({
-  0: {
-    transform: [{ rotateZ: '0deg' }],
-  },
-  100: {
-    transform: [{ rotateZ: '7200deg' }],
-  },
-});
-
 export function AnimatedIcon() {
   return (
     <View style={styles.iconContainer}>
-      <Animated.View entering={glowKeyframe.duration(60 * 1000 * 4)} style={styles.glow}>
-        <Image style={styles.glow} source={require('@/assets/images/logo-glow.png')} />
-      </Animated.View>
-
       <Animated.View entering={keyframe.duration(DURATION)} style={styles.background} />
       <Animated.View style={styles.imageContainer} entering={logoKeyframe.duration(DURATION)}>
-        <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />
+        <Image style={styles.image} source={require('@/assets/images/wastegrid-mark.png')} />
       </Animated.View>
     </View>
   );
@@ -117,11 +104,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  glow: {
-    width: 201,
-    height: 201,
-    position: 'absolute',
-  },
   iconContainer: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -130,23 +112,23 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   image: {
-    width: 76,
-    height: 71,
+    width: 92,
+    height: 92,
   },
   splashImage: {
-    width: 170,
-    aspectRatio: 680 / 118,
+    width: 260,
+    aspectRatio: 2103 / 748,
   },
   background: {
     borderRadius: 40,
-    experimental_backgroundImage: `linear-gradient(180deg, #3C9FFE, #0274DF)`,
+    backgroundColor: Colors.surface,
     width: 128,
     height: 128,
     position: 'absolute',
   },
   splashOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,

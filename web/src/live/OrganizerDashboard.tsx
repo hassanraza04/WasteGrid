@@ -259,10 +259,7 @@ export function OrganizerDashboard({ api }: { api: OrganizerApi }) {
 function Brand() {
   return (
     <Link to="/admin" className="wg-brand" aria-label="WasteGrid overview">
-      <span className="wg-brand-mark" aria-hidden="true">
-        w
-      </span>
-      WasteGrid
+      <img src="/brand/wastegrid-logo.png" alt="" />
     </Link>
   );
 }
