@@ -106,6 +106,89 @@ export interface OrganizerJobDetails {
   events: OrganizerEvent[];
 }
 
+export interface OrganizerCrew {
+  id: string;
+  name: string;
+  equipment: Equipment[];
+  shift_minutes: number;
+  available: boolean;
+  start_location: OrganizerLocation;
+  illustrative: boolean;
+  location_recorded_at: string | null;
+  location_received_at: string | null;
+  location_revision: number;
+}
+
+export interface OrganizerRoutingJob {
+  id: string;
+  status: OrganizerJobDetails["job"]["status"];
+  location: OrganizerLocation;
+  category: string;
+  required_equipment: Equipment[];
+  estimated_service_minutes: number;
+  assigned_crew_id: string | null;
+  locked: boolean;
+  held: boolean;
+  route_position: number | null;
+  travel_minutes: number;
+  decision_summary: string;
+  unassigned_reason: string | null;
+  version: number;
+  illustrative: boolean;
+}
+
+export interface OrganizerPlanAssignment {
+  job_id: string;
+  crew_id: string;
+  position: number;
+  travel_minutes: number;
+  service_minutes: number;
+}
+
+export interface OrganizerCurrentPlan {
+  plan: {
+    id: string;
+    stale: boolean;
+    assignments: OrganizerPlanAssignment[];
+    unassigned: Array<{ job_id: string; reason_code: string }>;
+    travel_estimates_label: string;
+  } | null;
+}
+
+export interface OrganizerRouteStop {
+  job_id: string;
+  position: number;
+  priority: Priority;
+  travel_minutes: number;
+  service_minutes: number;
+  completion_minutes: number;
+  fixed: boolean;
+  service_estimate_source: string;
+}
+
+export interface OrganizerRoutePreview {
+  id: string;
+  job_ids: string[] | null;
+  computed_at: string;
+  expires_at: string;
+  matrix_id: string | null;
+  travel_label: string;
+  routes: Array<{ crew_id: string; stops: OrganizerRouteStop[]; duration_minutes: number; travel_minutes: number }>;
+  unassigned: Array<{ job_id: string; reason: string }>;
+  exclusions: Array<{ job_id: string; reason: string }>;
+  metrics: { weighted_wait: number; latest_finish: number; total_travel: number; score: number };
+  termination_reason: string;
+  dispatchable: boolean;
+  reassignments: Array<{ job_id: string; previous_crew_id: string | null; previous_position: number | null; proposed_crew_id: string; proposed_position: number }>;
+  settings: Record<string, unknown>;
+  plan_id: string | null;
+}
+
+export interface OrganizerDispatchResult {
+  preview_id: string;
+  plan_id: string;
+}
+
 export interface DecisionCommand {
   command_id: string;
   expected_version: number;
@@ -139,6 +222,10 @@ export interface StaffAuth {
 export class AccessError extends Error {}
 
 export class DashboardConfigurationError extends Error {}
+
+export class RoutingContractError extends Error {}
+
+export class RoutingConflictError extends Error {}
 
 export class OrganizerApi {
   private authenticationVersion = 0;
@@ -197,6 +284,41 @@ export class OrganizerApi {
     return this.request(`/jobs/${encodeURIComponent(id)}`, {}, "job");
   }
 
+  crews(): Promise<OrganizerCrew[]> {
+    return this.request("/crews", {}, "routing");
+  }
+
+  async jobs(): Promise<OrganizerRoutingJob[]> {
+    const jobs: OrganizerRoutingJob[] = [];
+    for (let offset = 0; ; offset += 100) {
+      const page = await this.request<OrganizerRoutingJob[]>(`/jobs?active_only=true&limit=100&offset=${offset}`, {}, "routing");
+      jobs.push(...page);
+      if (page.length < 100) return jobs;
+    }
+  }
+
+  currentPlan(): Promise<OrganizerCurrentPlan> {
+    return this.request("/plans/current", {}, "routing");
+  }
+
+  previewRouting(crewIds: string[], jobIds: string[]): Promise<OrganizerRoutePreview> {
+    if (crewIds.length < 1 || crewIds.length > 5 || new Set(crewIds).size !== crewIds.length) throw new RoutingContractError("Choose between 1 and 5 distinct crews.");
+    if (jobIds.length < 1 || jobIds.length > 25 || new Set(jobIds).size !== jobIds.length) throw new RoutingContractError("Choose between 1 and 25 distinct jobs.");
+    return this.request("/routing/previews", {
+      method: "POST",
+      body: JSON.stringify({ crew_ids: crewIds, job_ids: jobIds }),
+      headers: { "Content-Type": "application/json" },
+    }, "routing");
+  }
+
+  dispatchRouting(previewId: string, commandId: string): Promise<OrganizerDispatchResult> {
+    return this.request(`/routing/previews/${encodeURIComponent(previewId)}/dispatch`, {
+      method: "POST",
+      body: JSON.stringify({ command_id: commandId }),
+      headers: { "Content-Type": "application/json" },
+    }, "routing");
+  }
+
   applyDecision(id: string, command: DecisionCommand): Promise<OrganizerReport> {
     return this.request(`/organizer/reports/${encodeURIComponent(id)}/decision`, {
       method: "POST",
@@ -218,7 +340,7 @@ export class OrganizerApi {
     return result.url;
   }
 
-  private async request<T>(path: string, init: RequestInit = {}, action: "reports" | "details" | "job" | "mutation" = "details"): Promise<T> {
+  private async request<T>(path: string, init: RequestInit = {}, action: "reports" | "details" | "job" | "mutation" | "routing" = "details"): Promise<T> {
     const version = this.sessionVersion;
     if (this.signingOut) throw new AccessError("Please sign in again.");
     const token = await this.auth.token();
@@ -243,6 +365,9 @@ export class OrganizerApi {
       if (action === "mutation" && response.status === 409) throw new Error("This report changed or is not ready for that decision. Reload it and review the latest details.");
       if (action === "mutation" && response.status === 422) throw new Error("Check the decision fields and try again.");
       if (action === "mutation") throw new Error("Unable to save the organiser decision. Please retry.");
+      if (action === "routing" && response.status === 409) throw new RoutingConflictError("Routing state changed. Refresh and compute a new preview before dispatch.");
+      if (action === "routing" && response.status === 422) throw new RoutingContractError("The selected route scope was rejected. Refresh routing state and verify the scoped-routing deployment.");
+      if (action === "routing") throw new Error("Unable to load routing state. Please retry.");
       if (action === "reports") throw new Error("Unable to load reports. Please retry.");
       if (action === "job") throw new Error("Unable to load cleanup job details. Please retry.");
       throw new Error("Unable to load report details. Please retry.");
