@@ -346,3 +346,67 @@ test('a safely checkpointed network retry clears the earlier rejection and canno
  const restarted=app.reload(),[uncertain]=await restarted.pendingStaff();assert.equal(uncertain.dispatchAttemptPending,false);assert.equal(uncertain.rejected,false);assert.equal(uncertain.recomputeRequired,false);
  await assert.rejects(restarted.discardRejectedStaff(uncertain),/Only a rejected submission/);assert.equal(posts,2);
 });
+
+test('photo-free completion persists one immutable command before HTTP and recovers a lost acknowledgement',async()=>{
+ const app=setup();let posts=0,accepted=false;
+ const [first,duplicate]=await Promise.all([app.service.prepareStaff('completion',job),app.service.prepareStaff('completion',job)]);
+ assert.equal(first.command_id,duplicate.command_id);assert.equal(first.photoUri,undefined);
+ assert.deepEqual([...app.files.keys()].filter(uri=>uri.startsWith('file:///documents/')&&!uri.endsWith('.json')),[]);
+ app.respond((_url,init)=>{
+  if(init.method==='POST'){
+   posts++;const persisted=[...app.files].filter(([uri])=>uri.endsWith('.json')).map(([,value])=>JSON.parse(value));
+   assert.equal(persisted[0].command_id,first.command_id);assert.equal(persisted[0].expected_version,7);assert.equal(persisted[0].photoUri,undefined);
+   assert.deepEqual([...init.body.keys()],['command_id','expected_version']);assert.equal(init.body.get('photo'),null);
+   accepted=true;throw Error('lost completion acknowledgement');
+  }
+  return Response.json({job:{...job,status:accepted?'completed':'in_progress'},events:accepted?[{kind:'job.completed',command_id:first.command_id}]:[]});
+ });
+ await assert.rejects(app.service.submitStaff(first),/lost completion acknowledgement/);
+ const restarted=app.reload(),[saved]=await restarted.pendingStaff();assert.equal(saved.command_id,first.command_id);assert.equal(saved.expected_version,7);assert.equal(saved.photoUri,undefined);
+ await restarted.submitStaff(saved);assert.equal(posts,1);assert.deepEqual(await restarted.pendingStaff(),[]);
+});
+
+test('the first saved photo choice cannot be upgraded or downgraded during completion retry',async()=>{
+ for(const withPhoto of [false,true]){
+  const app=setup();
+  const first=await app.service.prepareStaff('completion',job,withPhoto?'file:///camera/cleanup.jpg':undefined);
+  const second=await app.service.prepareStaff('completion',job,withPhoto?undefined:'file:///camera/cleanup.jpg');
+  assert.equal(second.command_id,first.command_id);assert.equal(second.photoUri,first.photoUri);
+  app.respond((_url,init)=>{
+   if(init.method==='POST'){assert.equal(init.body.has('photo'),withPhoto);return Response.json({...job,status:'completed'});}
+   return Response.json({job,events:[]});
+  });
+  await app.reload().submitStaff({...first,photoUri:withPhoto?undefined:'file:///camera/cleanup.jpg'});
+ }
+});
+
+test('a missing saved completion photo stays pending and never becomes a photo-free POST',async()=>{
+ const app=setup();const command=await app.service.prepareStaff('completion',job,'file:///camera/cleanup.jpg');
+ app.files.delete(command.photoUri);let posts=0;
+ app.respond((_url,init)=>{if(init.method==='POST')posts++;return Response.json({job,events:[]});});
+ await assert.rejects(app.reload().submitStaff({...command,photoUri:undefined}),/saved cleanup photo is unavailable/);
+ const [saved]=await app.reload().pendingStaff();assert.equal(saved.photoUri,command.photoUri);assert.equal(posts,0);
+ app.respond(()=>Response.json({job:{...job,status:'completed'},events:[{kind:'job.completed',command_id:command.command_id}]}));
+ await app.service.submitStaff(command);assert.equal(posts,0);assert.deepEqual(await app.service.pendingStaff(),[]);
+});
+
+test('an invalid supplied photo cannot be silently interpreted as no-photo completion',async()=>{
+ for(const uri of ['', '  ', 'file:///missing.jpg', 'file:///empty.jpg', 'file:///invalid.gif']){
+  const app=setup();app.files.set('file:///empty.jpg','');app.files.set('file:///invalid.gif','invalid format');let requests=0;
+  app.respond(()=>{requests++;return Response.json({job,events:[]});});
+  await assert.rejects(app.service.prepareStaff('completion',job,uri),/valid cleanup photo|JPEG, PNG or WebP/);
+  assert.deepEqual(await app.service.pendingStaff(),[]);assert.equal(requests,0);
+ }
+});
+
+test('photo-free completion keeps its owner and version through restart and cannot borrow another account',async()=>{
+ const app=setup();const command=await app.service.prepareStaff('completion',job);let posts=0;
+ app.session({userId:'other',role:'crew',crewId:'crew'});const restarted=app.reload();
+ assert.deepEqual(await restarted.pendingStaff(),[]);await assert.rejects(restarted.submitStaff(command),/account that saved/);
+ app.session({userId:'owner',role:'crew',crewId:'crew'});
+ app.respond((_url,init)=>{
+  if(init.method==='POST'){posts++;assert.equal(init.body.get('expected_version'),'7');assert.equal(init.body.get('command_id'),command.command_id);assert.equal(init.body.has('photo'),false);return Response.json({...job,status:'completed'});}
+  return Response.json({job,events:[{kind:'job.completed',command_id:'someone-else'}]});
+ });
+ await restarted.submitStaff(command);assert.equal(posts,1);assert.deepEqual(await restarted.pendingStaff(),[]);
+});

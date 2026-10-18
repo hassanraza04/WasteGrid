@@ -7,18 +7,21 @@ focused screens poll every 15 seconds only while foregrounded.
 
 ## Organiser
 
-Dispatch loads real crews and active jobs. Select at most five crews, then Compute
-routes. This creates a read-only preview across all eligible unassigned jobs and
-eligible selected-crew work. The existing backend limit is 25 eligible scoped jobs.
-The live screen has no city, hours, max-stop or return-to-start controls.
+Dispatch loads real crews and active jobs. Select at most five crews and 1–25
+jobs, then Compute routes. This creates a read-only preview of that explicit
+scope. Include every unfinished assignment of a selected crew. See
+[scoped routing](scoped-routing.md) for eligibility and conflict recovery. The
+live screen has no city, hours, max-stop or return-to-start controls.
 
 Review per-crew time, ordered stops and priorities, fixed work, reassignments,
 excluded jobs and unassigned reasons. Maps show the stop sequence, not road
 geometry. Only a complete, unexpired dispatchable preview can be approved.
 Approval saves a command ID before POST /routing/previews/{id}/dispatch. Recover a
 lost response with the saved action; do not create a replacement command blindly.
-An unresolved saved dispatch blocks another calculation. Definitively rejected
-actions can be discarded after verifying the server has not applied them.
+An unresolved saved dispatch blocks another calculation. A definite dispatch 409
+retires that preview and requires current-state refresh, a new computation and
+renewed approval. Interrupted outcome storage permits only read-only checks;
+it cannot authorize another dispatch. See the scoped-routing recovery contract.
 
 Rechecked jobs expose an audit-reason field and the existing narrow organiser
 release to unassigned. Review/handling gates are never bypassed locally.
@@ -35,27 +38,41 @@ retries on foreground return and offers Refresh GPS. Backgrounded/unfocused or
 signed-out screens stop publishing. Denied or unavailable location remains visible;
 the organiser cannot publish its own location as another crew's position.
 
-Start stop sends a version-checked job PATCH with a durable command ID. Take cleanup
-photo opens the existing camera. Review and submit copies evidence into durable
-app storage before multipart POST /jobs/{id}/completion. No model examines these
-photos. Retakes are possible before submission; uncertain submissions keep their
-original bytes, version and command ID. Completion is never optimistic and cannot
-be undone through a crew toggle.
+Start stop sends a version-checked job PATCH with a durable command ID. The crew
+can choose Take cleanup photo or Mark cleanup complete. The latter opens Confirm
+completion without a photo and requires another explicit confirmation before the
+action is saved and sent. Review states whether an image will be submitted. The
+photo path retains the existing camera, retake and durable image-copy flow before
+multipart POST /jobs/{id}/completion. No model examines these photos. Completion is never optimistic and cannot be undone through a crew
+toggle.
+
+The backend accepts the same command and version fields without a `photo`. With
+no photo, it creates no photo record or Storage object; the completion audit
+records `photo_id: null` and retains `verification: "crew_submitted"`. Both choices
+are the crew's reported completion, not an independent inspection. When a photo
+is supplied, existing size, format and private-access rules still apply. Keep
+photo presence and bytes, note, version and command ID unchanged on retry;
+changing them under the same command conflicts. A saved photo-free action cannot
+silently acquire a photo during recovery, and a saved photo action cannot lose
+its evidence when retried.
 
 Recovery checks job audit events for the exact command ID and event kind. A
-different actor's completed status is not proof our photo was accepted. Evidence
-and pending commands survive app restart and are isolated by account, crew and
-API environment. Temporary-file publication protects saved metadata from
-interrupted writes. Definitive validation/conflict responses retain a rejected
+different actor's completed status is not proof our completion command was
+accepted. Evidence and pending commands survive app restart and are isolated by
+account, crew and API environment. Temporary-file publication protects saved
+metadata from interrupted writes. Definitive validation/conflict responses retain a rejected
 action for recovery or explicit discard after a server audit check.
 
 The staff-only GET /jobs/{id} audit events now include nullable command_id for this
 correlation. Public resident timelines remain redacted and expose no command IDs.
 
 Confirmed completion refreshes remaining stops and progress. Residents refresh
-their existing report to see completion, status history and authorised cleanup
-photos. All linked reports reflect the job state. No public report-map endpoint,
-impact analytics or retention policy is introduced.
+their existing report to see crew-reported completion, status history and any
+authorised cleanup photos that were actually submitted. An empty
+`completion_photo_ids` list is valid for a completed job. Existing photo IDs remain
+available as historical evidence; their presence does not establish that a later
+completion included another photo. All linked reports reflect the job state. No
+public report-map endpoint, impact analytics or retention policy is introduced.
 
 ## Additive backend query
 
@@ -87,6 +104,13 @@ organiser preview/dispatch -> assigned crew start -> cleanup photo -> resident
 completion evidence. Exercise an interrupted upload, a lost dispatch response,
 logout/account switching, denied GPS and recheck release. Coordinate new test
 records and preserve the shared illustrative fixture.
+
+Backend contract checks must additionally cover completion without a photo,
+unchanged-command recovery, changed photo presence returning a conflict, and
+resident history that does not claim a photo was submitted. Rehearse both the
+photo and explicitly confirmed photo-free choices on actual devices before
+claiming live acceptance. These checks do not activate the general worker or
+messaging pilot.
 
 ### Review follow-up
 

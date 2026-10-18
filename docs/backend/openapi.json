@@ -134,13 +134,19 @@
             "title": "Note"
           },
           "photo": {
-            "contentMediaType": "application/octet-stream",
-            "title": "Photo",
-            "type": "string"
+            "anyOf": [
+              {
+                "contentMediaType": "application/octet-stream",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Photo"
           }
         },
         "required": [
-          "photo",
           "command_id",
           "expected_version"
         ],

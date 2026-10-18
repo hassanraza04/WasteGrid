@@ -62,7 +62,7 @@ test('crew starts in server order, captures evidence, and removes a stop only af
   '@/components/account/account-button':{AccountButton:wrap},'@/components/report/camera-step':{CameraStep:props=>{camera=props;return null;}},
   '@/components/route/route-map':{RouteMap:props=>{mapped.push(props.stops);return null;}},'@/components/route/pending-actions':{PendingActions:wrap},
   '@/hooks/use-crew-location':{useCrewLocation:()=>({message:'GPS shared',refresh:async()=>{}})},'@/hooks/use-staff-data':{useStaffData:()=>state},'@/services/staff':{staffApi:{}},
-  '@/services/pending-staff':{pendingStaff:async()=>[],prepareStaff:async(kind,value,uri)=>{prepared.push({kind,version:value.version,uri});return{kind};},submitStaff:async command=>{
+  '@/services/pending-staff':{pendingStaff:async()=>[],prepareStaff:async(kind,value,uri)=>{prepared.push({kind,version:value.version,uri});return{kind,photoUri:uri};},submitStaff:async command=>{
    if(command.kind==='start'){first.status='in_progress';first.version++;}else state.data.jobs=[second];
   }},
  });
@@ -209,5 +209,64 @@ test('an unclassified saved dispatch keeps new calculations and approvals blocke
   state.data.pending=[{kind:'dispatch',command_id:'unknown-attempt',resource_id:'preview',dispatchAttemptPending:true}];await view.render();
   assert.equal(button(view.container,'Compute routes').disabled,true);assert.equal(button(view.container,'Approve and dispatch').disabled,true);
   assert.equal(app.requests.length,1);assert.equal(app.prepared.length,0);
+ }finally{await view.close();}
+});
+
+
+function optionalCompletionSetup({prepare,submit}={}){
+ let cameraUses=0;const prepared=[],submissions=[];
+ const current={...job,status:'in_progress'};
+ const state={data:{jobs:[current],pending:[]},loading:false,error:'',refresh:async()=>{}};
+ const {LiveCrewRoute}=load('components/route/live-crew-route.tsx',{
+  'react-native':{Linking:{openURL:async()=>{}}},'expo-image':{Image:wrap},'@/components/ui':blocks,
+  '@/components/account/account-button':{AccountButton:wrap},'@/components/report/camera-step':{CameraStep:()=>{cameraUses++;return null;}},
+  '@/components/route/route-map':{RouteMap:wrap},'@/components/route/pending-actions':{PendingActions:wrap},
+  '@/hooks/use-crew-location':{useCrewLocation:()=>({message:'GPS shared',refresh:async()=>{}})},'@/hooks/use-staff-data':{useStaffData:()=>state},'@/services/staff':{staffApi:{}},
+  '@/services/pending-staff':{pendingStaff:async()=>[],prepareStaff:async(kind,value,uri)=>{prepared.push({kind,version:value.version,uri});return prepare?prepare(kind,value,uri):{kind,resource_id:value.id,expected_version:value.version};},submitStaff:async command=>{submissions.push(command);if(submit)await submit(command);else state.data.jobs=[];}},
+ });
+ return{state,prepared,submissions,cameraUses:()=>cameraUses,view:mount(LiveCrewRoute,{})};
+}
+
+test('photo-free completion is explicitly reviewed and cancellation performs no submission',async()=>{
+ const app=optionalCompletionSetup();const{view}=app;
+ try{
+  await view.render();await act(()=>button(view.container,'Mark cleanup complete').click());assert.match(view.container.textContent,/Confirm completion without a photo/);
+  assert.equal(app.prepared.length,0);assert.equal(app.cameraUses(),0);
+  await act(()=>button(view.container,'Cancel completion').click());assert.equal(view.container.textContent.includes('Confirm completion without a photo'),false);assert.equal(app.prepared.length,0);
+  await act(()=>button(view.container,'Mark cleanup complete').click());await act(async()=>button(view.container,'Confirm completion without photo').click());
+  assert.deepEqual(app.prepared,[{kind:'completion',version:2,uri:undefined}]);assert.equal(app.submissions.length,1);assert.equal(app.cameraUses(),0);
+  assert.match(view.container.textContent,/Cleanup confirmed. No cleanup photo was attached./);assert.match(view.container.textContent,/No active stops assigned/);
+ }finally{await view.close();}
+});
+
+test('photo-free completion stays unconfirmed until the saved command succeeds and repeated taps submit once',async()=>{
+ const done=deferred();const app=optionalCompletionSetup({submit:async()=>{await done.promise;app.state.data.jobs=[];}});const{view}=app;
+ try{
+  await view.render();await act(()=>button(view.container,'Mark cleanup complete').click());
+  await act(async()=>{button(view.container,'Confirm completion without photo').click();button(view.container,'Confirm completion without photo').click();});
+  assert.equal(app.submissions.length,1);assert.equal(app.state.data.jobs[0].status,'in_progress');assert.equal(view.container.textContent.includes('Cleanup confirmed'),false);
+  await act(async()=>done.resolve());assert.match(view.container.textContent,/Cleanup confirmed/);assert.equal(app.prepared.length,1);
+ }finally{await view.close();}
+});
+
+test('failed optional completion retains server state and does not claim a photo or completion',async()=>{
+ const app=optionalCompletionSetup({submit:async()=>{throw Error('Unable to confirm; recover the saved completion');}});const{view}=app;
+ try{
+  await view.render();await act(()=>button(view.container,'Mark cleanup complete').click());await act(async()=>button(view.container,'Confirm completion without photo').click());
+  assert.match(view.container.textContent,/Unable to confirm/);assert.equal(app.state.data.jobs[0].status,'in_progress');assert.equal(view.container.textContent.includes('Cleanup confirmed'),false);
+ }finally{await view.close();}
+});
+
+test('a late prepared optional completion cannot submit after the crew screen unmounts',async()=>{
+ const preparation=deferred();const app=optionalCompletionSetup({prepare:()=>preparation.promise});const{view}=app;
+ await view.render();await act(()=>button(view.container,'Mark cleanup complete').click());await act(()=>button(view.container,'Confirm completion without photo').click());
+ await view.close();await act(async()=>preparation.resolve({kind:'completion'}));assert.equal(app.prepared.length,1);assert.equal(app.submissions.length,0);
+});
+
+test('completion evidence copy follows the immutable saved command rather than the newest UI choice',async()=>{
+ const app=optionalCompletionSetup({prepare:async()=>({kind:'completion',photoUri:'file:///existing-saved.jpg'})});const{view}=app;
+ try{
+  await view.render();await act(()=>button(view.container,'Mark cleanup complete').click());await act(async()=>button(view.container,'Confirm completion without photo').click());
+  assert.match(view.container.textContent,/resident can see your completion photo/);assert.equal(view.container.textContent.includes('No cleanup photo was attached'),false);
  }finally{await view.close();}
 });

@@ -28,10 +28,11 @@ export async function recoverOrSend(command: StaffCommand, api: StaffClient, pho
       ...(command.kind === "release" ? { reason: command.reason } : {}),
     }, "PATCH");
   }
-  if (!photo) throw new Error("The saved cleanup photo is unavailable. Keep the submission for review.");
+  if (command.photoUri !== undefined && (!command.photoUri || !photo || photo.size <= 0)) throw new Error("The saved cleanup photo is unavailable. Keep the submission for review.");
+  if (command.photoUri === undefined && photo) throw new Error("This saved completion does not include a photo. Keep its original submission details.");
   const body = new FormData();
   body.append("command_id", command.command_id);
   body.append("expected_version", String(command.expected_version));
-  body.append("photo", photo, command.photoUri?.split("/").pop() ?? "cleanup.jpg");
+  if (photo) body.append("photo", photo, command.photoUri!.split("/").pop() ?? "cleanup.jpg");
   return api.request<Job>(`/jobs/${encodeURIComponent(command.resource_id)}/completion`, { method: "POST", body });
 }
