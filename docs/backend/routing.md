@@ -36,6 +36,57 @@ and fresh crew observations are required for live acceptance. No provider/server
 is deployed by this change. OSRM protocol reference:
 https://project-osrm.org/docs/v5.24.0/api/#table-service
 
+### Supervised free-provider configuration
+
+For the single-process Free Render service, the public FOSSGIS car endpoint is:
+
+```dotenv
+ROUTING_OSRM_BASE_URL=https://routing.openstreetmap.de/routed-car
+ROUTING_PROVIDER_TIMEOUT_SECONDS=10
+ORGANIZER_ROUTING_ENABLED=true
+MESSAGING_PILOT_ENABLED=false
+```
+
+The adapter appends `/table/v1/driving/...`; keep `/routed-car` in the base URL.
+No signup, API key, paid service or worker process is needed for road-time calls.
+This is a best-effort public demo, without live traffic or an availability SLA.
+Use it for the supervised hackathon session, not sustained operational traffic.
+The [provider policy](https://routing.openstreetmap.de/about.html) requires an
+identifying User-Agent, attribution, a map-correction link and at most one request
+per second. WasteGrid identifies its requests, shares a fail-closed rate guard
+across both public demo aliases, and shows attribution/correction links in Dispatch.
+A rejected local rate reservation makes no provider call and retains the normal
+non-dispatchable diagnostic preview. Self-hosted endpoints retain their own policy.
+The guard covers one API process only. Keep the existing single-process service;
+use a shared limiter or a suitable provider before adding workers or replicas.
+
+Provider verification should check an actual square driving-time table and snapped
+waypoint distances for Karachi, including the 30-location application limit.
+Use public/illustrative coordinates and save only sanitized timing, coverage and
+matrix summaries. A remote graph can return `Ok` while snapping to distant roads.
+`GET /ready` does not probe OSRM. A persisted preview also skips the provider when
+there are no eligible jobs, so neither is proof of road-provider acceptance.
+A fresh real crew GPS observation and an eligible approved job are still required
+for the final deployed preview/dispatch walkthrough. Never manufacture fresh crew
+positions or dispatch the illustrative fixture just to pass this check.
+
+### Readiness evidence — 17 October 2026 (America/New_York)
+
+Bounded checks against the FOSSGIS car endpoint used synthetic Karachi coordinates:
+
+- 30 locations / 900 duration cells: `Ok`, no null durations, maximum road-snap
+  distance 78.03 m, response 0.406 s.
+- A separate two-crew/three-job synthetic case: `Ok`, maximum road-snap distance
+  58.61 m; the actual solver covered all three jobs once using the returned matrix.
+- The second response took 8.948 s. Public-service latency is variable; retain the
+  bounded timeout and diagnostic failure path instead of claiming an SLA.
+
+No shared preview, assignment or job was written. The shared two crews had no fresh
+GPS, so this does not establish device or deployed-preview acceptance. Local worker
+and Photon poller stayed stopped, with messaging disabled. The API still needs the
+reviewed adapter deployed and `ROUTING_OSRM_BASE_URL` applied through Render before
+its own outbound network path can be accepted. No additional migration is needed.
+
 The mode defaults off for coordinated deployment. All new routing writes,
 including organiser priority decisions and crew GPS updates, return 503 while
 it is off. Historical previews remain readable by authorised organisers. In organiser mode, legacy

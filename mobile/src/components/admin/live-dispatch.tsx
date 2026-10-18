@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
+import { Link } from "expo-router";
 import { AppText, Button, Card, Chip, Screen, ScreenHeader, TextField } from "@/components/ui";
 import { AccountButton } from "@/components/account/account-button";
 import { useStaffData } from "@/hooks/use-staff-data";
@@ -57,6 +58,7 @@ export function LiveDispatch() {
   const crewName = (id: string | null) => state.data?.crews.find(crew => crew.id === id)?.name ?? id ?? "Unassigned";
   return <Screen>
     <ScreenHeader title="Dispatch" subtitle="All eligible jobs · road travel time and priority" trailing={<AccountButton />} />
+    <AppText tone="muted">Road routing: OSRM. <Link href="https://www.openstreetmap.org/copyright" asChild><AppText tone="primary">© OpenStreetMap contributors (ODbL).</AppText></Link> <Link href="https://www.openstreetmap.org/fixthemap" asChild><AppText tone="primary">Fix the map</AppText></Link></AppText>
     <Button label="Refresh fleet and current plan" variant="outline" disabled={busy || state.loading} onPress={() => { void state.refresh(); }} />
     {state.loading && <AppText tone="muted">Refreshing fleet…</AppText>}
     {state.error ? <AppText accessibilityRole="alert">{state.error}</AppText> : null}

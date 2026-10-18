@@ -270,7 +270,7 @@ def compute_preview(db, crew_ids, settings, road_times, actor):
     ]
     db.commit()  # Release mutation lock and DB transaction BEFORE road provider I/O.
     matrix, matrix_id = None, None
-    label = "OSRM directional driving-time estimates; no live traffic guarantee"
+    label = "OSRM directional driving-time estimates using OpenStreetMap data (ODbL); no live traffic guarantee"
     try:
         matrix = (
             road_times.matrix(locations)
