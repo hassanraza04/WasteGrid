@@ -1,9 +1,16 @@
-# Proposed shared contracts v0.2
+# WasteGrid API contracts v0.2
 
-The attached four-person build plan is the baseline. These exact payload shapes
-are **proposed**, not yet confirmed by Persons 1, 3 and 4. Python source is
-`api/schemas.py`; runtime integration is `api/integrations.py`. Regenerate with
-`python -m scripts.export_contracts`. Fixture credentials/URLs are examples only.
+These contracts describe the implemented backend. Python models live in
+`api/schemas.py`, `api/routing_schemas.py`, and `api/pilot_schemas.py`; runtime
+decision integration lives in `api/integrations.py`. Regenerate OpenAPI, schemas,
+and fixtures with `uv run --extra backend python -m scripts.export_contracts`.
+Fixture credentials and URLs are examples only. Verify the running revision and
+its flags before using a new endpoint.
+
+Earlier ownership labels in the detailed provider sections refer to the mobile
+client (Person 1), backend (Person 2), decision provider (Person 3), and messaging
+adapter (Person 4). Current clients and runtime setup are described in the
+[project README](../../README.md).
 
 ## Common rules
 
@@ -39,6 +46,7 @@ ID merely to bypass a conflict.
 | Method/path | Access | Request/result |
 | --- | --- | --- |
 | `GET /health`, `GET /ready` | Public | Liveness / configured DB readiness |
+| `GET /map/markers` | Public | Required viewport bounds; rounded non-illustrative report markers, no private report details |
 | `GET /auth/me` | Staff | User ID, role, crew ID |
 | `POST /reports` | Public | Multipart photo, required coordinate pair for new reports, landmark, note; 201 report + access token |
 | `GET /reports/{id}` | Resident token, organizer, assigned crew | Public `ReportView` without credentials or internal triage |
@@ -46,17 +54,24 @@ ID merely to bypass a conflict.
 | `GET /reports/{id}/updates` | Resident token, organizer, assigned crew | `{items, limit, offset, total}`; oldest first; limit 1–100 (default 50), offset ≥0 |
 | `GET /reports/{id}/messages` | Resident token or organizer; never crew | Same page envelope; oldest first across the report's linked conversations; transport identifiers excluded |
 | `GET /organizer/reports` | Organizer | Paginated `OrganizerReportView` array (`limit` 1–100, `offset`) |
+| `GET /organizer/overview`, `/organizer/report-index`, `/organizer/job-index` | Organizer | Operational counts and server-filtered read models; see the operator runbook |
+| `GET` / `POST /reports/{id}/phone-updates` | Resident token | Read the existing receipt or consent to the Status snapshot and registered-phone copy; see phone updates |
 | `GET /organizer/reports/{id}` | Organizer | `OrganizerReportView` plus audit details/decisions |
 | `POST /organizer/reports/{id}/decision` | Organizer | `TriageRecommendation` input; audited override returns `OrganizerReportView` |
+| `POST /organizer/reports/{id}/priority` | Organizer | Audited effective priority change; does not clear review/handling gates |
 | `POST /reports/{id}/followup-link` | Resident token | Ten-minute one-time iMessage code for an enabled, fully configured pilot and allowlisted report; otherwise 503/403; persisted scope conflicts return 409 |
 | `GET /photos/{id}/access` | Authorized report/job reader | Signed private URL, expires in 300 seconds |
-| `GET /jobs` | Staff | Organizer jobs or own crew's jobs, ordered by crew/stop position; MVP cap 100 |
+| `GET /jobs` | Staff | Organizer jobs or own crew's jobs, ordered by crew/stop position; `active_only`, `limit` (1–100), and `offset` pagination |
 | `GET /jobs/{id}` | Organizer/assigned crew | Job, photo IDs, audit events including completion/recheck reasons |
 | `PATCH /jobs/{id}` | Organizer/assigned crew | `JobPatch`; see transition rules below |
 | `POST /jobs/{id}/completion` | Assigned crew | Form command_id, expected_version; optional note and multipart after-photo; native UI confirms before submission |
 | `GET /crews`, `PATCH /crews/{id}` | Organizer | Crew state; versioned availability/equipment/shift/start-location edits |
+| `POST /crews/me/location` | Crew | Own observed coordinates and timestamp for organizer routing |
 | `GET /plans/current` | Organizer | Current plan or null, with stale flag and estimate label |
-| `POST /plans/generate` | Organizer | `{command_id}` → 202 `TaskView` |
+| `POST /routing/previews` | Organizer | Selected crew/job scope and optional constraints → persisted proposal, no assignment changes |
+| `GET /routing/previews/{id}` | Organizer | Existing preview, including any accepted plan ID |
+| `POST /routing/previews/{id}/dispatch` | Organizer | Stable command ID and any required partial acknowledgement → approved plan |
+| `POST /plans/generate` | Organizer | Legacy automatic-planning mode only: `{command_id}` → 202 `TaskView`; conflicts in organizer routing mode |
 | `GET /tasks`, `GET /tasks/{id}` | Organizer | Durable integration status/errors |
 | `POST /tasks/{id}/retry` | Organizer | Retry a failed task |
 
@@ -254,11 +269,16 @@ text. Its versioned inbox/outbox endpoints supersede the legacy single-report fl
 above for enrolled chats. Use the validated `pilot-*` fixtures and OpenAPI schemas;
 legacy non-enrolled endpoints retain their existing contract.
 
-## Coordination before integration
+## Client integration status
 
-Confirm the multipart/retry-token flow with Person 1; the three provider methods,
-image handling and travel matrix with Person 3; and channel identity, linking,
-leases and message idempotency with Person 4. The current upstream browser
-repository uses local-only data and different presentation labels, so it needs
-an async adapter and real Supabase sign-in. This handoff does not claim that the
-frontend or live messaging has already been integrated.
+Native mobile report/staff adapters and the web organizer API/Supabase adapter
+are implemented. Browser resident entry directs users to Android; legacy
+report routes redirect there. See the
+[mobile guide](../../mobile/README.md), [web guide](../../web/README.md), and
+[demo walkthrough](../demo.md) for those boundaries.
+
+Organizer routing uses the [road-time contract](routing.md),
+[explicit job scope](scoped-routing.md), and [optional controls](routing-controls.md),
+which supersede legacy automatic-planning assumptions for that mode. The
+[supervised messaging pilot](photon-chalk-pilot.md) has a separate activation and
+delivery-acceptance procedure. Local tests do not establish live provider delivery.

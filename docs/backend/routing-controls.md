@@ -1,8 +1,8 @@
 # Routing limits and partial dispatch
 
-This extends the existing scoped preview/dispatch API. Hassan's web workspace
-can continue using `{crew_ids, job_ids}`: all new request fields are optional.
-The mobile Dispatch screen supplies the explicit controls described below.
+This extends the existing scoped preview/dispatch API. Basic clients may use
+`{crew_ids, job_ids}` because the constraint fields are optional. Both the web
+workspace and mobile Dispatch screen expose the controls described below.
 No database migration, new credential, paid service, worker or messaging process
 is required. This document describes the implemented code contract, not deployed
 or device acceptance.
@@ -124,7 +124,6 @@ First review a preview, then approve that exact proposal before dispatch.
 Record the selected scope, omissions, saved plan, ordered crew execution and
 resident history separately from local test evidence.
 
-The web workspace remains Hassan's issue #22. These additive fields do not
-require him to change his existing full-coverage flow; he can add matching
-controls against this contract later. General crew undo is a separate workflow
-and requires its eligibility policy to be settled before implementation.
+Both implemented clients supply and validate these controls against this
+contract. Web also persists reviewed scope and dispatch intent in IndexedDB.
+General crew undo is a separate workflow and is not implemented.

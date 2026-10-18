@@ -1,98 +1,116 @@
-# WasteGrid backend: Person 2 handoff
+# WasteGrid backend
 
-This is the FastAPI/Postgres backend for the four-person build plan. All new
-integration decisions are **proposed v0.2**, pending coordination with Persons
-1, 3 and 4. Backend code owns authorization, persistence, feasibility validation,
-state transitions and delivery records. Person 3 supplies Chalk photo assessment
-and deterministic triage, heuristic planning and follow-up decisions; Person 4
-owns Photon transport and delivery retries.
+The backend is a FastAPI service with a separate durable-task worker. It owns
+report persistence, private photos, authorization, review policy, route validation,
+state transitions, audit history, and messaging delivery records. Supabase
+provides PostgreSQL, Auth, and private Storage.
 
-Start with [setup.md](setup.md), then share [contracts.md](contracts.md).
-[openapi.json](openapi.json), [integration JSON schemas](schemas/) and
-[example payloads](fixtures/) are generated from the Python models.
-[verification.md](verification.md) records what has actually been tested.
+Start with [setup](setup.md) to run it, [contracts](contracts.md) to integrate a
+client, or the [project README](../../README.md) for the full architecture.
 
-Current organiser preview limits and partial approval are described in
-[routing-controls.md](routing-controls.md), with generated routing request, preview
-and dispatch examples under [fixtures/](fixtures/). The web dispatch workspace
-remains a separate workstream in issue #22.
+## Runtime components
 
-For the mobile app owner, share the standalone [mobile integration handoff](mobile-handoff.md).
-It covers resident tokens, uploads, tracking, optional staff authentication and the
-connection details still needed for device integration.
+| Component | Responsibility |
+| --- | --- |
+| `api.main` | Resident and staff HTTP APIs, private photo access, reports, jobs, review, routing, and messaging contracts. |
+| `api.worker` | Persisted assessment, triage, legacy planning, and follow-up tasks; runs separately from Uvicorn. |
+| `api.assessment` / `api.decisions` | Validated photo assessment and deterministic priority/decision rules. |
+| `api.routing` / `api.route_solver` / `api.road_times` | Road-time previews, resource-aware heuristic, stale-state checks, and explicit dispatch. |
+| `api.messaging` | Separate Photon polling, transport coordination, and local delivery ledger. |
+| `supabase/migrations` | Ordered, checksummed schema changes applied by `scripts.migrate`. |
 
-The dashboard contract increment is implemented: title/address, public reference
-lookup, latest updates and paginated update/conversation history. Share
-[dashboard-handoff.md](dashboard-handoff.md) for endpoint examples and the exact
-frontend/Photon adapter changes. The browser repository still needs asynchronous
-calls and real authentication; a public reference alone grants no access.
+The API/worker image excludes the Chalk and Photon SDKs; model requests use the
+HTTP gateway. The Photon adapter runs with the repository's Python dependencies
+in its own process. API imports do not deploy Chalk functions or start workers.
 
-## Implemented behavior
+## Report and job lifecycle
 
-- Reports and private photos persist in Supabase. Residents use random report
-  bearer tokens; the database stores hashes. Organizer/crew accounts use
-  Supabase Auth; protected database role records determine permissions.
-- Creation supports safe retries using a client UUID and a client-generated
-  256-bit token. Repeating a command does not duplicate its state transition.
-- New reports enqueue a one-call Chalk assessment, followed by deterministic
-  backend priority calculation; see [assessment.md](assessment.md) for metadata,
-  proximity review policy, configuration and API fields. Eligible results enqueue
-  triage, which creates a job and queues planning. Nearby originals/photos remain
-  separate with private review evidence. Audited organizer approvals can resolve
-  settled review/failed results; pending results remain blocked. The worker
-  obtains decisions through the Person 3 boundary and applies backend rules:
-  missing location requests information, hazards and uncertain duplicates go
-  to review, eligible ordinary reports create/link jobs.
-- Plans must cover unfinished jobs exactly once, preserve locked/ongoing/blocked
-  assigned work,
-  respect equipment and shift budgets, and use at least the supplied travel
-  estimates. Completed work continues consuming shift capacity after a recheck.
-- Crew changes invalidate plans and release unlocked pending assignments. A
-  crew can start only its own job in a current validated plan. Completed and
-  ongoing work is preserved. Organizer holds, locks, reassignment and exception
-  resolution are audited.
-- Completion requires an after-photo. Completion is labeled crew-submitted,
-  never independently verified. Residents can request a recheck through their
-  linked conversation; organizers see its reason and completion evidence.
-- Conversation links require a short-lived one-time code and explicit opt-in.
-  Transport lookup survives adapter restarts. Outgoing messages have stable IDs,
-  destinations, leases, acknowledgements and retry state.
+1. Creation persists a photo and report and enqueues assessment. Client-generated
+   report identity and a private token make upload retries safe.
+2. A configured worker makes one assessment request through Chalk Model Gateway,
+   validates the result, and calculates priority in Python. Assessment failures
+   remain visible for organizer review rather than being silently retried.
+3. Eligible assessments proceed to deterministic triage and job creation/linking.
+   Missing information, hazards, and uncertain nearby reports stay behind review
+   gates. Original photos/reports remain separate.
+4. In organizer routing mode, organizers select work and crews, review a road-time
+   preview, and approve dispatch. The server revalidates scope, resources, fixed
+   work, locations, and expiry before applying assignments transactionally.
+5. A crew starts only its own next permitted stop. Completion accepts an optional
+   after-photo and records `verification: "crew_submitted"`. It does not perform
+   independent inspection or photo analysis.
+6. Residents read token-authorized history and available evidence. Linked
+   conversations can request a recheck; organizer resolution is audited.
 
-## Integration status
+The older `/plans/generate` worker path applies plans and is not a read-only
+preview. New organizer clients use `/routing/previews` and its separate dispatch
+endpoint. See [routing](routing.md), [explicit scope](scoped-routing.md), and
+[routing controls](routing-controls.md) for the execution rules.
 
-The local API and shared Render API use live Supabase, private photo Storage,
-staff accounts and an illustrative demo dataset. See
-[setup.md](setup.md#current-local-demo) and [verification.md](verification.md) for
-that setup and its acceptance evidence. Credentials remain in ignored local env
-files. Migrations 0001–0011 are applied; the original six checksums are unchanged.
+## Authentication and private data
 
-The API-only Render service is live at
-`https://wastegrid-api-dev.onrender.com`; 23 hosted checks passed on
-17 October 2026, including after the database upgrade. The worker remains inactive.
+- Residents use random per-report bearer tokens. The database stores token hashes;
+  a report reference alone grants no access.
+- Organizer and crew accounts sign in through Supabase Auth. Protected database
+  role records determine authorization; user-editable metadata does not.
+- Photo access is authorized by the API and returns short-lived signed URLs.
+  The Storage bucket stays private, and crews are restricted to their own work.
+- Messaging and optional read-only decision tools use separate server integration
+  keys. Conversation linking requires a short-lived one-time code and opt-in.
+- Commands retain stable IDs and version checks for replay and conflict handling.
+  Audits preserve state changes and the evidence actually supplied.
 
-With Chalk configured, the production worker uses
-`api.decisions.AssessmentDecisionProvider` for triage, planning and follow-up
-without extra model calls. External facades/factories can override it explicitly.
-The route planner is a greedy heuristic over labeled travel estimates, not a
-global optimum or live-road service. The separate legacy test provider remains
-in `tests/backend/providers.py`, excluded from Docker.
+## Configuration and deployment
 
-A user-run live Grok 4.3 photo check returned validated assessment JSON in 3.253
-seconds; see [assessment.md](assessment.md). Hosted assessment/job processing
-and real Photon delivery still need acceptance testing. The PR #6 API redeploy
-must be verified separately from the completed database upgrade.
+Use the root [environment example](../../.env.example) and [setup guide](setup.md).
+Apply **all checked-in migrations** before starting a new revision; deployments
+never migrate automatically. The repository currently contains migrations
+`0001`–`0016`; an older acceptance record with fewer migrations describes that
+historical checkpoint.
 
-The [shared development API runbook](shared-development-api.md) records the
-direct Render Web Service setup and acceptance. [`render.dev.yaml`](../../render.dev.yaml)
-is the equivalent API-only Blueprint for future recreation; deployments are
-manual while provider integration is pending.
+The default assessment-backed decisions require Chalk gateway configuration.
+Explicit `INTEGRATION_FACTORY` or `PERSON3_BASE_URL` settings override the decision
+provider. Organizer routing additionally needs its feature flag and an
+OSRM-compatible driving-time service on the API/worker environment. There is no
+straight-line fallback for organizer road-time previews.
 
-The upstream `web/` application currently uses browser-local storage, three
-presentation statuses and a development sign-in. Its owner must replace those
-adapters with async API/Supabase clients. Preserve the backend's report/job
-states; presentation labels can be mapped in the frontend. No frontend or
-Photon implementation files were changed by this backend work.
+[`render.dev.yaml`](../../render.dev.yaml) defines the API-only development
+service; [`render.organizer.yaml`](../../render.organizer.yaml) defines the static
+organizer site. The legacy [`render.yaml`](../../render.yaml) adds a general worker. Neither definition
+activates every integration by itself. The configured shared origin is
+[the development API](https://wastegrid-api-dev.onrender.com); verify its actual
+revision, flags, and health rather than inferring them from local source.
 
-The MVP models one current operating shift per crew. Create/reset a separate
-demo dataset for a new demo shift. Multi-day scheduling and traffic routing are
-outside this schema; travel inputs are explicitly illustrative estimates.
+The connected native app and web organizer dashboard now have API adapters.
+Browser resident entry directs users to Android; legacy report URLs redirect there. See the [web README](../../web/README.md),
+[mobile README](../../mobile/README.md), and [demo guide](../demo.md) for clients.
+
+The [operator runbook](organizer-prototype.md) covers server-filtered operational
+read models, worker indicators, and the approved four-attempt scoped assessment
+session. Keep the general worker stopped for that shared demo. Migration 0016
+adds audited reopening of the original expired/drained approval without resetting
+its scope or usage. [Phone updates](phone-updates.md) describes the separate
+resident Status reply and consented registered-phone copy.
+
+## Contracts and verification
+
+[OpenAPI](openapi.json), [JSON schemas](schemas/), and [fixtures](fixtures/) are
+generated from Python models. Validate them with:
+
+```bash
+uv run --extra backend python -m scripts.export_contracts --check
+```
+
+[Setup](setup.md#5-reproducible-verification) documents disposable PostgreSQL tests
+and the full Docker verification script. [Repository safety](../repository-safety.md)
+records CI checks. [Verification history](verification.md) is dated evidence,
+not a current deployment status page; external Auth, Storage, model, road, and
+Photon acceptance must be established for the actual running revision.
+
+## Detailed guides
+
+- [Assessment](assessment.md): model request, priority rules, and review behavior.
+- [Mobile API handoff](mobile-handoff.md) and [dashboard handoff](dashboard-handoff.md): endpoint examples and client contracts.
+- [Mobile routing and completion](mobile-routing-completion.md): foreground GPS and durable staff operations.
+- [Shared development API](shared-development-api.md): Render service runbook and recorded checks.
+- [Photon adapter](photon-adapter.md) and [supervised pilot](photon-chalk-pilot.md): transport setup, fixed scope, budgets, and delivery recovery.

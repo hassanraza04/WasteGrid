@@ -100,12 +100,11 @@ approved job. Assessment of any new report remains a separately scoped operation
 No live acceptance is established by disposable database tests or provider-only
 matrix checks.
 
-## Parallel ownership
+## Client support
 
-- Omer: backend scope, mobile selection, tests and deployment contract.
-- Hassan: web routing workspace, tracked in GitHub issue #22.
-- Sherry: resident accepted-report receipt, tracked in GitHub issue #23.
-
-Web dispatch can be built against this contract while backend review proceeds.
-The current mobile dispatch screen supports the same explicit selection once
-the matching API is deployed.
+Both the web organizer workspace and native mobile Dispatch screen send explicit
+crew/job selections and expose the optional duration, stop, return, and
+partial-dispatch controls. Web additionally saves its dispatch journal in
+account/environment-specific IndexedDB and shows separately fetched road geometry.
+Each client requires the matching deployed API contract; source implementation
+alone does not establish deployed or device acceptance.

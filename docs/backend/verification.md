@@ -1,5 +1,11 @@
 # Dashboard contract completion: verification evidence
 
+This file is a historical acceptance log. Each section applies to its recorded
+date and revision, including its fixture counts, migration range, and runtime
+observations. It does not establish the state of today's checkout or deployment.
+Use the [current project guide](../../README.md), [backend setup](setup.md), and
+[repository checks](../repository-safety.md) to reproduce validation for a new revision.
+
 ## PR #11 argument redaction and PR #6 upgrade: 2026-10-17
 
 Hassan's follow-up found that argparse echoed rejected credential values to

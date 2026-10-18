@@ -41,6 +41,13 @@ retries on foreground return and offers Refresh GPS. Backgrounded/unfocused or
 signed-out screens stop publishing. Denied or unavailable location remains visible;
 the organiser cannot publish its own location as another crew's position.
 
+Separately prepared local demo builds may offer a staged **Demo crew location**
+pin with `EXPO_PUBLIC_DEMO_LOCATIONS`. The main app uses live foreground GPS; those controls require the separate
+local mobile implementation. In a matching build,
+a staged location pauses GPS publishing until **Use live GPS** restores it. See
+the [Worcester/Karachi demo instructions](../demo.md#recording-the-worcester-and-karachi-demos)
+and keep staged positions clearly labeled.
+
 Start stop sends a version-checked job PATCH with a durable command ID. The crew
 can choose Take cleanup photo or Mark cleanup complete. The latter opens Confirm
 completion without a photo and requires another explicit confirmation before the
@@ -74,8 +81,9 @@ their existing report to see crew-reported completion, status history and any
 authorised cleanup photos that were actually submitted. An empty
 `completion_photo_ids` list is valid for a completed job. Existing photo IDs remain
 available as historical evidence; their presence does not establish that a later
-completion included another photo. All linked reports reflect the job state. No
-public report-map endpoint, impact analytics or retention policy is introduced.
+completion included another photo. All linked reports reflect the job state.
+The public report map is a separate read path at `GET /map/markers`; this
+completion flow does not add measured impact analytics or a retention policy.
 
 ## Additive backend query
 
