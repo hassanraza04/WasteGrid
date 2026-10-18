@@ -64,6 +64,19 @@ the server, keep the saved conflict and offer **Refresh routing state** instead
 of **Recover dispatch**. A conflict can mean another command already dispatched
 the preview, so inspect the current plan rather than claiming no dispatch exists.
 
+Before sending a dispatch, the app publishes a durable attempt barrier. A failed
+barrier write prevents the POST. If saving the response classification fails or
+the app stops mid-attempt, the barrier survives restart and only permits checking
+the existing preview for an accepted plan. An unconfirmed result remains pending;
+it cannot be resent, discarded or replaced by a new computation. Ordinary
+network/5xx recovery retains the original preview/command IDs after its retryable
+state is durably saved. A known conflict can be reconciled once storage works.
+
+For an already terminal conflict, a missing old preview (HTTP 404) can be retired
+after the current plan refresh succeeds. Other preview errors and any failed
+current-plan refresh preserve the blocked action. A missing preview does not
+establish success or resolve an unclassified dispatch attempt.
+
 ## Supervised acceptance
 
 1. Merge the reviewed change, deploy its API revision, and publish the matching

@@ -200,3 +200,14 @@ test('an unknown dispatch failure retains the original preview and durable comma
   assert.equal(app.reconciled.length,0);assert.equal(app.state.data.pending[0].resource_id,'preview');assert.equal(app.state.data.pending[0].recomputeRequired,undefined);
  }finally{await view.close();}
 });
+
+test('an unclassified saved dispatch keeps new calculations and approvals blocked',async()=>{
+ const app=dispatchSetup();const {view,state}=app;
+ try{
+  await view.render();await act(()=>button(view.container,'Crew A').click());await act(()=>button(view.container,'Job job').click());
+  await act(async()=>button(view.container,'Compute routes').click());
+  state.data.pending=[{kind:'dispatch',command_id:'unknown-attempt',resource_id:'preview',dispatchAttemptPending:true}];await view.render();
+  assert.equal(button(view.container,'Compute routes').disabled,true);assert.equal(button(view.container,'Approve and dispatch').disabled,true);
+  assert.equal(app.requests.length,1);assert.equal(app.prepared.length,0);
+ }finally{await view.close();}
+});

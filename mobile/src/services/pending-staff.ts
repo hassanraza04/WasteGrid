@@ -6,6 +6,8 @@ import { staffApi } from "./staff";
 import { StaffApiError, type Job } from "./staff-client";
 import { recoverOrSend, type StaffCommand } from "./staff-commands";
 
+const knownDispatchConflicts = new Set<string>();
+const unknownDispatch = () => new Error("Dispatch confirmation is still unknown. Keep the saved action and check its result; do not resubmit this preview.");
 const apiUrl = () => process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") ?? "";
 function directory() {
   if (Platform.OS === "web") throw new Error("Use the native app for durable crew submissions.");
@@ -37,10 +39,14 @@ async function savedStaff(): Promise<StaffCommand[]> {
           typeof command.resource_id !== "string" || typeof command.ownerId !== "string" || typeof command.apiUrl !== "string" ||
           (command.recomputeRequired !== undefined && typeof command.recomputeRequired !== "boolean") ||
           (command.reconciled !== undefined && typeof command.reconciled !== "boolean") ||
+          (command.dispatchAttemptPending !== undefined && typeof command.dispatchAttemptPending !== "boolean") ||
           (command.kind !== "dispatch" && (!Number.isSafeInteger(command.expected_version) || command.expected_version! < 1)) ||
           (["start", "completion"].includes(command.kind) && typeof command.crewId !== "string") ||
           (command.kind === "completion" && typeof command.photoUri !== "string") ||
           (command.kind === "release" && !command.reason?.trim())) continue;
+      if (command.kind === "dispatch" && knownDispatchConflicts.has(command.command_id)) {
+        command.rejected = true; command.recomputeRequired = true;
+      }
       // Older builds stored definitive dispatch rejections without their status.
       if (command.kind === "dispatch" && command.rejected && command.recomputeRequired === undefined) command.recomputeRequired = true;
       authorised(command); commands.push(command);
@@ -56,6 +62,7 @@ function terminalDispatch(command: StaffCommand) {
 }
 function requireFreshDispatch(command: StaffCommand) {
   if (terminalDispatch(command)) throw new Error("This preview was rejected. Refresh routing state and compute a new preview.");
+  if (command.kind === "dispatch" && command.dispatchAttemptPending) throw unknownDispatch();
 }
 async function save(command: StaffCommand) {
   const previous = records().filter(record => record.id === command.command_id);
@@ -116,20 +123,37 @@ export function submitStaff(command: StaffCommand): Promise<unknown> {
     if (!saved) throw new Error("The saved action is unavailable. Refresh your pending actions before retrying.");
     const current = saved;
     if (current.kind !== command.kind || current.resource_id !== command.resource_id) throw new Error("The saved action identity changed. Refresh your pending actions.");
+    if (current.kind === "dispatch" && current.dispatchAttemptPending && !terminalDispatch(current)) return reconcileDispatch(current, true);
     requireFreshDispatch(current);
+    let dispatchAttempted = false;
     try {
-      const result = await recoverOrSend(current, staffApi, current.photoUri ? new File(current.photoUri) : undefined);
+      const result = await recoverOrSend(current, staffApi, current.photoUri ? new File(current.photoUri) : undefined, async () => {
+        await serial(async () => {
+          authorised(current);
+          await save({ ...current, rejected: false, recomputeRequired: false, dispatchAttemptPending: true });
+          authorised(current);
+        });
+        dispatchAttempted = true;
+      });
       await serial(async () => { try { remove(current); } catch { /* Retry recovers the accepted command if cleanup failed. */ } });
       return result;
     } catch (error) {
-      if (error instanceof StaffApiError && [409, 413, 415, 422].includes(error.status)) {
+      const rejected = error instanceof StaffApiError && [409, 413, 415, 422].includes(error.status);
+      const conflict = current.kind === "dispatch" && dispatchAttempted && error instanceof StaffApiError && error.status === 409;
+      if (conflict) knownDispatchConflicts.add(current.command_id);
+      if (rejected || dispatchAttempted) {
         try {
-          await serial(() => save({ ...current, rejected: true,
-            ...(current.kind === "dispatch" ? { recomputeRequired: error.status === 409 } : {}),
-          }));
+          await serial(async () => {
+            if (dispatchAttempted) authorised(current);
+            await save({ ...current,
+              ...(rejected ? { rejected: true } : dispatchAttempted ? { rejected: false } : {}),
+              ...(current.kind === "dispatch" ? { recomputeRequired: conflict, dispatchAttemptPending: false } : {}),
+            });
+          });
         } catch (storageError) {
-          // The UI must still invalidate a definitively rejected dispatch preview.
-          if (current.kind !== "dispatch" || error.status !== 409) throw storageError;
+          // The pre-POST barrier survives an interrupted outcome checkpoint.
+          // Preserve the transport error so the UI invalidates a definite 409.
+          if (!dispatchAttempted) throw storageError;
         }
       }
       throw error;
@@ -139,21 +163,39 @@ export function submitStaff(command: StaffCommand): Promise<unknown> {
   return work;
 }
 export function reconcileDispatchConflict(command: StaffCommand): Promise<{ plan_id: string | null }> {
+  return reconcileDispatch(command, false);
+}
+function reconcileDispatch(command: StaffCommand, recoveringAttempt: boolean): Promise<{ plan_id: string | null }> {
   return serial(async () => {
     authorised(command);
-    const current = (await savedStaff()).find(record => record.command_id === command.command_id);
+    let current = (await savedStaff()).find(record => record.command_id === command.command_id);
     authorised(command);
-    if (!current || current.kind !== "dispatch" || !current.rejected || !terminalDispatch(current) ||
-        current.resource_id !== command.resource_id || running.has(command.command_id)) {
-      throw new Error("Only a rejected dispatch can be reconciled. Keep uncertain actions for recovery.");
+    if (!current || current.kind !== "dispatch" || (!terminalDispatch(current) && !current.dispatchAttemptPending) ||
+        current.resource_id !== command.resource_id || (!recoveringAttempt && running.has(command.command_id))) {
+      throw new Error("Only a rejected or interrupted dispatch can be reconciled. Keep uncertain actions for recovery.");
     }
-    const [preview] = await Promise.all([staffApi.preview(current.resource_id), staffApi.currentPlan()]);
+    const knownConflict = !!terminalDispatch(current);
+    if (knownConflict && current.dispatchAttemptPending) {
+      // A definite 409 can outlive a failed checkpoint in this process.
+      current = { ...current, rejected: true, recomputeRequired: true, dispatchAttemptPending: false };
+      await save(current);
+      authorised(current);
+    }
+    const [preview] = await Promise.all([
+      staffApi.preview(current.resource_id).catch(error => {
+        if (error instanceof StaffApiError && error.status === 404) return null;
+        throw error;
+      }),
+      staffApi.currentPlan(),
+    ]);
     authorised(current);
-    // Keep a private tombstone so old objects cannot recreate or repost this preview.
-    // An observed plan can belong to another organiser; this is state reconciliation.
-    await save({ ...current, reconciled: true });
+    if (!knownConflict && !preview?.plan_id) throw unknownDispatch();
+    // A missing preview is safe to retire only for a definite rejection and
+    // after successfully reading the current authoritative routing state.
+    // An observed plan can belong to another organiser; this is reconciliation.
+    await save({ ...current, dispatchAttemptPending: false, reconciled: true });
     authorised(current);
-    return { plan_id: preview.plan_id ?? null };
+    return { plan_id: preview?.plan_id ?? null };
   });
 }
 export function discardRejectedStaff(command: StaffCommand) {
@@ -161,7 +203,7 @@ export function discardRejectedStaff(command: StaffCommand) {
     authorised(command);
     const current = (await savedStaff()).find(record => record.command_id === command.command_id);
     authorised(command);
-    if (current && terminalDispatch(current)) throw new Error("Refresh routing state to reconcile this rejected dispatch.");
+    if (current && (terminalDispatch(current) || (current.kind === "dispatch" && current.dispatchAttemptPending))) throw new Error("Refresh routing state to reconcile this dispatch.");
     if (!command.rejected || running.has(command.command_id)) throw new Error("Only a rejected submission can be discarded. Retry uncertain actions with their saved identity.");
     if (command.kind === "dispatch") {
       const preview = await staffApi.preview(command.resource_id);

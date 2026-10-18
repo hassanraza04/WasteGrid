@@ -155,8 +155,8 @@ test('lost dispatch acknowledgement recovers the observed plan without a second 
  const command=await app.service.prepareStaff('dispatch','preview');let posts=0,accepted=false;
  app.respond((_url,init)=>{if(init.method==='POST'){posts++;assert.deepEqual(JSON.parse(init.body),{command_id:command.command_id});accepted=true;throw Error('lost acknowledgement');}return Response.json({plan_id:accepted?'accepted-plan':null});});
  await assert.rejects(app.service.submitStaff(command),/lost acknowledgement/);
- const restarted=app.reload(),[saved]=await restarted.pendingStaff();assert.equal(saved.recomputeRequired,undefined);assert.equal(saved.rejected,undefined);assert.equal(saved.resource_id,command.resource_id);assert.equal(saved.command_id,command.command_id);
- await assert.rejects(restarted.reconcileDispatchConflict(saved),/Only a rejected dispatch/);
+ const restarted=app.reload(),[saved]=await restarted.pendingStaff();assert.notEqual(saved.recomputeRequired,true);assert.equal(saved.dispatchAttemptPending,false);assert.notEqual(saved.rejected,true);assert.equal(saved.resource_id,command.resource_id);assert.equal(saved.command_id,command.command_id);
+ await assert.rejects(restarted.reconcileDispatchConflict(saved),/Only a rejected or interrupted dispatch/);
  assert.deepEqual(await restarted.submitStaff(saved),{plan_id:'accepted-plan'});assert.equal(posts,1);assert.deepEqual(await restarted.pendingStaff(),[]);
 });
 
@@ -166,7 +166,7 @@ test('dispatch network and 5xx failures retry immutable preview and command iden
   const command=await app.service.prepareStaff('dispatch','preview');let posts=0;const payloads=[];
   app.respond((_url,init)=>{if(init.method==='POST'){posts++;payloads.push(JSON.parse(init.body));if(posts===1){if(failure==='network')throw Error('network unavailable');return new Response(null,{status:503});}return Response.json({plan_id:'accepted-plan'});}return Response.json({plan_id:null});});
   await assert.rejects(app.service.submitStaff(command));
-  const restarted=app.reload(),[saved]=await restarted.pendingStaff();assert.equal(saved.recomputeRequired,undefined);assert.equal(saved.rejected,undefined);assert.equal(saved.resource_id,command.resource_id);
+  const restarted=app.reload(),[saved]=await restarted.pendingStaff();assert.notEqual(saved.recomputeRequired,true);assert.equal(saved.dispatchAttemptPending,false);assert.notEqual(saved.rejected,true);assert.equal(saved.resource_id,command.resource_id);
   await restarted.submitStaff(saved);assert.equal(posts,2);assert.deepEqual(payloads,[{command_id:command.command_id},{command_id:command.command_id}]);
  }
 });
@@ -206,8 +206,143 @@ test('a stale command object cannot submit when its durable journal is missing o
 test('dispatch keeps its definite HTTP 409 classification if rejection metadata cannot publish',async()=>{
  const app=setup();app.session({userId:'owner',role:'admin'});
  const command=await app.service.prepareStaff('dispatch','preview');
- app.respond((_url,init)=>init.method==='POST'?new Response(null,{status:409}):Response.json({plan_id:null}));
- app.faults.move=true;
+ app.respond((_url,init)=>{if(init.method==='POST'){app.faults.move=true;return new Response(null,{status:409});}return Response.json({plan_id:null});});
  await assert.rejects(app.service.submitStaff(command),error=>error instanceof transport.StaffApiError&&error.status===409);
  assert.equal((await app.reload().pendingStaff())[0].command_id,command.command_id);
+});
+
+test('a dispatch must publish its durable attempt barrier before sending POST',async()=>{
+ for(const fault of ['write','rename']){
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','preview');let posts=0;
+ app.respond((_url,init)=>{if(init.method==='POST'){posts++;return Response.json({plan_id:'plan'});}return Response.json({plan_id:null});});
+ if(fault==='write')app.faults.write=()=>{throw Error('write interrupted');};else app.faults.move=true;
+ await assert.rejects(app.service.submitStaff(command),/interrupted/);assert.equal(posts,0);
+ const [saved]=await app.reload().pendingStaff();assert.equal(saved.dispatchAttemptPending,undefined);assert.equal(saved.command_id,command.command_id);
+ }
+});
+
+test('failed 409 checkpoint stays non-POST-able after restart and the in-process latch can persist later',async()=>{
+ for(const fault of ['write','rename']){
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','preview');let posts=0;
+ app.respond((_url,init)=>{if(init.method==='POST'){
+  posts++;
+  const [stored]=[...app.files].filter(([uri])=>uri.endsWith('.json')).map(([,value])=>JSON.parse(value));
+  assert.equal(stored.dispatchAttemptPending,true);
+  if(fault==='write')app.faults.write=()=>{throw Error('write interrupted');};else app.faults.move=true;return new Response(null,{status:409});
+ }return Response.json({plan_id:null});});
+ await assert.rejects(app.service.submitStaff(command),error=>error instanceof transport.StaffApiError&&error.status===409);
+ const [latched]=await app.service.pendingStaff();assert.equal(latched.recomputeRequired,true);assert.equal(latched.rejected,true);
+ await assert.rejects(app.service.submitStaff(command),/compute a new preview/);assert.equal(posts,1);
+ const restarted=app.reload(),[unknown]=await restarted.pendingStaff();
+ assert.equal(unknown.dispatchAttemptPending,true);assert.notEqual(unknown.recomputeRequired,true);assert.notEqual(unknown.rejected,true);
+ const reads=[];app.respond((url,init)=>{reads.push(init.method??'GET');return Response.json(url.endsWith('/plans/current')?{plan:null}:{plan_id:null});});
+ await assert.rejects(restarted.submitStaff(command),/confirmation is still unknown/);
+ await assert.rejects(restarted.prepareStaff('dispatch','preview'),/confirmation is still unknown/);
+ await assert.rejects(restarted.discardRejectedStaff({...unknown,rejected:true}),/Refresh routing state/);
+ assert.ok(reads.every(method=>method==='GET'));assert.equal((await restarted.pendingStaff()).length,1);assert.equal(posts,1);
+ app.respond(url=>url.endsWith('/plans/current')?Response.json({plan:null}):new Response(null,{status:404}));
+ await assert.rejects(restarted.submitStaff(command),/confirmation is still unknown/);assert.equal((await restarted.pendingStaff()).length,1);
+ app.faults.move=false;delete app.faults.write;
+ app.respond(url=>url.endsWith('/plans/current')?Response.json({plan:null}):new Response(null,{status:503}));
+ await assert.rejects(app.service.reconcileDispatchConflict(command),transport.StaffApiError);
+ const repaired=app.reload(),[known]=await repaired.pendingStaff();
+ assert.equal(known.recomputeRequired,true);assert.equal(known.rejected,true);assert.equal(known.dispatchAttemptPending,false);
+ app.respond(url=>url.endsWith('/plans/current')?Response.json({plan:null}):new Response(null,{status:404}));
+ assert.deepEqual(await repaired.reconcileDispatchConflict(command),{plan_id:null});assert.deepEqual(await repaired.pendingStaff(),[]);
+ await assert.rejects(app.reload().submitStaff(command),/compute a new preview/);assert.equal(posts,1);
+ }
+});
+
+test('failed unknown-outcome checkpoint can only inspect GETs and recover an observed plan',async()=>{
+ for(const accepted of [false,true]){
+  const app=setup();app.session({userId:'owner',role:'admin'});
+  const command=await app.service.prepareStaff('dispatch','preview');let posts=0;
+  app.respond((_url,init)=>{if(init.method==='POST'){posts++;app.faults.move=true;throw Error('lost acknowledgement');}return Response.json({plan_id:null});});
+  await assert.rejects(app.service.submitStaff(command),/lost acknowledgement/);
+  const restarted=app.reload(),[saved]=await restarted.pendingStaff();assert.equal(saved.dispatchAttemptPending,true);assert.notEqual(saved.recomputeRequired,true);
+  app.faults.move=false;const reads=[];
+  app.respond((url,init)=>{reads.push(init.method??'GET');return Response.json(url.endsWith('/plans/current')?{plan:accepted?{id:'observed-plan'}:null}:{plan_id:accepted?'observed-plan':null});});
+  if(accepted){assert.deepEqual(await restarted.submitStaff(command),{plan_id:'observed-plan'});assert.deepEqual(await restarted.pendingStaff(),[]);}
+  else{await assert.rejects(restarted.submitStaff(command),/confirmation is still unknown/);assert.equal((await restarted.pendingStaff()).length,1);}
+  assert.ok(reads.every(method=>method==='GET'));assert.equal(posts,1);
+ }
+});
+
+test('a pruned terminal preview retires only after successfully reading current routing state',async()=>{
+ for(const failure of [null,401,403,503,'network']){
+  const app=setup();app.session({userId:'owner',role:'admin'});
+  const command=await app.service.prepareStaff('dispatch','preview');let posts=0;
+  app.respond((_url,init)=>{if(init.method==='POST'){posts++;return new Response(null,{status:409});}return Response.json({plan_id:null});});
+  await assert.rejects(app.service.submitStaff(command));
+  const methods=[];app.respond((url,init)=>{
+   methods.push(init.method??'GET');
+   if(!url.endsWith('/plans/current'))return new Response(null,{status:404});
+   if(failure==='network')throw Error('network unavailable');
+   return failure===null?Response.json({plan:null}):new Response(null,{status:failure});
+  });
+  const restarted=app.reload();
+  if(failure===null){assert.deepEqual(await restarted.reconcileDispatchConflict(command),{plan_id:null});assert.deepEqual(await restarted.pendingStaff(),[]);}
+  else{await assert.rejects(restarted.reconcileDispatchConflict(command));assert.equal((await restarted.pendingStaff()).length,1);}
+  assert.ok(methods.every(method=>method==='GET'));assert.equal(posts,1);
+ }
+});
+
+test('the transport recovery helper never POSTs an interrupted barrier unless it observes an accepted plan',async()=>{
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','preview');let posts=0,accepted=false;
+ app.respond((_url,init)=>{if(init.method==='POST')posts++;return Response.json({plan_id:accepted?'observed-plan':null});});
+ await assert.rejects(commands.recoverOrSend({...command,dispatchAttemptPending:true},app.api),/confirmation is still unknown/);assert.equal(posts,0);
+ accepted=true;assert.deepEqual(await commands.recoverOrSend({...command,dispatchAttemptPending:true},app.api),{plan_id:'observed-plan'});assert.equal(posts,0);
+});
+
+test('a new attempt clears an earlier validation rejection before publishing its unknown barrier',async()=>{
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','preview');let posts=0;
+ app.respond((_url,init)=>{
+  if(init.method!=='POST')return Response.json({plan_id:null});
+  posts++;
+  if(posts===1)return new Response(null,{status:422});
+  const [stored]=[...app.files].filter(([uri])=>uri.endsWith('.json')).map(([,value])=>JSON.parse(value));
+  assert.equal(stored.dispatchAttemptPending,true);assert.equal(stored.rejected,false);assert.equal(stored.recomputeRequired,false);
+  app.faults.move=true;throw Error('network interrupted');
+ });
+ await assert.rejects(app.service.submitStaff(command));
+ const [rejected]=await app.service.pendingStaff();assert.equal(rejected.rejected,true);assert.equal(rejected.recomputeRequired,false);
+ await assert.rejects(app.service.submitStaff(rejected),/network interrupted/);
+ const [unknown]=await app.reload().pendingStaff();assert.equal(unknown.dispatchAttemptPending,true);assert.equal(unknown.rejected,false);assert.equal(unknown.recomputeRequired,false);
+ app.respond(()=>Response.json({plan_id:null,plan:null}));
+ await assert.rejects(app.reload().submitStaff(command),/confirmation is still unknown/);assert.equal(posts,2);
+});
+
+test('preview authorization or availability failures never retire a rejected dispatch even when current state is readable',async()=>{
+ for(const failure of [401,403,503,'network']){
+  const app=setup();app.session({userId:'owner',role:'admin'});
+  const command=await app.service.prepareStaff('dispatch','preview');let posts=0;
+  app.respond((_url,init)=>{if(init.method==='POST'){posts++;return new Response(null,{status:409});}return Response.json({plan_id:null});});
+  await assert.rejects(app.service.submitStaff(command));
+  app.respond(url=>{
+   if(url.endsWith('/plans/current'))return Response.json({plan:null});
+   if(failure==='network')throw Error('preview unavailable');
+   return new Response(null,{status:failure});
+  });
+  const restarted=app.reload();await assert.rejects(restarted.reconcileDispatchConflict(command));
+  const [saved]=await restarted.pendingStaff();assert.equal(saved.recomputeRequired,true);assert.notEqual(saved.reconciled,true);assert.equal(posts,1);
+ }
+});
+
+test('a safely checkpointed network retry clears the earlier rejection and cannot be discarded',async()=>{
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','preview');let posts=0;
+ app.respond((_url,init)=>{
+  if(init.method!=='POST')return Response.json({plan_id:null});
+  if(++posts===1)return new Response(null,{status:422});
+  throw Error('network interrupted');
+ });
+ await assert.rejects(app.service.submitStaff(command));
+ const [rejected]=await app.service.pendingStaff();assert.equal(rejected.rejected,true);
+ await assert.rejects(app.service.submitStaff(rejected),/network interrupted/);
+ const restarted=app.reload(),[uncertain]=await restarted.pendingStaff();assert.equal(uncertain.dispatchAttemptPending,false);assert.equal(uncertain.rejected,false);assert.equal(uncertain.recomputeRequired,false);
+ await assert.rejects(restarted.discardRejectedStaff(uncertain),/Only a rejected submission/);assert.equal(posts,2);
 });

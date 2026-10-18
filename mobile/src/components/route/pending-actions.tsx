@@ -29,14 +29,16 @@ export function PendingActions({ commands, refresh }: { commands: StaffCommand[]
   return <>
     {commands.map(command => {
       const recompute = command.kind === "dispatch" && command.recomputeRequired;
+      const unknownDispatch = command.kind === "dispatch" && command.dispatchAttemptPending && !recompute;
       return <Card key={command.command_id}>
         <AppText variant="headline">Saved {command.kind} action</AppText>
         <AppText selectable>{command.resource_id}</AppText>
         <AppText tone="muted">{recompute
           ? "This proposal needs a new routing review. Refresh routing state before computing another preview. Another organiser may already have dispatched it."
+          : unknownDispatch ? "The dispatch result is unknown. Check its saved result without sending it again. New routing remains blocked until the outcome is confirmed."
           : command.rejected ? "The server rejected this action. Recover or discard it before submitting corrected details." : "Confirmation pending. Retry preserves the original command and evidence."}</AppText>
-        <Button label={recompute ? "Refresh routing state" : `Recover ${command.kind}`} disabled={busy} onPress={() => { void run(command); }} />
-        {!recompute && command.rejected && <Button label="Discard rejected action" variant="outline" disabled={busy} onPress={() => { void run(command, true); }} />}
+        <Button label={recompute ? "Refresh routing state" : unknownDispatch ? "Check dispatch result" : `Recover ${command.kind}`} disabled={busy} onPress={() => { void run(command); }} />
+        {!recompute && !unknownDispatch && command.rejected && <Button label="Discard rejected action" variant="outline" disabled={busy} onPress={() => { void run(command, true); }} />}
       </Card>;
     })}
     {error ? <AppText accessibilityRole="alert">{error}</AppText> : null}
