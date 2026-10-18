@@ -10,7 +10,7 @@ from tests.backend.conftest import report
 BOUNDS = {"south": 24.90, "north": 24.95, "west": 67.07, "east": 67.12}
 
 
-def test_public_map_marker_follows_report_and_job_lifecycle(client, png):
+def test_public_map_marker_follows_report_and_job_lifecycle(client, png, seeded):
     created = report(client, png, latitude=24.92123, longitude=67.09123)
     response = client.get("/map/markers", params=BOUNDS)
     assert response.status_code == 200
@@ -37,7 +37,8 @@ def test_public_map_marker_follows_report_and_job_lifecycle(client, png):
             category="litter",
             required_equipment=["gloves"],
             estimated_service_minutes=15,
-            status="unassigned",
+            status="assigned",
+            assigned_crew_id=seeded["crew_a"],
         )
         db.add(job)
         db.flush()
