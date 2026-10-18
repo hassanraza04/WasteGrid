@@ -234,8 +234,35 @@ class Assignment(Base):
     position: Mapped[int] = mapped_column(Integer)
 
 
+class AssessmentDemoRun(Base):
+    """One durable, bounded organiser assessment approval; never reset on restart."""
+
+    __tablename__ = "assessment_demo_runs"
+    __table_args__ = (UniqueConstraint("scope_key"),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    scope_key: Mapped[str] = mapped_column(String(80), default="organizer-demo-v1")
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    reason: Mapped[str | None] = mapped_column(String(50))
+    report_ids: Mapped[list] = mapped_column(JSON)
+    revision: Mapped[str] = mapped_column(String(40))
+    model: Mapped[str] = mapped_column(String(100))
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=4)
+    new_reports_admitted: Mapped[int] = mapped_column(Integer, default=0)
+    max_new_reports: Mapped[int] = mapped_column(Integer, default=2)
+    worker_owner: Mapped[UUID | None] = mapped_column(Uuid)
+    worker_lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Task(Base):
     __tablename__ = "tasks"
+    demo_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("wastegrid.assessment_demo_runs.id")
+    )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     kind: Mapped[str] = mapped_column(String(30))
     dedupe_key: Mapped[str] = mapped_column(String(200), unique=True)

@@ -30,6 +30,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from api.assessment_demo import bind_new_assessment
 from api.auth import (
     Principal,
     agent_access,
@@ -44,6 +45,7 @@ from api.config import Settings
 from api.db import get_db, make_engine
 from api.http_limits import BodyLimitMiddleware
 from api.models import (
+    AssessmentDemoRun,
     Conversation,
     ConversationMessage,
     Crew,
@@ -59,6 +61,8 @@ from api.models import (
     Task,
     now,
 )
+from api.organizer import organizer_router, report_processing
+from api.organizer_schemas import OrganizerReportDetailsView
 from api.pilot import allowed_report, enabled, ensure_run
 from api.pilot import router as pilot_router
 from api.routing import routing_router
@@ -93,7 +97,6 @@ from api.schemas import (
     PublicMapMarkers,
     Recheck,
     ReportCreated,
-    ReportDetails,
     ReportUpdates,
     ReportView,
     ResidentAnswers,
@@ -226,6 +229,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = make_engine(settings)
     app.state.cloud = SupabaseCloud(settings)
     app.include_router(routing_router(settings))
+    app.include_router(organizer_router(settings))
     app.include_router(pilot_router)
     app.add_middleware(
         CORSMiddleware,
@@ -254,6 +258,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response.headers["X-WasteGrid-Revision"] = revision
         response.headers["X-WasteGrid-Organizer-Routing"] = str(
             settings.organizer_routing_enabled
+        ).lower()
+        response.headers["X-WasteGrid-Road-Service"] = str(
+            bool(settings.routing_osrm_base_url)
         ).lower()
         response.headers["X-WasteGrid-Messaging-Pilot"] = str(
             settings.messaging_pilot_enabled
@@ -294,7 +301,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def ready(db: Session = Depends(get_db)):
         if not settings.supabase_url or not settings.supabase_secret_key:
             raise HTTPException(503, "Supabase is not configured")
-        db.execute(select(Task.id).limit(0))
+        db.execute(select(Task.demo_run_id).limit(0))
+        db.execute(select(AssessmentDemoRun.id).limit(0))
         db.execute(select(MessagingPilot.id).limit(0))
         return {"status": "ready"}
 
@@ -439,9 +447,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         event(db, "report.received", report_id=report_id)
         flag_nearby_report(db, report, settings.duplicate_radius_meters)
-        enqueue(
+        assessment_task = enqueue(
             db, "assessment", f"assessment:{report_id}", {"report_id": str(report_id)}
         )
+        bind_new_assessment(db, report, assessment_task)
         upload_commit(request, db, path, content, mime)
         return ReportCreated(report=report_view(db, report), access_token=token)
 
@@ -827,7 +836,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def me(staff: Principal = Depends(get_staff)):
         return staff
 
-    @app.get("/organizer/reports/{report_id}", response_model=ReportDetails)
+    @app.get(
+        "/organizer/reports/{report_id}", response_model=OrganizerReportDetailsView
+    )
     def organizer_report(
         report_id: UUID,
         db: Session = Depends(get_db),
@@ -843,7 +854,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
             .order_by(Event.created_at, Event.id)
         ).all()
-        return {"report": organizer_report_view(db, report), "events": events}
+        return {
+            "report": organizer_report_view(db, report),
+            "events": events,
+            "processing": report_processing(db, report.id),
+        }
 
     @app.post(
         "/organizer/reports/{report_id}/decision", response_model=OrganizerReportView

@@ -16,11 +16,12 @@ const report = {
   updated_at: "2026-10-18T00:00:00Z", job_id: null,
 };
 
-function setup(path = "/admin") {
+function setup(path = "/admin/reports") {
   const api = {
     signIn: vi.fn().mockResolvedValue(undefined),
     signOut: vi.fn().mockResolvedValue(undefined),
     reports: vi.fn().mockResolvedValue([report]),
+    reportIndex: vi.fn().mockResolvedValue({items:[{...report, category:null, job_status:null, crew_id:null, crew_name:null, route_position:null}],total:1,offset:0,limit:25}),
     report: vi.fn().mockResolvedValue({ report, events: [] } satisfies OrganizerReportDetails),
     photo: vi.fn(), applyDecision: vi.fn(), setPriority: vi.fn(),
   } as unknown as OrganizerApi;
@@ -162,4 +163,47 @@ test("ends the current session on a current report access error", async () => {
   expect(await screen.findByRole("heading", { name: "Organiser sign in" })).toBeInTheDocument();
   expect(screen.getByRole("alert")).toHaveTextContent("Please sign in again");
   expect(api.signOut).toHaveBeenCalledTimes(1);
+});
+
+test("uses absolute sidebar navigation repeatedly and exposes the configured API environment", async () => {
+  const { api, user } = setup("/admin/unrecognized");
+  Object.defineProperty(api, "environment", { value: "https://api.example/v1" });
+  Object.assign(api, {
+    overview: vi.fn().mockResolvedValue({ counts: { needs_review: 0, high_priority_jobs: 0, in_progress_jobs: 0, available_crews: 0, blocked_jobs: 0, completed_24h: 0, awaiting_assessment: 0 }, configuration: { revision: "fixture", organizer_routing_enabled: true, road_service_configured: false, messaging_pilot_enabled: false }, processing: { status: "inactive", used_attempts: 0, max_attempts: 4, new_reports_admitted: 0, max_new_reports: 2 } }),
+    crews: vi.fn().mockResolvedValue([]), indexedJobs: vi.fn().mockResolvedValue([]), currentPlan: vi.fn().mockResolvedValue({ plan: null }),
+  });
+  await signIn(user);
+  expect(screen.getByRole("heading", { name: "Page not found" })).toBeInTheDocument();
+  expect(screen.getByText("api.example")).toBeInTheDocument();
+  await user.click(screen.getByRole("link", { name: "Reports" }));
+  await screen.findByRole("link", { name: "WG-123" });
+  await user.click(screen.getByRole("link", { name: "Routing dispatch" }));
+  await screen.findByRole("heading", { name: "Routing workspace" });
+  await user.click(screen.getByRole("link", { name: "Routing dispatch" }));
+  expect(screen.getByRole("link", { name: "Routing dispatch" })).toHaveAttribute("href", "/admin/dispatch");
+  await user.click(screen.getByRole("link", { name: "Overview" }));
+  expect(await screen.findByText("Every report. A clearer next step.")).toBeInTheDocument();
+  await user.click(screen.getByRole("link", { name: "Reports" }));
+  expect(await screen.findByRole("link", { name: "WG-123" })).toHaveAttribute("href", "/admin/reports/report-123");
+});
+
+test("ignores a failed sign-in response after unmount", async () => {
+  const { api, user, unmount } = setup();
+  let reject!: (error: Error) => void;
+  vi.mocked(api.signIn).mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
+  await signIn(user); unmount();
+  await act(async () => reject(new Error("Old login result")));
+  expect(screen.queryByText("Old login result")).not.toBeInTheDocument();
+});
+
+test("ignores a logout failure after the dashboard unmounts", async () => {
+  const { api, user, unmount } = setup();
+  let reject!: (error: Error) => void;
+  vi.mocked(api.signOut).mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
+  await signIn(user);
+  await screen.findByRole("link", { name: "WG-123" });
+  await user.click(screen.getByRole("button", { name: "Sign out" }));
+  unmount();
+  await act(async () => reject(new Error("Old logout result")));
+  expect(screen.queryByText("Old logout result")).not.toBeInTheDocument();
 });

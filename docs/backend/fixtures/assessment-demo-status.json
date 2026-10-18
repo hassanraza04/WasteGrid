@@ -1,0 +1,21 @@
+{
+  "expires_at": "2026-10-16T23:00:00Z",
+  "last_heartbeat_at": "2026-10-16T22:00:00Z",
+  "last_success_at": "2026-10-16T22:00:00Z",
+  "max_attempts": 4,
+  "max_new_reports": 2,
+  "model": "xai/grok-4.3",
+  "new_reports_admitted": 1,
+  "queue": {
+    "failed": 0,
+    "pending": 1,
+    "running": 0,
+    "succeeded": 2
+  },
+  "reason": null,
+  "run_id": "a0000000-0000-4000-8000-000000000001",
+  "starts_at": "2026-10-16T22:00:00Z",
+  "status": "active",
+  "used_attempts": 2,
+  "worker_online": true
+}

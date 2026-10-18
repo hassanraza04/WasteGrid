@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { OrganizerDecisionForm } from "./OrganizerDecisionForm";
-import { AccessError, type OrganizerApi, type OrganizerReport } from "./organizerApi";
+import { AccessError, OrganizerMutationRejectedError, type OrganizerApi, type OrganizerReport } from "./organizerApi";
 
 const report: OrganizerReport = {
   id: "report-1", location: null, public_reference: "WG-123", title: "Overflowing bin", address: null,
@@ -40,7 +40,7 @@ async function prepareReview(user: ReturnType<typeof userEvent.setup>, priority 
 
 afterEach(() => vi.unstubAllGlobals());
 
-test("requires review before sending an organiser decision and then uses the returned version for priority", async () => {
+test("requires review before sending an organiser decision and freezes the next version for priority", async () => {
   vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("decision-id").mockReturnValueOnce("priority-id") });
   const { api, onReportUpdated, user } = setup();
   expect(screen.queryByRole("button", { name: "Apply organiser decision" })).not.toBeInTheDocument();
@@ -104,8 +104,8 @@ test("does not permit a stale decision to be edited or resent until reload succe
   expect(screen.queryByRole("button", { name: "Apply organiser decision" })).not.toBeInTheDocument();
 });
 
-test("retries only priority with a fresh version when triage already succeeded", async () => {
-  vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("decision-id").mockReturnValueOnce("priority-id") });
+test("requires fresh priority review after a definite conflict without repeating committed triage", async () => {
+  vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("decision-id").mockReturnValueOnce("priority-id").mockReturnValueOnce("fresh-priority-id") });
   const applyDecision = vi.fn().mockResolvedValue({ ...report, version: 8 });
   const setPriority = vi.fn().mockRejectedValueOnce(new Error("This report changed or is not ready for that decision. Reload it and review the latest details.")).mockResolvedValueOnce({ ...report, version: 10, priority: "high" });
   const { api, onReload, user } = setup({ applyDecision, setPriority });
@@ -113,10 +113,12 @@ test("retries only priority with a fresh version when triage already succeeded",
   await prepareReview(user, true);
   await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
   await user.click(screen.getByRole("button", { name: "Reload latest report" }));
-  await user.click(await screen.findByRole("button", { name: "Apply priority update" }));
+  expect(screen.queryByRole("button", { name: "Apply priority update" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Review decision" }));
+  await user.click(screen.getByRole("button", { name: "Apply priority update" }));
   expect(api.applyDecision).toHaveBeenCalledTimes(1);
   expect(api.setPriority).toHaveBeenNthCalledWith(1, "report-1", expect.objectContaining({ command_id: "priority-id", expected_version: 8 }));
-  expect(api.setPriority).toHaveBeenNthCalledWith(2, "report-1", expect.objectContaining({ command_id: "priority-id", expected_version: 9 }));
+  expect(api.setPriority).toHaveBeenNthCalledWith(2, "report-1", expect.objectContaining({ command_id: "fresh-priority-id", expected_version: 9 }));
 });
 
 test("expires the organiser view instead of displaying a rejected mutation error", async () => {
@@ -264,18 +266,19 @@ test("preserves the immutable priority command after a lost acknowledgement", as
   expect(api.applyDecision).not.toHaveBeenCalled();
 });
 
-test("rebases only priority after a definite linked-report conflict", async () => {
+test("reviews a new priority command after reloading a definite linked-report conflict", async () => {
   const setPriority = vi.fn().mockRejectedValueOnce(new Error(staleMessage)).mockResolvedValueOnce({ ...linkedReport, version: 15, priority: "high" });
   const { api, user, onReload } = setup({ setPriority }, linkedReport);
   onReload.mockResolvedValue({ ...linkedReport, version: 14 });
   await choosePriority(user);
   await user.click(screen.getByRole("button", { name: "Apply priority update" }));
   await user.click(screen.getByRole("button", { name: "Reload latest report" }));
+  await user.click(screen.getByRole("button", { name: "Review decision" }));
   await user.click(screen.getByRole("button", { name: "Apply priority update" }));
   expect(api.applyDecision).not.toHaveBeenCalled();
   expect(vi.mocked(api.setPriority).mock.calls[0][1].expected_version).toBe(12);
   expect(vi.mocked(api.setPriority).mock.calls[1][1].expected_version).toBe(14);
-  expect(vi.mocked(api.setPriority).mock.calls[1][1].command_id).toBe(vi.mocked(api.setPriority).mock.calls[0][1].command_id);
+  expect(vi.mocked(api.setPriority).mock.calls[1][1].command_id).not.toBe(vi.mocked(api.setPriority).mock.calls[0][1].command_id);
 });
 
 test.each(["resolve", "reject"] as const)("does not continue after unexpected unmount (%s)", async result => {
@@ -340,10 +343,141 @@ test("ignores a stale-report reload after unmount", async () => {
 });
 
 
-test("keeps the reviewed priority version even if the same report refreshes before Apply", async () => {
+test("a refreshed priority report needs a new review before the first attempt", async () => {
   const { user, api, rerender, onReportUpdated, onReload } = setup({}, linkedReport);
   await choosePriority(user);
   rerender(<OrganizerDecisionForm report={{ ...linkedReport, version: 15 }} api={api} onReportUpdated={onReportUpdated} onReload={onReload} />);
+  expect(screen.queryByRole("button", { name: "Apply priority update" })).not.toBeInTheDocument();
+  expect(screen.getByText("Reviewed report version: 12")).toBeInTheDocument();
+  onReload.mockResolvedValue({ ...linkedReport, version: 15 });
+  await user.click(screen.getByRole("button", { name: "Reload latest report" }));
+  expect(api.setPriority).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Priority override")).toHaveValue("high");
+  await user.click(screen.getByRole("button", { name: "Review decision" }));
+  expect(screen.getByText("Reviewed report version: 15")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Apply priority update" }));
-  expect(api.setPriority).toHaveBeenCalledWith("report-1", expect.objectContaining({ expected_version: 12 }));
+  expect(api.setPriority).toHaveBeenCalledWith("report-1", expect.objectContaining({ expected_version: 15 }));
+});
+
+test("closing a decision confirmation restores keyboard focus to the new review trigger", async () => {
+  const { user } = setup();
+  await triageFields(user);
+  await user.click(screen.getByRole("button", { name: "Review decision" }));
+  expect(screen.getByRole("dialog", { name: "Review organiser decision" })).toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Review decision" })).toHaveFocus();
+});
+
+test("a polled report update cannot silently rebase an edited decision draft", async () => {
+  const { user, api, rerender, onReportUpdated, onReload } = setup();
+  await triageFields(user);
+  rerender(<OrganizerDecisionForm report={{ ...report, version: 8, note: "New evidence needs review" }} api={api} onReportUpdated={onReportUpdated} onReload={onReload} />);
+  expect(screen.getByLabelText("Decision summary")).toHaveValue("Review evidence before proceeding");
+  expect(screen.getByRole("alert")).toHaveTextContent("report changed");
+  expect(screen.getByRole("button", { name: "Review decision" })).toBeDisabled();
+  expect(api.applyDecision).not.toHaveBeenCalled();
+});
+
+test("a preserved draft needs an explicit reload and fresh confirmation before using a newer version", async () => {
+  const { user, api, rerender, onReportUpdated, onReload } = setup();
+  await triageFields(user);
+  const updated = { ...report, version: 9, note: "Updated resident evidence", priority: "high" as const };
+  rerender(<OrganizerDecisionForm report={updated} api={api} onReportUpdated={onReportUpdated} onReload={onReload} />);
+  onReload.mockResolvedValue(updated);
+  await user.click(screen.getByRole("button", { name: "Reload latest report" }));
+  expect(screen.getByRole("status")).toHaveTextContent("Inspect the updated evidence");
+  expect(screen.getByLabelText("Decision summary")).toHaveValue("Review evidence before proceeding");
+  expect(api.applyDecision).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Review decision" }));
+  expect(screen.getByText("Reviewed report version: 9")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
+  expect(api.applyDecision).toHaveBeenCalledWith("report-1", expect.objectContaining({ expected_version: 9, decision_summary: "Review evidence before proceeding" }));
+});
+
+test("an unattempted triage confirmation becomes stale when new evidence arrives", async () => {
+  const { user, api, rerender, onReportUpdated, onReload } = setup();
+  await prepareReview(user);
+  rerender(<OrganizerDecisionForm report={{ ...report, version: 8 }} api={api} onReportUpdated={onReportUpdated} onReload={onReload} />);
+  expect(screen.queryByRole("button", { name: "Apply organiser decision" })).not.toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent("report changed");
+  expect(api.applyDecision).not.toHaveBeenCalled();
+});
+
+test("an uncertain triage retry retains its original identity and version even after a poll observes a newer report", async () => {
+  const { user, api, rerender, onReportUpdated, onReload } = setup({ applyDecision: vi.fn().mockRejectedValueOnce(new Error("Unable to reach WasteGrid")).mockResolvedValueOnce({ ...report, version: 8 }) });
+  await prepareReview(user);
+  await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
+  const original = vi.mocked(api.applyDecision).mock.calls[0];
+  rerender(<OrganizerDecisionForm report={{ ...report, version: 8 }} api={api} onReportUpdated={onReportUpdated} onReload={onReload} />);
+  expect(screen.queryByRole("button", { name: "Edit decision" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Close dialog" })).toBeDisabled();
+  await user.keyboard("{Escape}");
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Retry organiser decision" }));
+  expect(vi.mocked(api.applyDecision).mock.calls[1]).toEqual(original);
+  expect(original[1].expected_version).toBe(7);
+});
+
+test("an uncertain priority retry cannot silently adopt a polled version or changed priority", async () => {
+  const { user, api, rerender, onReportUpdated, onReload } = setup({ setPriority: vi.fn().mockRejectedValueOnce(new Error("Unable to save the organiser decision. Please retry.")).mockResolvedValueOnce({ ...linkedReport, version: 13, priority: "high" }) }, linkedReport);
+  await choosePriority(user);
+  await user.click(screen.getByRole("button", { name: "Apply priority update" }));
+  const original = vi.mocked(api.setPriority).mock.calls[0];
+  rerender(<OrganizerDecisionForm report={{ ...linkedReport, version: 14, priority: "medium" }} api={api} onReportUpdated={onReportUpdated} onReload={onReload} />);
+  await user.click(screen.getByRole("button", { name: "Retry priority update" }));
+  expect(vi.mocked(api.setPriority).mock.calls[1]).toEqual(original);
+  expect(original[1]).toMatchObject({ expected_version: 12, priority: "high" });
+});
+
+test("a definite validation rejection permits correcting the same draft", async () => {
+  const { user, api } = setup({ applyDecision: vi.fn().mockRejectedValueOnce(new OrganizerMutationRejectedError("Check the decision fields and try again.", 422)).mockResolvedValueOnce({ ...report, version: 8 }) });
+  await prepareReview(user);
+  await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
+  expect(screen.getByRole("button", { name: "Close dialog" })).toBeEnabled();
+  await user.click(screen.getByRole("button", { name: "Edit decision" }));
+  expect(screen.getByLabelText("Category")).toHaveValue("general waste");
+  await user.clear(screen.getByLabelText("Category"));
+  await user.type(screen.getByLabelText("Category"), "corrected waste");
+  await user.click(screen.getByRole("button", { name: "Review decision" }));
+  await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
+  expect(vi.mocked(api.applyDecision).mock.calls[1][1]).toMatchObject({ category: "corrected waste", expected_version: 7 });
+  expect(vi.mocked(api.applyDecision).mock.calls[1][1].command_id).not.toBe(vi.mocked(api.applyDecision).mock.calls[0][1].command_id);
+});
+
+test("correcting a rejected priority request never repeats already committed triage", async () => {
+  const { user, api } = setup({ setPriority: vi.fn().mockRejectedValueOnce(new OrganizerMutationRejectedError("Check the decision fields and try again.", 422)).mockResolvedValueOnce({ ...report, version: 9, priority: "high" }) });
+  await prepareReview(user, true);
+  await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
+  await user.click(screen.getByRole("button", { name: "Edit decision" }));
+  expect(screen.queryByLabelText("Category")).not.toBeInTheDocument();
+  expect(screen.getByText(/triage decision was saved/)).toBeInTheDocument();
+  await user.type(screen.getByLabelText("Priority reason"), " with corrected detail");
+  await user.click(screen.getByRole("button", { name: "Review decision" }));
+  await user.click(screen.getByRole("button", { name: "Apply priority update" }));
+  expect(api.applyDecision).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(api.setPriority).mock.calls[1][1].expected_version).toBe(8);
+});
+
+test("a lost triage acknowledgement cannot rebase an unsent priority onto another actor's changes", async () => {
+  const latest = { ...report, version: 10, priority: "medium" as const, note: "Another actor added evidence" };
+  const { user, api, rerender, onReload, onReportUpdated } = setup({
+    applyDecision: vi.fn().mockRejectedValueOnce(new Error("Unable to reach WasteGrid")).mockResolvedValueOnce(latest),
+    setPriority: vi.fn().mockRejectedValueOnce(new OrganizerMutationRejectedError(staleMessage, 409)).mockResolvedValueOnce({ ...latest, version: 11, priority: "high" }),
+  });
+  await prepareReview(user, true);
+  await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
+  expect(api.setPriority).not.toHaveBeenCalled();
+  rerender(<OrganizerDecisionForm report={latest} api={api} onReportUpdated={onReportUpdated} onReload={onReload} />);
+  await user.click(screen.getByRole("button", { name: "Retry organiser decision" }));
+  expect(vi.mocked(api.applyDecision).mock.calls[1]).toEqual(vi.mocked(api.applyDecision).mock.calls[0]);
+  expect(vi.mocked(api.setPriority).mock.calls[0][1]).toMatchObject({ expected_version: 8, priority: "high" });
+  expect(screen.getByRole("button", { name: "Reload latest report" })).toBeInTheDocument();
+  onReload.mockResolvedValue(latest);
+  await user.click(screen.getByRole("button", { name: "Reload latest report" }));
+  await user.click(screen.getByRole("button", { name: "Review decision" }));
+  await user.click(screen.getByRole("button", { name: "Apply priority update" }));
+  expect(api.applyDecision).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(api.setPriority).mock.calls[1][1].expected_version).toBe(10);
+  expect(vi.mocked(api.setPriority).mock.calls[1][1].command_id).not.toBe(vi.mocked(api.setPriority).mock.calls[0][1].command_id);
 });

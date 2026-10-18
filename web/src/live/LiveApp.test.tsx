@@ -6,8 +6,8 @@ import { LiveApp } from "./LiveApp";
 import { AccessError, type OrganizerApi } from "./organizerApi";
 afterEach(() => vi.unstubAllEnvs());
 const row = { id: "mobile-report-id", public_reference: "WG-LIVE", title: "Mobile upload", address: null, note: "Photo from mobile", display_status: "received", assessment_status: "pending", illustrative: false, photo_id: "photo-id", completion_photo_ids: [] };
-function setup(path = "/admin") {
- const api = { signIn: vi.fn().mockResolvedValue(undefined), signOut: vi.fn().mockResolvedValue(undefined), reports: vi.fn().mockResolvedValue([row]), photo: vi.fn().mockResolvedValue("https://photos.example/signed") };
+function setup(path = "/admin/reports") {
+ const api = { signIn: vi.fn().mockResolvedValue(undefined), signOut: vi.fn().mockResolvedValue(undefined), reportIndex: vi.fn().mockResolvedValue({items:[row],total:1,offset:0,limit:25}), photo: vi.fn().mockResolvedValue("https://photos.example/signed") };
  render(<MemoryRouter initialEntries={[path]}><LiveApp api={api as unknown as OrganizerApi} /></MemoryRouter>);
  return { api, user: userEvent.setup() };
 }
@@ -19,43 +19,43 @@ async function login(user: ReturnType<typeof userEvent.setup>) {
 test("shows the mobile report from the API, refreshes photos and clears private data on logout", async () => {
  const { api, user } = setup(); await login(user);
  expect(await screen.findByText("WG-LIVE")).toBeInTheDocument();
- expect(screen.getByText(/Assessment: pending/)).toBeInTheDocument();
+ expect(screen.getByText(/Assessment: Pending/)).toBeInTheDocument();
  await user.click(screen.getByRole("button", { name: "Load photo" }));
  const image = await screen.findByAltText("Reported waste"); expect(image).toHaveAttribute("src", "https://photos.example/signed");
  fireEvent.error(image); expect(screen.getByRole("alert")).toHaveTextContent("expired");
  api.photo.mockRejectedValueOnce(new Error("denied"));
  await user.click(screen.getByRole("button", { name: "Load photo" })); expect(await screen.findByRole("alert")).toHaveTextContent("Photo unavailable");
- api.reports.mockResolvedValueOnce([]);
+ api.reportIndex.mockResolvedValueOnce({items:[],total:0,offset:0,limit:25});
  await user.click(screen.getByRole("button", { name: "Refresh reports" }));
- expect(await screen.findByText("No reports on this page.")).toBeInTheDocument();
+ expect(await screen.findByText("No matching reports")).toBeInTheDocument();
  await user.click(screen.getByRole("button", { name: "Sign out" })); expect(await screen.findByRole("heading", { name: "Organiser sign in" })).toBeInTheDocument();
  expect(screen.queryByText("WG-LIVE")).not.toBeInTheDocument(); expect(api.signOut).toHaveBeenCalled();
 });
 test("paginates and labels synthetic records without treating them as real uploads", async () => {
  const { api, user } = setup();
- api.reports.mockResolvedValueOnce(Array.from({ length: 50 }, (_, i) => ({ ...row, id: String(i), public_reference: `WG-${i}`, address: "Park", note: null, illustrative: true })));
+ api.reportIndex.mockResolvedValueOnce({items:Array.from({ length: 25 }, (_, i) => ({ ...row, id: String(i), public_reference: `WG-${i}`, address: "Park", note: null, illustrative: true })),total:26,limit:25,offset:0});
  await login(user); await screen.findByText("WG-0");
- expect(screen.getAllByText("Illustrative demo report")).toHaveLength(50);
+ expect(screen.getAllByText("Illustrative demo report")).toHaveLength(25);
  await user.click(screen.getByRole("button", { name: "Next page" })); await screen.findByText("WG-LIVE");
- expect(api.reports).toHaveBeenLastCalledWith(50);
- await user.click(screen.getByRole("button", { name: "Previous page" })); await waitFor(() => expect(api.reports).toHaveBeenLastCalledWith(0));
+ expect(api.reportIndex).toHaveBeenLastCalledWith(expect.objectContaining({offset:25}));
+ await user.click(screen.getByRole("button", { name: "Previous page" })); await waitFor(() => expect(api.reportIndex).toHaveBeenLastCalledWith(expect.objectContaining({offset:0})));
 });
 test("handles login and list failures, and returns to sign-in on expired authorization", async () => {
  const { api, user } = setup(); api.signIn.mockRejectedValueOnce(new Error("Invalid credentials"));
  await login(user); expect(await screen.findByRole("alert")).toHaveTextContent("Invalid credentials");
- api.reports.mockRejectedValueOnce(new Error("Offline")); await user.click(screen.getByRole("button", { name: "Sign in" }));
+ api.reportIndex.mockRejectedValueOnce(new Error("Offline")); await user.click(screen.getByRole("button", { name: "Sign in" }));
  expect(await screen.findByRole("alert")).toHaveTextContent("Offline");
- api.reports.mockRejectedValueOnce(new AccessError("Session expired"));
+ api.reportIndex.mockRejectedValueOnce(new AccessError("Session expired"));
  await user.click(screen.getByRole("button", { name: "Refresh reports" }));
  expect(await screen.findByRole("heading", { name: "Organiser sign in" })).toBeInTheDocument();
  expect(screen.getByRole("alert")).toHaveTextContent("Session expired");
 });
 test("does not show reports when a request completes after sign-out", async () => {
  const { api, user } = setup(); await login(user); await screen.findByText("WG-LIVE");
- let finish!: (value: typeof row[]) => void;
- api.reports.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+ let finish!: (value: {items:typeof row[];total:number;offset:number;limit:number}) => void;
+ api.reportIndex.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
  await user.click(screen.getByRole("button", { name: "Refresh reports" }));
- await user.click(screen.getByRole("button", { name: "Sign out" })); finish([row]);
+ await user.click(screen.getByRole("button", { name: "Sign out" })); finish({items:[row],total:1,offset:0,limit:25});
  await waitFor(() => expect(screen.queryByText("WG-LIVE")).not.toBeInTheDocument());
 });
 test("public home links to real staff login and unmatched routes show a fallback", async () => {

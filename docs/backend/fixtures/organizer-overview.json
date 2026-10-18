@@ -1,0 +1,39 @@
+{
+  "configuration": {
+    "messaging_pilot_enabled": false,
+    "organizer_routing_enabled": true,
+    "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "road_service_configured": true
+  },
+  "counts": {
+    "available_crews": 1,
+    "awaiting_assessment": 1,
+    "blocked_jobs": 1,
+    "completed_24h": 0,
+    "high_priority_jobs": 0,
+    "in_progress_jobs": 0,
+    "needs_review": 0
+  },
+  "include_illustrative": true,
+  "processing": {
+    "expires_at": null,
+    "last_heartbeat_at": null,
+    "last_success_at": null,
+    "max_attempts": 4,
+    "max_new_reports": 2,
+    "model": null,
+    "new_reports_admitted": 0,
+    "queue": {
+      "failed": 0,
+      "pending": 0,
+      "running": 0,
+      "succeeded": 0
+    },
+    "reason": null,
+    "run_id": null,
+    "starts_at": null,
+    "status": "inactive",
+    "used_attempts": 0,
+    "worker_online": false
+  }
+}

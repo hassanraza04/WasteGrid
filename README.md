@@ -44,8 +44,8 @@ are ignored by Git. Never commit `.env`.
 
 ## Connected resident and organiser flow
 
-The native mobile app uploads photos, a caption and either GPS coordinates or a
-manual address to FastAPI. The form omits fire/sharp-object questions; missing
+The native mobile app uploads photos, a caption and GPS coordinates or an
+explicitly confirmed map pin (an address is additional context) to FastAPI. The form omits fire/sharp-object questions; missing
 answers remain unknown to the backend. It saves the report UUID, private token
 and an immutable upload draft before submission. **My reports** recovers interrupted uploads and reads status
 with that report's token. Checking status also displays paginated update history
@@ -54,8 +54,8 @@ on expiry and are never given backend authorization headers or stored in the ima
 disk cache. Definitively rejected uploads can be edited in the form
 or discarded from My reports after checking that the server has not accepted them. Timeouts
 and other uncertain outcomes retain their original identity and bytes.
-Retaking a photo clears its location and requires a fresh lookup or a new manual
-address. Draft metadata is published through a completed temporary file before
+Retaking a photo clears its location and requires a fresh GPS fix or a newly confirmed
+map pin. Draft metadata is published through a completed temporary file before
 older revisions are removed. Interrupted saves retain the previous version;
 unreadable records are isolated so intact history remains accessible. Their photos
 and access keys are retained for recovery. Existing unversioned drafts remain readable.
@@ -139,3 +139,13 @@ automatic retention or deletion is added.
 
 See [repository safety](docs/repository-safety.md) for backend checks and
 [the mobile contract](docs/backend/mobile-handoff.md) for API details.
+
+## Organiser prototype and scoped assessment
+
+The organiser console provides overview counts, server-filtered report review,
+road route previews and confirmed dispatch. See
+[the operator runbook](docs/backend/organizer-prototype.md) for migration 0015,
+startup doctor checks, durable dispatch recovery and the approved four-attempt
+assessment session. Configuration, worker heartbeat and observed assessment
+success are separate indicators. Keep the demo inactive and messaging off until
+the reviewed revision is deployed and preflight passes.

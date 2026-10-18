@@ -1,0 +1,265 @@
+{
+  "$defs": {
+    "Equipment": {
+      "enum": [
+        "gloves",
+        "trash_bags",
+        "broom",
+        "shovel",
+        "wheelbarrow",
+        "pickup_truck"
+      ],
+      "title": "Equipment",
+      "type": "string"
+    },
+    "JobState": {
+      "enum": [
+        "unassigned",
+        "assigned",
+        "in_progress",
+        "blocked",
+        "completed",
+        "recheck_requested"
+      ],
+      "title": "JobState",
+      "type": "string"
+    },
+    "Location": {
+      "additionalProperties": false,
+      "properties": {
+        "landmark": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Landmark"
+        },
+        "latitude": {
+          "maximum": 90,
+          "minimum": -90,
+          "title": "Latitude",
+          "type": "number"
+        },
+        "longitude": {
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Longitude",
+          "type": "number"
+        }
+      },
+      "required": [
+        "latitude",
+        "longitude"
+      ],
+      "title": "Location",
+      "type": "object"
+    },
+    "OrganizerIndexedJob": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Address"
+        },
+        "assigned_crew_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Assigned Crew Id"
+        },
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "decision_summary": {
+          "title": "Decision Summary",
+          "type": "string"
+        },
+        "eligibility_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Eligibility Reasons",
+          "type": "array"
+        },
+        "eligible": {
+          "title": "Eligible",
+          "type": "boolean"
+        },
+        "estimated_service_minutes": {
+          "title": "Estimated Service Minutes",
+          "type": "integer"
+        },
+        "held": {
+          "title": "Held",
+          "type": "boolean"
+        },
+        "id": {
+          "format": "uuid",
+          "title": "Id",
+          "type": "string"
+        },
+        "illustrative": {
+          "title": "Illustrative",
+          "type": "boolean"
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "locked": {
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "photo_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Photo Id"
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "enum": [
+                "high",
+                "medium",
+                "routine"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Priority"
+        },
+        "public_references": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Public References",
+          "type": "array"
+        },
+        "required_equipment": {
+          "items": {
+            "$ref": "#/$defs/Equipment"
+          },
+          "title": "Required Equipment",
+          "type": "array"
+        },
+        "route_position": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Route Position"
+        },
+        "status": {
+          "$ref": "#/$defs/JobState"
+        },
+        "travel_minutes": {
+          "title": "Travel Minutes",
+          "type": "number"
+        },
+        "unassigned_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Unassigned Reason"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "location",
+        "category",
+        "required_equipment",
+        "estimated_service_minutes",
+        "assigned_crew_id",
+        "locked",
+        "held",
+        "route_position",
+        "travel_minutes",
+        "decision_summary",
+        "unassigned_reason",
+        "version",
+        "illustrative",
+        "priority",
+        "eligible",
+        "eligibility_reasons",
+        "public_references",
+        "address",
+        "photo_id"
+      ],
+      "title": "OrganizerIndexedJob",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/$defs/OrganizerIndexedJob"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "limit": {
+      "title": "Limit",
+      "type": "integer"
+    },
+    "offset": {
+      "title": "Offset",
+      "type": "integer"
+    },
+    "total": {
+      "title": "Total",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "limit",
+    "offset"
+  ],
+  "title": "OrganizerJobIndex",
+  "type": "object"
+}

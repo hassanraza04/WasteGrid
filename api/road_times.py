@@ -26,13 +26,13 @@ def public_request_budget(base_url):
         return
     global _public_last_request_at
     if not _public_request_lock.acquire(blocking=False):
-        raise TravelDataUnavailable("Public road service is busy; recompute later")
+        raise RoadRateLimited("Public road service is busy; recompute later")
     try:
         if (
             _public_last_request_at is not None
             and monotonic() - _public_last_request_at < 1
         ):
-            raise TravelDataUnavailable(
+            raise RoadRateLimited(
                 "Public road service request limit reached; recompute after one second"
             )
         try:
@@ -45,6 +45,10 @@ def public_request_budget(base_url):
 
 
 class TravelDataUnavailable(Exception):
+    pass
+
+
+class RoadRateLimited(TravelDataUnavailable):
     pass
 
 

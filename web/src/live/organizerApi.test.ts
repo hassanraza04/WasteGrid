@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import { AccessError, createOrganizerApi, OrganizerApi, RoutingConflictError, RoutingContractError, type DecisionCommand, type OrganizerJobDetails, type OrganizerReportDetails, type StaffAuth } from "./organizerApi";
+import { AccessError, OrganizerMutationRejectedError, createOrganizerApi, OrganizerApi, RoutingConflictError, RoutingContractError, type DecisionCommand, type OrganizerJobDetails, type OrganizerReportDetails, type StaffAuth } from "./organizerApi";
 vi.mock("@supabase/supabase-js", () => ({ createClient: vi.fn() }));
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.clearAllMocks(); });
 function setup() {
@@ -41,7 +41,7 @@ const decision: DecisionCommand = {
 };
 test("authenticates, verifies the server role, paginates, and obtains private photo access", async () => {
   const { api, auth, fetcher } = setup();
-  fetcher.mockResolvedValueOnce(Response.json({ role: "organizer" })).mockResolvedValueOnce(Response.json([{ id: "persisted-id" }])).mockResolvedValueOnce(Response.json({ url: "https://storage.example/photo" }));
+  fetcher.mockResolvedValueOnce(Response.json({ role: "organizer", user_id: "11111111-1111-4111-8111-111111111111" })).mockResolvedValueOnce(Response.json([{ id: "persisted-id" }])).mockResolvedValueOnce(Response.json({ url: "https://storage.example/photo" }));
   await api.signIn("user@example.com", "password");
   expect(auth.signIn).toHaveBeenCalledWith("user@example.com", "password");
   expect(await api.reports(50)).toEqual([{ id: "persisted-id" }]);
@@ -90,6 +90,8 @@ test("sets priority as authenticated JSON and returns the updated report", async
 });
 test.each([[409, "changed or is not ready"], [422, "Check the decision fields"]])("keeps decision HTTP %s errors safe and action-specific", async (status, message) => {
   const { api, fetcher } = setup(); fetcher.mockResolvedValue(new Response("private server response", { status }));
+  await expect(api.applyDecision("report-id", decision)).rejects.toMatchObject({ status });
+  await expect(api.applyDecision("report-id", decision)).rejects.toBeInstanceOf(OrganizerMutationRejectedError);
   await expect(api.applyDecision("report-id", decision)).rejects.toThrow(message);
   await expect(api.applyDecision("report-id", decision)).rejects.not.toThrow("private server response");
 });
@@ -126,7 +128,7 @@ test("requires only public configuration and uses an in-memory, refreshing Supab
   vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test");
   const auth = { signInWithPassword: vi.fn().mockResolvedValue({ error: null }), getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: "jwt" } }, error: null }), signOut: vi.fn().mockResolvedValue({ error: null }) };
   vi.mocked(createClient).mockReturnValue({ auth } as unknown as ReturnType<typeof createClient>);
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ role: "organizer" })));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ role: "organizer", user_id: "11111111-1111-4111-8111-111111111111" })));
   const api = createOrganizerApi(); await api.signIn("email", "password"); await api.signOut();
   expect(createClient).toHaveBeenCalledWith("https://test.supabase.co", "sb_publishable_test", expect.objectContaining({ auth: { persistSession: false, autoRefreshToken: true, detectSessionInUrl: false } }));
   auth.signInWithPassword.mockResolvedValueOnce({ error: new Error("private auth details") } as never);
@@ -207,7 +209,7 @@ test("never sends a pending command with a token resolved after the account chan
   const token = deferred<string>();
   vi.mocked(auth.token).mockReturnValueOnce(token.promise);
   const pending = api.applyDecision("report-id", decision);
-  fetcher.mockResolvedValue(Response.json({ role: "organizer" }));
+  fetcher.mockResolvedValue(Response.json({ role: "organizer", user_id: "11111111-1111-4111-8111-111111111111" }));
   await api.signOut();
   await api.signIn("other@example.com", "password");
   token.resolve("other-account-token");
@@ -241,15 +243,15 @@ test("does not return mutation success when the session changes while parsing it
 
 test("rejects a second sign-in while the first organiser's role check is pending", async () => {
   const { api, auth, fetcher } = setup();
-  const identity = deferred<{ role: string }>();
+  const identity = deferred<{ role: string; user_id: string }>();
   const json = vi.fn().mockReturnValue(identity.promise);
   fetcher.mockResolvedValueOnce({ ok: true, status: 200, json } as unknown as Response)
-    .mockResolvedValueOnce(Response.json({ role: "organizer" }));
+    .mockResolvedValueOnce(Response.json({ role: "organizer", user_id: "11111111-1111-4111-8111-111111111111" }));
   const first = api.signIn("first@example.com", "password");
   await vi.waitFor(() => expect(json).toHaveBeenCalledOnce());
   await expect(api.signIn("second@example.com", "another-password")).rejects.toThrow("already in progress");
   expect(auth.signIn).toHaveBeenCalledTimes(1);
-  identity.resolve({ role: "organizer" });
+  identity.resolve({ role: "organizer", user_id: "11111111-1111-4111-8111-111111111111" });
   await first;
   expect(auth.signOut).not.toHaveBeenCalled();
 });
@@ -295,7 +297,7 @@ test("logout waits for a late SDK sign-in write, blocks new logins and requests,
   expect(auth.signIn).toHaveBeenCalledOnce();
   expect(auth.token).not.toHaveBeenCalled();
   expect(fetcher).not.toHaveBeenCalled();
-  fetcher.mockResolvedValue(Response.json({ role: "organizer" }));
+  fetcher.mockResolvedValue(Response.json({ role: "organizer", user_id: "11111111-1111-4111-8111-111111111111" }));
   await api.signIn("second@example.com", "new-attempt");
   expect(auth.signIn).toHaveBeenCalledTimes(2);
 });
@@ -310,7 +312,67 @@ test("failed SDK sign-in cleanup holds the guard until completed and allows a fr
   await expect(api.signIn("second@example.com", "do-not-queue")).rejects.toThrow("already in progress");
   cleanup.resolve(undefined);
   await expect(first).rejects.toThrow("Sign-in failed");
-  fetcher.mockResolvedValue(Response.json({ role: "organizer" }));
+  fetcher.mockResolvedValue(Response.json({ role: "organizer", user_id: "11111111-1111-4111-8111-111111111111" }));
   await api.signIn("second@example.com", "new-attempt");
   expect(auth.signIn).toHaveBeenCalledTimes(2);
+});
+
+test("loads additive read contracts and persists verified identity only until logout", async () => {
+  const { api, fetcher } = setup();
+  fetcher.mockResolvedValueOnce(Response.json({ role: "organizer", user_id: "11111111-1111-4111-8111-111111111111" }));
+  await api.signIn("user@example.com", "password");
+  expect(api.verifiedUserId).toBe("11111111-1111-4111-8111-111111111111");
+  expect(api.environment).toBe("https://api.example");
+  fetcher.mockImplementation(() => Promise.resolve(Response.json({ items: [], total: 0 })));
+  await api.overview(true); await api.reportIndex({ q: "WG abc", include_illustrative: false, limit: 25 });
+  await api.jobIndex(100, true); await api.preview("p/id"); await api.geometry("p/id", "c/id");
+  const urls = fetcher.mock.calls.map(call => call[0]);
+  expect(urls).toContain("https://api.example/organizer/overview?include_illustrative=true");
+  expect(urls).toContain("https://api.example/organizer/report-index?q=WG+abc&include_illustrative=false&limit=25");
+  expect(urls).toContain("https://api.example/organizer/job-index?limit=100&offset=100&include_illustrative=true");
+  expect(urls).toContain("https://api.example/routing/previews/p%2Fid/geometry/c%2Fid");
+  await api.signOut(); expect(api.verifiedUserId).toBeNull();
+});
+
+test("requires a server verified UUID before treating an account as an organiser", async () => {
+  const { api, auth, fetcher } = setup(); fetcher.mockResolvedValue(Response.json({ role: "organizer", user_id: "bad" }));
+  await expect(api.signIn("user@example.com", "password")).rejects.toThrow("verify organiser identity");
+  expect(api.verifiedUserId).toBeNull(); expect(auth.signOut).toHaveBeenCalled();
+});
+
+test("loads every enriched job page including illustrative ownership checks", async () => {
+  const { api, fetcher } = setup();
+  fetcher.mockResolvedValueOnce(Response.json({ items: Array.from({ length: 100 }, (_, i) => ({ id: `${i}` })), total: 101 }))
+    .mockResolvedValueOnce(Response.json({ items: [{ id: "last" }], total: 101 }));
+  expect(await api.indexedJobs()).toHaveLength(101);
+  expect(fetcher.mock.calls[1][0]).toContain("offset=100&include_illustrative=true");
+});
+
+test("bounds an endlessly growing active job list", async () => {
+  const { api, fetcher } = setup(); fetcher.mockImplementation(() => Promise.resolve(Response.json({ items: Array.from({ length: 100 }, () => ({ id: "j" })), total: 10001 })));
+  await expect(api.indexedJobs()).rejects.toThrow("Too many jobs");
+});
+
+test("sends routing constraints and explicit partial intent unchanged", async () => {
+  const { api, fetcher } = setup(); fetcher.mockImplementation(() => Promise.resolve(Response.json({})));
+  const constraints = { max_duration_minutes: 120, max_stops_per_crew: 10, return_to_start: true, allow_partial: true };
+  await api.previewRouting(["crew"], ["job"], constraints); await api.dispatchRouting("preview", "command", true);
+  expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ crew_ids: ["crew"], job_ids: ["job"], constraints });
+  expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ command_id: "command", accept_partial: true });
+});
+
+test("records only redacted bounded diagnostics for invalid responses and timeouts", async () => {
+  const { api, fetcher } = setup();
+  const { organizerDiagnostics } = await import("./organizerDiagnostics");
+  fetcher.mockRejectedValueOnce(new DOMException("private signed URL", "TimeoutError"));
+  await expect(api.photo("secret-report-id")).rejects.toThrow("service may be waking up");
+  fetcher.mockResolvedValueOnce(new Response("private report text", { status: 200 }));
+  await expect(api.overview()).rejects.toThrow("unreadable response");
+  expect(organizerDiagnostics().some(item => item.category === "timeout")).toBe(true);
+  expect(organizerDiagnostics().at(-1)?.category).toBe("invalid_response");
+  expect(JSON.stringify(organizerDiagnostics())).not.toMatch(/private|signed|secret-report|user-jwt/);
+  fetcher.mockImplementation(() => Promise.resolve(Response.json([])));
+  for (let i = 0; i < 45; i++) await api.reports(0);
+  const records = organizerDiagnostics(); expect(records).toHaveLength(40);
+  expect(Object.keys(records[0]).sort()).toEqual(["category", "durationMs", "operation", "status"]);
 });

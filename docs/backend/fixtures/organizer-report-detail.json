@@ -1,5 +1,14 @@
 {
   "events": [],
+  "processing": {
+    "assessment": {
+      "attempts": 0,
+      "error_code": null,
+      "status": "pending"
+    },
+    "demo_run_id": null,
+    "triage": null
+  },
   "report": {
     "address": "Illustrative park entrance, Gulshan-e-Iqbal, Karachi",
     "assessment": null,

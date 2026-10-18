@@ -1,4 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
+import type {
+  DispatchReceipt,
+  OrganizerJobIndex,
+  OrganizerOverview,
+  OrganizerReportIndex,
+  ReportIndexQuery,
+  ReportProcessing,
+  RouteGeometry,
+  RoutingConstraints,
+} from "./organizerTypes";
+import { recordDiagnostic } from "./organizerDiagnostics";
 
 export interface LiveReport {
   id: string;
@@ -15,7 +26,8 @@ export interface LiveReport {
 
 export type Priority = "high" | "medium" | "routine";
 export type NextAction = "create_job" | "link_job" | "request_info" | "review";
-export type Equipment = "gloves" | "trash_bags" | "broom" | "shovel" | "wheelbarrow" | "pickup_truck";
+export type Equipment =
+  "gloves" | "trash_bags" | "broom" | "shovel" | "wheelbarrow" | "pickup_truck";
 
 export interface OrganizerAssessment {
   description: string;
@@ -72,8 +84,20 @@ export interface OrganizerReport extends LiveReport {
   assessment: OrganizerAssessment | null;
   triage: OrganizerTriage | null;
   resident_answers: { fire: boolean | null; sharp_objects: boolean | null };
-  clarifications: Array<{ note: string; location: OrganizerLocation | null; created_at: string }>;
-  latest_update: { id: string; kind: string; created_at: string; message: string; status: string | null; report_state: string | null; job_status: string | null } | null;
+  clarifications: Array<{
+    note: string;
+    location: OrganizerLocation | null;
+    created_at: string;
+  }>;
+  latest_update: {
+    id: string;
+    kind: string;
+    created_at: string;
+    message: string;
+    status: string | null;
+    report_state: string | null;
+    job_status: string | null;
+  } | null;
   created_at: string;
   updated_at: string;
   job_id: string | null;
@@ -82,12 +106,19 @@ export interface OrganizerReport extends LiveReport {
 export interface OrganizerReportDetails {
   report: OrganizerReport;
   events: OrganizerEvent[];
+  processing?: ReportProcessing;
 }
 
 export interface OrganizerJobDetails {
   job: {
     id: string;
-    status: "unassigned" | "assigned" | "in_progress" | "blocked" | "completed" | "recheck_requested";
+    status:
+      | "unassigned"
+      | "assigned"
+      | "in_progress"
+      | "blocked"
+      | "completed"
+      | "recheck_requested";
     location: OrganizerLocation;
     category: string;
     required_equipment: Equipment[];
@@ -174,15 +205,34 @@ export interface OrganizerRoutePreview {
   expires_at: string;
   matrix_id: string | null;
   travel_label: string;
-  routes: Array<{ crew_id: string; stops: OrganizerRouteStop[]; duration_minutes: number; travel_minutes: number }>;
+  routes: Array<{
+    crew_id: string;
+    stops: OrganizerRouteStop[];
+    duration_minutes: number;
+    travel_minutes: number;
+    return_travel_minutes?: number;
+    returns_to_start?: boolean;
+  }>;
   unassigned: Array<{ job_id: string; reason: string }>;
   exclusions: Array<{ job_id: string; reason: string }>;
-  metrics: { weighted_wait: number; latest_finish: number; total_travel: number; score: number };
+  metrics: {
+    weighted_wait: number;
+    latest_finish: number;
+    total_travel: number;
+    score: number;
+  };
   termination_reason: string;
   dispatchable: boolean;
-  reassignments: Array<{ job_id: string; previous_crew_id: string | null; previous_position: number | null; proposed_crew_id: string; proposed_position: number }>;
+  reassignments: Array<{
+    job_id: string;
+    previous_crew_id: string | null;
+    previous_position: number | null;
+    proposed_crew_id: string;
+    proposed_position: number;
+  }>;
   settings: Record<string, unknown>;
   plan_id: string | null;
+  dispatch_receipt?: DispatchReceipt | null;
 }
 
 export interface OrganizerDispatchResult {
@@ -228,28 +278,72 @@ export class RoutingContractError extends Error {}
 
 export class RoutingConflictError extends Error {}
 
+export class OrganizerMutationRejectedError extends Error {
+  constructor(
+    message: string,
+    readonly status: 409 | 422,
+  ) {
+    super(message);
+  }
+}
+
 export class OrganizerApi {
   private authenticationVersion = 0;
+  private organizerId: string | null = null;
+
+  get verifiedUserId(): string | null {
+    return this.organizerId;
+  }
+  get environment(): string {
+    return this.baseUrl.replace(/\/$/, "");
+  }
   private signingIn: Promise<void> | null = null;
   private signingOut: Promise<void> | null = null;
 
-  get sessionVersion(): number { return this.authenticationVersion; }
+  get sessionVersion(): number {
+    return this.authenticationVersion;
+  }
 
-  constructor(private readonly auth: StaffAuth, private readonly baseUrl: string) {}
+  constructor(
+    private readonly auth: StaffAuth,
+    private readonly baseUrl: string,
+  ) {}
 
   signIn(email: string, password: string): Promise<void> {
-    if (this.signingIn || this.signingOut) return Promise.reject(new Error("Authentication is already in progress. Please wait and try again."));
+    if (this.signingIn || this.signingOut)
+      return Promise.reject(
+        new Error(
+          "Authentication is already in progress. Please wait and try again.",
+        ),
+      );
+    this.organizerId = null;
     const version = ++this.authenticationVersion;
-    this.signingIn = this.authenticate(email, password, version).finally(() => { this.signingIn = null; });
+    this.signingIn = this.authenticate(email, password, version).finally(() => {
+      this.signingIn = null;
+    });
     return this.signingIn;
   }
 
-  private async authenticate(email: string, password: string, version: number): Promise<void> {
+  private async authenticate(
+    email: string,
+    password: string,
+    version: number,
+  ): Promise<void> {
     try {
       await this.auth.signIn(email, password);
       this.requireSession(version);
-      const identity = await this.request<{ role: string }>("/auth/me");
-      if (identity.role !== "organizer") throw new AccessError("This account does not have organiser access.");
+      const identity = await this.request<{ role: string; user_id: string }>(
+        "/auth/me",
+      );
+      if (identity.role !== "organizer")
+        throw new AccessError("This account does not have organiser access.");
+      if (
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          identity.user_id,
+        )
+      )
+        throw new AccessError("Unable to verify organiser identity.");
+      this.organizerId = identity.user_id;
     } catch (error) {
       if (version === this.authenticationVersion) {
         this.authenticationVersion++;
@@ -260,25 +354,93 @@ export class OrganizerApi {
   }
 
   signOut(): Promise<void> {
+    this.organizerId = null;
     this.authenticationVersion++;
     if (this.signingOut) return this.signingOut;
     const pendingSignIn = this.signingIn;
-    this.signingOut = this.clearAuthentication(pendingSignIn).finally(() => { this.signingOut = null; });
+    this.signingOut = this.clearAuthentication(pendingSignIn).finally(() => {
+      this.signingOut = null;
+    });
     return this.signingOut;
   }
 
-  private async clearAuthentication(pendingSignIn: Promise<void> | null): Promise<void> {
+  private async clearAuthentication(
+    pendingSignIn: Promise<void> | null,
+  ): Promise<void> {
     // An SDK sign-in can write its session after logout was requested.
     if (pendingSignIn) await pendingSignIn.catch(() => undefined);
     await this.auth.signOut();
   }
 
+  overview(includeIllustrative = false): Promise<OrganizerOverview> {
+    return this.request(
+      `/organizer/overview?include_illustrative=${includeIllustrative}`,
+      {},
+      "overview",
+    );
+  }
+
+  reportIndex(query: ReportIndexQuery = {}): Promise<OrganizerReportIndex> {
+    const params = new URLSearchParams();
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") params.set(key, String(value));
+    });
+    return this.request(`/organizer/report-index?${params}`, {}, "reports");
+  }
+
+  jobIndex(
+    offset = 0,
+    includeIllustrative = false,
+  ): Promise<OrganizerJobIndex> {
+    return this.request(
+      `/organizer/job-index?limit=100&offset=${offset}&include_illustrative=${includeIllustrative}`,
+      {},
+      "routing",
+    );
+  }
+
+  async indexedJobs(): Promise<OrganizerJobIndex["items"]> {
+    const jobs: OrganizerJobIndex["items"] = [];
+    for (let offset = 0; offset < 10000; offset += 100) {
+      const page = await this.jobIndex(offset, true);
+      jobs.push(...page.items);
+      if (jobs.length >= page.total || page.items.length < 100) return jobs;
+    }
+    throw new RoutingContractError(
+      "Too many jobs to verify the routing scope. Narrow the operation before continuing.",
+    );
+  }
+
+  preview(id: string): Promise<OrganizerRoutePreview> {
+    return this.request(
+      `/routing/previews/${encodeURIComponent(id)}`,
+      {},
+      "routing",
+    );
+  }
+
+  geometry(previewId: string, crewId: string): Promise<RouteGeometry> {
+    return this.request(
+      `/routing/previews/${encodeURIComponent(previewId)}/geometry/${encodeURIComponent(crewId)}`,
+      {},
+      "routing",
+    );
+  }
+
   reports(offset: number): Promise<LiveReport[]> {
-    return this.request(`/organizer/reports?limit=50&offset=${offset}`, {}, "reports");
+    return this.request(
+      `/organizer/reports?limit=50&offset=${offset}`,
+      {},
+      "reports",
+    );
   }
 
   report(id: string): Promise<OrganizerReportDetails> {
-    return this.request(`/organizer/reports/${encodeURIComponent(id)}`, {}, "details");
+    return this.request(
+      `/organizer/reports/${encodeURIComponent(id)}`,
+      {},
+      "details",
+    );
   }
 
   job(id: string): Promise<OrganizerJobDetails> {
@@ -292,7 +454,11 @@ export class OrganizerApi {
   async jobs(): Promise<OrganizerRoutingJob[]> {
     const jobs: OrganizerRoutingJob[] = [];
     for (let offset = 0; ; offset += 100) {
-      const page = await this.request<OrganizerRoutingJob[]>(`/jobs?active_only=true&limit=100&offset=${offset}`, {}, "routing");
+      const page = await this.request<OrganizerRoutingJob[]>(
+        `/jobs?active_only=true&limit=100&offset=${offset}`,
+        {},
+        "routing",
+      );
       jobs.push(...page);
       if (page.length < 100) return jobs;
     }
@@ -302,124 +468,299 @@ export class OrganizerApi {
     return this.request("/plans/current", {}, "routing");
   }
 
-  previewRouting(crewIds: string[], jobIds: string[]): Promise<OrganizerRoutePreview> {
-    if (crewIds.length < 1 || crewIds.length > 5 || new Set(crewIds).size !== crewIds.length) throw new RoutingContractError("Choose between 1 and 5 distinct crews.");
-    if (jobIds.length < 1 || jobIds.length > 25 || new Set(jobIds).size !== jobIds.length) throw new RoutingContractError("Choose between 1 and 25 distinct jobs.");
-    return this.request("/routing/previews", {
-      method: "POST",
-      body: JSON.stringify({ crew_ids: crewIds, job_ids: jobIds }),
-      headers: { "Content-Type": "application/json" },
-    }, "routing");
+  previewRouting(
+    crewIds: string[],
+    jobIds: string[],
+    constraints?: RoutingConstraints,
+  ): Promise<OrganizerRoutePreview> {
+    if (
+      crewIds.length < 1 ||
+      crewIds.length > 5 ||
+      new Set(crewIds).size !== crewIds.length
+    )
+      throw new RoutingContractError("Choose between 1 and 5 distinct crews.");
+    if (
+      jobIds.length < 1 ||
+      jobIds.length > 25 ||
+      new Set(jobIds).size !== jobIds.length
+    )
+      throw new RoutingContractError("Choose between 1 and 25 distinct jobs.");
+    return this.request(
+      "/routing/previews",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          crew_ids: crewIds,
+          job_ids: jobIds,
+          ...(constraints ? { constraints } : {}),
+        }),
+        headers: { "Content-Type": "application/json" },
+      },
+      "routing",
+    );
   }
 
-  dispatchRouting(previewId: string, commandId: string): Promise<OrganizerDispatchResult> {
-    return this.request(`/routing/previews/${encodeURIComponent(previewId)}/dispatch`, {
-      method: "POST",
-      body: JSON.stringify({ command_id: commandId }),
-      headers: { "Content-Type": "application/json" },
-    }, "routing");
+  dispatchRouting(
+    previewId: string,
+    commandId: string,
+    acceptPartial?: boolean,
+  ): Promise<OrganizerDispatchResult> {
+    return this.request(
+      `/routing/previews/${encodeURIComponent(previewId)}/dispatch`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          command_id: commandId,
+          ...(acceptPartial !== undefined
+            ? { accept_partial: acceptPartial }
+            : {}),
+        }),
+        headers: { "Content-Type": "application/json" },
+      },
+      "routing",
+    );
   }
 
-  applyDecision(id: string, command: DecisionCommand): Promise<OrganizerReport> {
-    return this.request(`/organizer/reports/${encodeURIComponent(id)}/decision`, {
-      method: "POST",
-      body: JSON.stringify(command),
-      headers: { "Content-Type": "application/json" },
-    }, "mutation");
+  applyDecision(
+    id: string,
+    command: DecisionCommand,
+  ): Promise<OrganizerReport> {
+    return this.request(
+      `/organizer/reports/${encodeURIComponent(id)}/decision`,
+      {
+        method: "POST",
+        body: JSON.stringify(command),
+        headers: { "Content-Type": "application/json" },
+      },
+      "mutation",
+    );
   }
 
   setPriority(id: string, command: PriorityCommand): Promise<OrganizerReport> {
-    return this.request(`/organizer/reports/${encodeURIComponent(id)}/priority`, {
-      method: "POST",
-      body: JSON.stringify(command),
-      headers: { "Content-Type": "application/json" },
-    }, "mutation");
+    return this.request(
+      `/organizer/reports/${encodeURIComponent(id)}/priority`,
+      {
+        method: "POST",
+        body: JSON.stringify(command),
+        headers: { "Content-Type": "application/json" },
+      },
+      "mutation",
+    );
   }
 
   async photo(id: string): Promise<string> {
-    const result = await this.request<{ url: string }>(`/photos/${encodeURIComponent(id)}/access`, {}, "reports");
+    const result = await this.request<{ url: string }>(
+      `/photos/${encodeURIComponent(id)}/access`,
+      {},
+      "reports",
+    );
     return result.url;
   }
 
-  private async request<T>(path: string, init: RequestInit = {}, action: "reports" | "details" | "job" | "mutation" | "routing" = "details"): Promise<T> {
+  private async request<T>(
+    path: string,
+    init: RequestInit = {},
+    action:
+      | "reports"
+      | "details"
+      | "job"
+      | "mutation"
+      | "routing"
+      | "overview" = "details",
+  ): Promise<T> {
     const version = this.sessionVersion;
     if (this.signingOut) throw new AccessError("Please sign in again.");
     const token = await this.auth.token();
     this.requireSession(version);
     if (!token) throw new AccessError("Please sign in again.");
     let response: Response;
+    const started = performance.now();
     try {
       response = await fetch(`${this.baseUrl}${path}`, {
         ...init,
-        headers: { ...init.headers as Record<string, string>, Authorization: `Bearer ${token}` },
+        headers: {
+          ...(init.headers as Record<string, string>),
+          Authorization: `Bearer ${token}`,
+        },
         signal: AbortSignal.timeout(60_000),
         redirect: "error",
       });
-    } catch {
-      throw new Error("Unable to reach WasteGrid. The service may be waking up; please retry.");
+    } catch (error) {
+      recordDiagnostic(
+        action,
+        null,
+        performance.now() - started,
+        error instanceof DOMException &&
+          (error.name === "TimeoutError" || error.name === "AbortError")
+          ? "timeout"
+          : "network",
+      );
+      throw new Error(
+        "Unable to reach WasteGrid. The service may be waking up; please retry.",
+      );
     }
+    recordDiagnostic(
+      action,
+      response.status,
+      performance.now() - started,
+      response.ok
+        ? "ok"
+        : response.status === 401 || response.status === 403
+          ? "access"
+          : "http",
+    );
     this.requireSession(version);
-    if (response.status === 401 || response.status === 403) throw new AccessError("Your session expired or access was denied. Please sign in again.");
+    if (response.status === 401 || response.status === 403)
+      throw new AccessError(
+        "Your session expired or access was denied. Please sign in again.",
+      );
     if (!response.ok) {
-      if (action === "job" && response.status === 404) throw new Error("This cleanup job is no longer available. Reload the report.");
-      if (action === "details" && response.status === 404) throw new Error("This report is no longer available. Refresh the reports list.");
-      if (action === "mutation" && response.status === 409) throw new Error("This report changed or is not ready for that decision. Reload it and review the latest details.");
-      if (action === "mutation" && response.status === 422) throw new Error("Check the decision fields and try again.");
-      if (action === "mutation") throw new Error("Unable to save the organiser decision. Please retry.");
-      if (action === "routing" && response.status === 409) throw new RoutingConflictError("Routing state changed. Refresh and compute a new preview before dispatch.");
-      if (action === "routing" && response.status === 422) throw new RoutingContractError("The selected route scope was rejected. Refresh routing state and verify the scoped-routing deployment.");
-      if (action === "routing") throw new Error("Unable to load routing state. Please retry.");
-      if (action === "reports") throw new Error("Unable to load reports. Please retry.");
-      if (action === "job") throw new Error("Unable to load cleanup job details. Please retry.");
+      if (action === "job" && response.status === 404)
+        throw new Error(
+          "This cleanup job is no longer available. Reload the report.",
+        );
+      if (action === "details" && response.status === 404)
+        throw new Error(
+          "This report is no longer available. Refresh the reports list.",
+        );
+      if (action === "mutation" && response.status === 409)
+        throw new OrganizerMutationRejectedError(
+          "This report changed or is not ready for that decision. Reload it and review the latest details.",
+          409,
+        );
+      if (action === "mutation" && response.status === 422)
+        throw new OrganizerMutationRejectedError(
+          "Check the decision fields and try again.",
+          422,
+        );
+      if (action === "mutation")
+        throw new Error("Unable to save the organiser decision. Please retry.");
+      if (action === "routing" && response.status === 409)
+        throw new RoutingConflictError(
+          "Routing state changed. Refresh and compute a new preview before dispatch.",
+        );
+      if (action === "routing" && response.status === 422)
+        throw new RoutingContractError(
+          "The selected route scope was rejected. Refresh routing state and verify the scoped-routing deployment.",
+        );
+      if (action === "routing")
+        throw new Error("Unable to load routing state. Please retry.");
+      if (action === "reports")
+        throw new Error("Unable to load reports. Please retry.");
+      if (action === "job")
+        throw new Error("Unable to load cleanup job details. Please retry.");
       throw new Error("Unable to load report details. Please retry.");
     }
-    const result = await response.json() as T;
+    let result: T;
+    try {
+      result = (await response.json()) as T;
+    } catch {
+      recordDiagnostic(
+        action,
+        response.status,
+        performance.now() - started,
+        "invalid_response",
+      );
+      throw new Error(
+        "WasteGrid returned an unreadable response. Please retry.",
+      );
+    }
     this.requireSession(version);
     return result;
   }
 
   private requireSession(version: number): void {
-    if (version !== this.authenticationVersion) throw new Error("Your organiser session changed. Please sign in again.");
+    if (version !== this.authenticationVersion)
+      throw new Error("Your organiser session changed. Please sign in again.");
   }
 }
 
 export function createOrganizerApi(): OrganizerApi {
-  const baseUrl = configuredUrl(import.meta.env.VITE_API_BASE_URL, "VITE_API_BASE_URL", ["http:", "https:"]);
-  const supabaseUrl = configuredUrl(import.meta.env.VITE_SUPABASE_URL, "VITE_SUPABASE_URL", ["https:"]);
+  const baseUrl = configuredUrl(
+    import.meta.env.VITE_API_BASE_URL,
+    "VITE_API_BASE_URL",
+    ["http:", "https:"],
+  );
+  const supabaseUrl = configuredUrl(
+    import.meta.env.VITE_SUPABASE_URL,
+    "VITE_SUPABASE_URL",
+    ["https:"],
+  );
   const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
   if (!key?.startsWith("sb_publishable_")) {
-    throw new DashboardConfigurationError("Organiser sign-in has not been configured for this build.");
+    throw new DashboardConfigurationError(
+      "Organiser sign-in has not been configured for this build.",
+    );
   }
   const client = createClient(supabaseUrl, key, {
-    auth: { persistSession: false, autoRefreshToken: true, detectSessionInUrl: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+    },
+    global: {
+      fetch: (input, init) =>
+        fetch(input, {
+          ...init,
+          signal: AbortSignal.timeout(60_000),
+          redirect: "error",
+        }),
+    },
   });
-  return new OrganizerApi({
-    async signIn(email, password) {
-      const { error } = await client.auth.signInWithPassword({ email, password });
-      if (error) throw new Error("Sign-in failed. Check your email and password and try again.");
+  return new OrganizerApi(
+    {
+      async signIn(email, password) {
+        const { error } = await client.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error)
+          throw new Error(
+            "Sign-in failed. Check your email and password and try again.",
+          );
+      },
+      async token() {
+        const { data, error } = await client.auth.getSession();
+        if (error) return undefined;
+        return data.session?.access_token;
+      },
+      async signOut() {
+        // Clears this tab's session even if the logout request cannot reach Auth.
+        await client.auth.signOut({ scope: "local" });
+      },
     },
-    async token() {
-      const { data, error } = await client.auth.getSession();
-      if (error) return undefined;
-      return data.session?.access_token;
-    },
-    async signOut() {
-      // Clears this tab's session even if the logout request cannot reach Auth.
-      await client.auth.signOut({ scope: "local" });
-    },
-  }, baseUrl);
+    baseUrl,
+  );
 }
 
-function configuredUrl(value: string | undefined, setting: string, protocols: string[]): string {
+function configuredUrl(
+  value: string | undefined,
+  setting: string,
+  protocols: string[],
+): string {
   if (!value) {
-    throw new DashboardConfigurationError("Organiser sign-in has not been configured for this build.");
+    throw new DashboardConfigurationError(
+      "Organiser sign-in has not been configured for this build.",
+    );
   }
   try {
     const url = new URL(value);
-    if (!protocols.includes(url.protocol)) throw new Error();
+    if (
+      !protocols.includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    )
+      throw new Error();
     return url.toString().replace(/\/$/, "");
   } catch {
-    const protocol = protocols.length === 1 ? protocols[0].replace(":", "").toUpperCase() : "HTTP or HTTPS";
-    throw new DashboardConfigurationError(`${setting} must be a valid ${protocol} URL`);
+    const protocol =
+      protocols.length === 1
+        ? protocols[0].replace(":", "").toUpperCase()
+        : "HTTP or HTTPS";
+    throw new DashboardConfigurationError(
+      `${setting} must be a valid ${protocol} URL`,
+    );
   }
 }
