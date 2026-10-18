@@ -11,11 +11,14 @@ from api.schemas import Command, Contract, Location
 
 class ComputeRoutes(Contract):
     crew_ids: list[UUID] = Field(min_length=1, max_length=5)
+    job_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=25)
 
     @model_validator(mode="after")
     def unique_crews(self):
         if len(set(self.crew_ids)) != len(self.crew_ids):
             raise ValueError("Select each crew once")
+        if self.job_ids is not None and len(set(self.job_ids)) != len(self.job_ids):
+            raise ValueError("Select each job once")
         return self
 
 
@@ -81,6 +84,7 @@ class Reassignment(Contract):
 
 class RoutePreviewView(Contract):
     id: UUID
+    job_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=25)
     computed_at: datetime
     expires_at: datetime
     matrix_id: str | None

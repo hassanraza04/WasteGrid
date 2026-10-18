@@ -2,7 +2,7 @@
 export type StaffIdentity = { userId: string; role: string; crewId?: string };
 export type StaffCredentials = { token: string; identity: StaffIdentity; isCurrent(): boolean };
 export type Job = {
-  id: string; status: string; version: number; category: string;
+  id: string; status: string; version: number; category: string; illustrative: boolean;
   assigned_crew_id: string | null; route_position: number | null;
   location: { latitude: number; longitude: number; landmark?: string | null };
   held: boolean; locked: boolean; decision_summary: string; unassigned_reason: string | null;
@@ -14,7 +14,7 @@ export type Crew = {
 };
 export type Stop = { job_id: string; position: number; priority: string; fixed: boolean; travel_minutes: number; service_minutes: number; completion_minutes: number };
 export type Preview = {
-  id: string; computed_at: string; expires_at: string; plan_id: string | null;
+  id: string; computed_at: string; expires_at: string; plan_id: string | null; job_ids: string[] | null;
   dispatchable: boolean; termination_reason: string; travel_label: string;
   routes: { crew_id: string; duration_minutes: number; travel_minutes: number; stops: Stop[] }[];
   exclusions: { job_id: string; reason: string }[]; unassigned: { job_id: string; reason: string }[];
@@ -70,7 +70,12 @@ export class StaffClient {
     throw new Error("Too many active jobs to load. Narrow the operational scope before routing.");
   }
   job(id: string) { return this.request<JobDetails>(`/jobs/${encodeURIComponent(id)}`); }
-  compute(ids: string[]) { return this.json<Preview>("/routing/previews", { crew_ids: ids }); }
+  compute(ids: string[], jobIds?: string[]) {
+    if (jobIds !== undefined && (jobIds.length < 1 || jobIds.length > 25 || new Set(jobIds).size !== jobIds.length)) {
+      throw new Error("Choose between 1 and 25 distinct jobs for this preview.");
+    }
+    return this.json<Preview>("/routing/previews", { crew_ids: ids, ...(jobIds === undefined ? {} : { job_ids: [...jobIds] }) });
+  }
   preview(id: string) { return this.request<Preview>(`/routing/previews/${encodeURIComponent(id)}`); }
   location(location: Job["location"], recordedAt: string) {
     return this.json("/crews/me/location", { location, recorded_at: recordedAt });

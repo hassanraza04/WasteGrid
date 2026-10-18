@@ -28,7 +28,7 @@ test('an older deployed API cannot silently ignore filtering or loop the same jo
  const repeated=setup(()=>Response.json(Array.from({length:100},(_,i)=>({id:String(i),status:'assigned'}))));
  await assert.rejects(repeated.api.jobs(),/pagination/);assert.equal(repeated.calls.length,2);
 });
-test('compute accepts only crew IDs; denied, stale and disabled responses are controlled', async () => {
+test('legacy compute omits job scope; denied, stale and disabled responses are controlled', async () => {
  const {api,calls} = setup(() => Response.json({id:'preview'}));
  await api.compute(['a','b']);assert.deepEqual(JSON.parse(calls[0][1].body),{crew_ids:['a','b']});
  for(const status of [401,403,409,413,415,422,503]) {
@@ -76,4 +76,20 @@ test('current plan uses the authenticated authoritative endpoint and supports an
  const {api,calls}=setup(()=>Response.json(snapshot));
  assert.deepEqual(await api.currentPlan(),snapshot);assert.equal(calls[0][0],'https://api.example/plans/current');assert.equal(calls[0][1].headers.Authorization,'Bearer jwt');
  assert.deepEqual(await setup(()=>Response.json({plan:null})).api.currentPlan(),{plan:null});
+});
+
+
+test('explicit scoped compute freezes and serializes the selected job IDs without fallback', async()=>{
+ const {api,calls}=setup(()=>Response.json({id:'preview',job_ids:['one','two']}));
+ const jobs=['two','one'];
+ await api.compute(['crew'],jobs);jobs.push('later');
+ assert.deepEqual(JSON.parse(calls[0][1].body),{crew_ids:['crew'],job_ids:['two','one']});
+ for(const ids of [[],['one','one'],Array.from({length:26},(_,i)=>String(i))]) {
+  assert.throws(()=>api.compute(['crew'],ids),/1 and 25 distinct/);
+ }
+ assert.equal(calls.length,1);
+ const old=setup(()=>new Response('',{status:422}));
+ await assert.rejects(old.api.compute(['crew'],['one']),error=>error instanceof StaffApiError&&error.status===422);
+ assert.equal(old.calls.length,1);
+ assert.deepEqual(JSON.parse(old.calls[0][1].body),{crew_ids:['crew'],job_ids:['one']});
 });
