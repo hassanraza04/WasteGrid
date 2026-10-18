@@ -148,6 +148,7 @@ export interface OrganizerCrew {
   location_recorded_at: string | null;
   location_received_at: string | null;
   location_revision: number;
+  location_max_age_seconds?: number;
 }
 
 export interface OrganizerRoutingJob {
@@ -635,10 +636,23 @@ export class OrganizerApi {
         );
       if (action === "mutation")
         throw new Error("Unable to save the organiser decision. Please retry.");
-      if (action === "routing" && response.status === 409)
-        throw new RoutingConflictError(
-          "Routing state changed. Refresh and compute a new preview before dispatch.",
-        );
+      if (action === "routing" && [409, 503].includes(response.status)) {
+        let detail = response.status === 409
+          ? "Routing state changed. Refresh and compute a new preview before dispatch."
+          : "Routing is unavailable. Check the routing configuration and road service, then retry.";
+        try {
+          const body: unknown = await response.json();
+          if (
+            body && typeof body === "object" && "detail" in body &&
+            typeof body.detail === "string" && body.detail.trim()
+          ) detail = body.detail;
+        } catch {
+          // Non-JSON proxy errors use the fallback above.
+        }
+        this.requireSession(version);
+        if (response.status === 409) throw new RoutingConflictError(detail);
+        throw new Error(detail);
+      }
       if (action === "routing" && response.status === 422)
         throw new RoutingContractError(
           "The selected route scope was rejected. Refresh routing state and verify the scoped-routing deployment.",

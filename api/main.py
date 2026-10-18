@@ -780,7 +780,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/crews", response_model=list[CrewView])
     def crews(db: Session = Depends(get_db), staff: Principal = Depends(organizer)):
-        return db.scalars(select(Crew).order_by(Crew.name)).all()
+        return [
+            CrewView.model_validate(crew).model_copy(
+                update={
+                    "location_max_age_seconds": settings.routing_location_max_age_seconds
+                }
+            )
+            for crew in db.scalars(select(Crew).order_by(Crew.name))
+        ]
 
     @app.patch("/crews/{crew_id}", response_model=CrewView)
     def update_crew(

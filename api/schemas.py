@@ -249,6 +249,7 @@ class CrewView(Contract):
     location_recorded_at: datetime | None = None
     location_received_at: datetime | None = None
     location_revision: int = 0
+    location_max_age_seconds: int = 120
 
 
 class CrewPatch(Command):

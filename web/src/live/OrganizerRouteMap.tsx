@@ -35,6 +35,7 @@ export function OrganizerRouteMap({
 }) {
   const element = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState("Loading road geometry…");
+  const [tileError, setTileError] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const version = api.sessionVersion;
@@ -42,11 +43,17 @@ export function OrganizerRouteMap({
       [24.92, 67.09],
       12,
     );
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    setStatus("Loading road geometry…");
+    setTileError(false);
+    const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
-    }).addTo(map);
+    });
+    tiles.on("tileerror", () => {
+      if (!cancelled) setTileError(true);
+    });
+    tiles.addTo(map);
     const bounds = L.latLngBounds([]);
     const colors = ["#12804D", "#286bc1", "#9752b2", "#b97018", "#bd4058"];
     void (async () => {
@@ -116,6 +123,10 @@ export function OrganizerRouteMap({
         className="wg-route-map"
         aria-label="OpenStreetMap road routes"
       />
+      {tileError && (
+        <p role="alert">Map tiles could not load. Check browser internet access to
+          tile.openstreetmap.org, then reopen the map.</p>
+      )}
       <p role="status" className="wg-muted">
         {status}
       </p>

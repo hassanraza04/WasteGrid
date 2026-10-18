@@ -512,3 +512,11 @@ def test_demo_reset_clears_demo_conversation_history(engine, client):
     with Session(engine) as db:
         assert db.scalar(select(func.count()).select_from(ConversationMessage)) == 0
         assert db.scalar(select(func.count()).select_from(Report)) == 10
+
+
+def test_crew_list_reports_configured_gps_freshness_limit(client):
+    client.app.state.settings.routing_location_max_age_seconds = 45
+    response = client.get("/crews", headers=auth("org"))
+    assert response.status_code == 200
+    assert response.json()
+    assert all(crew["location_max_age_seconds"] == 45 for crew in response.json())

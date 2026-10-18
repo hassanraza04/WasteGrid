@@ -16,6 +16,7 @@ import {
   type DispatchJournal,
 } from "./dispatchJournal";
 import { OrganizerRouteMap } from "./OrganizerRouteMap";
+import { crewGpsIssue } from "./crewGps";
 import {
   Alert,
   Chip,
@@ -41,6 +42,11 @@ const minutes = (value: number) => `${Math.round(value * 10) / 10} min`;
 
 export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
   const [state, setState] = useState<RoutingState | null>(null);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [entry, setEntry] = useState<DispatchJournal>(emptyJournal);
   const [preview, setPreview] = useState<OrganizerRoutePreview | null>(null);
   const [loading, setLoading] = useState(true),
@@ -211,19 +217,24 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
   const missingCrews = entry.crewIds.some(
     (id) => !state?.crews.some((crew) => crew.id === id && crew.available),
   );
-  const scopeIssue = missingCrews
-    ? "Selected crews are no longer available. Review your selection."
-    : !entry.crewIds.length
-      ? "Select at least one crew."
-      : !entry.jobIds.length
-        ? "Select at least one job."
-        : selectedCrewJobs.length
-          ? "Include every unfinished job assigned to a selected crew."
-          : foreignJobs.length
-            ? "Select the crew assigned to every reviewed job."
-            : missingSelected.length
-              ? "Some selected jobs are no longer active. Review your selection."
-              : "";
+  const invalidGpsCrew = state?.crews.find(
+    (crew) => entry.crewIds.includes(crew.id) && crewGpsIssue(crew, now),
+  );
+  const scopeIssue = invalidGpsCrew
+    ? `${invalidGpsCrew.name}: ${crewGpsIssue(invalidGpsCrew, now)}. Share fresh GPS from this crew’s mobile screen, then refresh routing state.`
+    : missingCrews
+      ? "Selected crews are no longer available. Review your selection."
+      : !entry.crewIds.length
+        ? "Select at least one crew."
+        : !entry.jobIds.length
+          ? "Select at least one job."
+          : selectedCrewJobs.length
+            ? "Include every unfinished job assigned to a selected crew."
+            : foreignJobs.length
+              ? "Select the crew assigned to every reviewed job."
+              : missingSelected.length
+                ? "Some selected jobs are no longer active. Review your selection."
+                : "";
   const label = (id: string) => {
     const job = state?.jobs.find((item) => item.id === id);
     return job
@@ -238,6 +249,13 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
 
   async function computePreview() {
     if (disabled || locked.current || scopeIssue) return;
+    // Recheck at the click boundary in case a background tab delayed the timer.
+    if (state?.crews.some(
+      (crew) => entry.crewIds.includes(crew.id) && crewGpsIssue(crew),
+    )) {
+      setNow(Date.now());
+      return;
+    }
     locked.current = true;
     setBusy(true);
     setError("");
@@ -481,8 +499,8 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
       )}
       {entry.stage === "conflict" && (
         <Alert>
-          Routing state changed. Review refreshed state and compute a new
-          preview with a new command.
+          Review the reason above and the refreshed routing state, then compute
+          a new preview with a new command.
         </Alert>
       )}
       {loading ? (
@@ -528,6 +546,7 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
                       const proposed = preview?.routes.find(
                         (route) => route.crew_id === crew.id,
                       );
+                      const gpsIssue = crewGpsIssue(crew, now);
                       const age = crew.location_recorded_at
                         ? Math.round(
                             (Date.now() -
@@ -548,14 +567,16 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
                               ? "Illustrative crew"
                               : "Real crew"}{" "}
                             ·{" "}
-                            {age === null
-                              ? "GPS not shared"
-                              : `GPS ${age}s old`}{" "}
+                            {gpsIssue || `GPS fresh · ${age}s old`}{" "}
                             ·{" "}
                             {proposed
                               ? `${Math.max(0, Math.round((budget - proposed.duration_minutes) * 10) / 10)} min remaining after preview`
                               : `${budget} min route budget; remaining determined by preview`}
                           </p>
+                          {gpsIssue && (
+                            <p>Open this crew’s mobile screen and share foreground GPS,
+                              then refresh routing state.</p>
+                          )}
                           <p>
                             {crew.equipment.join(", ").replaceAll("_", " ")}
                           </p>
@@ -570,7 +591,7 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
                             disabled={
                               disabled ||
                               (!entry.crewIds.includes(crew.id) &&
-                                (!crew.available || entry.crewIds.length >= 5))
+                                (!crew.available || !!gpsIssue || entry.crewIds.length >= 5))
                             }
                             onClick={() =>
                               change({

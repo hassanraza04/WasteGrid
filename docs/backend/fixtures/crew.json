@@ -8,6 +8,7 @@
   ],
   "id": "30000000-0000-4000-8000-000000000001",
   "illustrative": true,
+  "location_max_age_seconds": 120,
   "location_received_at": null,
   "location_recorded_at": null,
   "location_revision": 0,
