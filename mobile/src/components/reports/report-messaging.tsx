@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, StyleSheet, View } from "react-native";
-import { AppText, Button, TextField } from "@/components/ui";
+import { AppText, Button, Card, TextField } from "@/components/ui";
 import { getSession, useSession } from "@/auth/session";
 import { phoneUpdates, sendPhoneUpdate } from "@/services/reports";
 import type { ReportDraft } from "@/services/report-client";
@@ -9,13 +9,13 @@ import { Spacing } from "@/theme";
 
 type PhoneState = PhoneUpdates & { pending: boolean };
 const delivery: Record<PhoneUpdateStatus, string> = {
-  queued: "Update queued.",
-  sending: "Submitting update to the phone service.",
-  submitted: "Update submitted. Delivery has not been confirmed.",
-  delivered: "Update delivered to the registered phone.",
-  failed: "The phone update could not be sent.",
-  uncertain: "Delivery is uncertain. Check delivery status before requesting another update.",
-  cancelled: "Phone update cancelled.",
+  queued: "Phone copy queued",
+  sending: "Sending phone copy…",
+  submitted: "Phone delivery pending",
+  delivered: "Phone copy delivered",
+  failed: "Phone copy could not be sent",
+  uncertain: "Phone delivery unconfirmed",
+  cancelled: "Phone copy cancelled",
 };
 
 export function ReportMessaging({ draft }: { draft: ReportDraft }) {
@@ -28,6 +28,7 @@ function PhoneUpdatesContent({ draft, owner }: { draft: ReportDraft; owner: stri
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
+  const [manualCheckId, setManualCheckId] = useState<string | null>(null);
   const alive = useRef(true);
   const working = useRef(false);
   const foreground = useRef(true);
@@ -65,7 +66,8 @@ function PhoneUpdatesContent({ draft, owner }: { draft: ReportDraft; owner: stri
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const schedule = () => {
-      if (stopped || Date.now() >= until) return;
+      if (stopped) return;
+      if (Date.now() >= until) { setManualCheckId(receiptId); return; }
       timer = setTimeout(async () => {
         if (stopped || !valid()) return;
         if (foreground.current) await run(refresh);
@@ -96,30 +98,35 @@ function PhoneUpdatesContent({ draft, owner }: { draft: ReportDraft; owner: stri
     });
   };
   if (state && !state.enabled && !receipt && !state.pending && !error) return null;
+  const canCheck = !state?.pending && (!!error || receipt?.status === "uncertain" || (manualCheckId === receiptId && ["queued", "sending", "submitted", "uncertain"].includes(receiptStatus ?? "")));
   return <View style={s.section}>
     <AppText variant="title">Report updates</AppText>
-    <AppText tone="muted">Type Status for a reply here. A copy also goes to the registered phone.</AppText>
-    {state?.phone_label && <AppText>{state.phone_label}</AppText>}
-    {error ? <AppText accessibilityRole="alert">{error}</AppText> : null}
-    {state && !state.enabled && <AppText tone="muted">Phone updates are not available for this report right now. Keep tracking it here.</AppText>}
-    {receipt && <View style={s.section}>
-      <AppText tone="muted">You: Status</AppText>
-      <AppText tone="muted">WasteGrid reply</AppText>
-      <AppText accessibilityLiveRegion="polite">{receipt.message}</AppText>
-      <AppText tone="muted">{delivery[receipt.status]}</AppText>
-    </View>}
-    {state?.pending && <View style={s.section}>
-      <AppText tone="muted">Your last request is saved, but confirmation is missing. Check its status or retry the same request.</AppText>
-      <Button label="Retry request" variant="outline" disabled={busy} onPress={() => send(true)} />
-    </View>}
     {state?.enabled && !state.pending && <>
-      <TextField label="Message" accessibilityLabel="Message for phone update" placeholder="Type Status" value={message}
-        onChangeText={setMessage} editable={!busy && !awaitingDelivery} autoCorrect={false} maxLength={100} />
-      <AppText tone="muted">Tapping Send shows the current status here and sends a copy to the registered phone shown above.</AppText>
-      <Button label="Send" disabled={busy || awaitingDelivery || !message.trim()} onPress={() => send()} />
+      <AppText variant="caption" tone="muted">A copy will go to {state.phone_label?.replace(/^Registered /, "") ?? "the registered phone"}.</AppText>
+      <View style={s.composer}>
+        <TextField accessibilityLabel="Message for report update" placeholder="Type Status" value={message} style={s.field}
+          onChangeText={setMessage} editable={!busy && !awaitingDelivery} autoCorrect={false} maxLength={100} />
+        <Button label="Send" disabled={busy || awaitingDelivery || !message.trim()} onPress={() => send()} style={s.send} />
+      </View>
     </>}
-    <Button label="Check delivery status" variant="outline" disabled={busy} onPress={() => void run(refresh)} />
-    {busy && <AppText tone="muted">Checking phone updates…</AppText>}
+    {receipt && <Card padding={Spacing.lg} style={s.section}>
+      <AppText accessibilityLiveRegion="polite">{receipt.message}</AppText>
+      <AppText variant="caption" tone="muted" accessibilityLiveRegion="polite">{delivery[receipt.status]}</AppText>
+    </Card>}
+    {error ? <AppText variant="caption" accessibilityRole="alert">{error}</AppText> : null}
+    {state?.pending && <View style={s.section}>
+      <AppText variant="caption" tone="muted">Request saved. Retry to confirm the same request.</AppText>
+      <Button label="Retry request" variant="ghost" disabled={busy} onPress={() => send(true)} style={s.recovery} />
+    </View>}
+    {state && !state.enabled && <AppText variant="caption" tone="muted">Phone updates unavailable. You can still track this report here.</AppText>}
+    {canCheck && <Button label="Check again" variant="ghost" disabled={busy} onPress={() => void run(refresh)} style={s.recovery} />}
+    {!state && busy && <AppText variant="caption" tone="muted">Loading updates…</AppText>}
   </View>;
 }
-const s = StyleSheet.create({ section: { gap: Spacing.sm } });
+const s = StyleSheet.create({
+  section: { gap: Spacing.sm },
+  composer: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  field: { flex: 1, minWidth: 0 },
+  send: { paddingHorizontal: Spacing.lg },
+  recovery: { alignSelf: "flex-start" },
+});
