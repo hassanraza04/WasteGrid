@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Link, Route, Routes } from "react-router-dom";
 
 import { AccessError, type OrganizerApi } from "./organizerApi";
 import { OrganizerReportDetails } from "./OrganizerReportDetails";
+import { OrganizerDispatchWorkspace } from "./OrganizerDispatchWorkspace";
 import { OrganizerReportList } from "./OrganizerReportList";
 
 export function OrganizerDashboard({ api }: { api: OrganizerApi }) {
@@ -72,10 +73,12 @@ export function OrganizerDashboard({ api }: { api: OrganizerApi }) {
   return <main>
     <h1>Organiser dashboard</h1>
     <button onClick={() => void logout()}>Sign out</button>
+    <Link to="dispatch">Routing dispatch</Link>
     {error && <p role="alert">{error}</p>}
     <Routes>
       <Route index element={<OrganizerReportList api={api} onSessionExpired={sessionExpired} />} />
       <Route path="reports/:reportId" element={<OrganizerReportDetails api={api} onSessionExpired={sessionExpired} />} />
+      <Route path="dispatch" element={<OrganizerDispatchWorkspace api={api} onSessionExpired={sessionExpired} />} />
     </Routes>
   </main>;
 }

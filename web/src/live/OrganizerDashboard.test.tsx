@@ -42,6 +42,12 @@ test("opens a report detail route from the authenticated organiser list", async 
   expect(api.report).toHaveBeenCalledWith("report-123");
 });
 
+test("offers the routing dispatch workspace after sign-in", async () => {
+  const { user } = setup();
+  await signIn(user);
+  expect(await screen.findByRole("link", { name: "Routing dispatch" })).toHaveAttribute("href", "/admin/dispatch");
+});
+
 test("requires sign-in before loading a direct organiser detail route", async () => {
   const { api, user } = setup("/admin/reports/report-123");
   expect(screen.getByRole("heading", { name: "Organiser sign in" })).toBeInTheDocument();

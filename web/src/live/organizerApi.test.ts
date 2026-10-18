@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { createClient } from "@supabase/supabase-js";
-import { AccessError, createOrganizerApi, OrganizerApi, type DecisionCommand, type OrganizerJobDetails, type OrganizerReportDetails, type StaffAuth } from "./organizerApi";
+import { AccessError, createOrganizerApi, OrganizerApi, RoutingConflictError, RoutingContractError, type DecisionCommand, type OrganizerJobDetails, type OrganizerReportDetails, type StaffAuth } from "./organizerApi";
 vi.mock("@supabase/supabase-js", () => ({ createClient: vi.fn() }));
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.clearAllMocks(); });
 function setup() {
@@ -53,6 +53,29 @@ test("loads typed report details with bearer auth and encodes the report path se
   const { api, fetcher } = setup(); fetcher.mockResolvedValue(Response.json(details));
   await expect(api.report("report/id")).resolves.toEqual(details);
   expect(fetcher).toHaveBeenLastCalledWith("https://api.example/organizer/reports/report%2Fid", expect.objectContaining({ headers: { Authorization: "Bearer user-jwt" } }));
+});
+test("loads every active job page and sends an explicit reviewed routing scope", async () => {
+  const { api, fetcher } = setup();
+  const firstPage = Array.from({ length: 100 }, (_, index) => ({ id: `job-${index}` }));
+  const preview = { id: "preview-1", job_ids: ["job-1"], routes: [], exclusions: [], unassigned: [], reassignments: [], dispatchable: false, expires_at: "2026-10-18T13:00:00Z", plan_id: null };
+  fetcher.mockResolvedValueOnce(Response.json(firstPage)).mockResolvedValueOnce(Response.json([{ id: "job-100" }])).mockResolvedValueOnce(Response.json(preview));
+
+  await expect(api.jobs()).resolves.toHaveLength(101);
+  await expect(api.previewRouting(["crew-1"], ["job-1"])).resolves.toEqual(preview);
+
+  expect(fetcher).toHaveBeenNthCalledWith(1, "https://api.example/jobs?active_only=true&limit=100&offset=0", expect.objectContaining({ headers: { Authorization: "Bearer user-jwt" } }));
+  expect(fetcher).toHaveBeenNthCalledWith(2, "https://api.example/jobs?active_only=true&limit=100&offset=100", expect.objectContaining({ headers: { Authorization: "Bearer user-jwt" } }));
+  expect(fetcher).toHaveBeenNthCalledWith(3, "https://api.example/routing/previews", expect.objectContaining({ method: "POST", body: JSON.stringify({ crew_ids: ["crew-1"], job_ids: ["job-1"] }), headers: { Authorization: "Bearer user-jwt", "Content-Type": "application/json" } }));
+});
+test.each([
+  [422, RoutingContractError],
+  [409, RoutingConflictError],
+] as const)("classifies routing HTTP %s without exposing the server response", async (status, ErrorType) => {
+  const { api, fetcher } = setup();
+  fetcher.mockResolvedValue(new Response("private server response", { status }));
+
+  await expect(api.previewRouting(["crew-1"], ["job-1"])).rejects.toBeInstanceOf(ErrorType);
+  await expect(api.previewRouting(["crew-1"], ["job-1"])).rejects.not.toThrow("private server response");
 });
 test("applies a decision as authenticated JSON and returns the updated report", async () => {
   const { api, fetcher } = setup(); fetcher.mockResolvedValue(Response.json(details.report));
