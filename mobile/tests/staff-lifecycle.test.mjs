@@ -4,6 +4,41 @@ import React from 'react';
 import {act,load,mount,deferred} from './helpers/render.mjs';
 import {authSdk} from './helpers/auth-sdk.mjs';
 
+for (const cancellation of ['timeout', 'background', 'blur']) {
+ test(`GPS ${cancellation} releases pending registration and ignores its late subscription`,async()=>{
+  const owner={role:'crew'};let result,onState,timeout,scheduled;const registrations=[],posts=[];
+  const originalTimeout=globalThis.setTimeout,originalInterval=globalThis.setInterval;
+  globalThis.setTimeout=(fn,ms,...args)=>ms===15000?(timeout=fn,undefined):originalTimeout(fn,ms,...args);
+  globalThis.setInterval=(fn,ms,...args)=>ms===30000?(scheduled=fn,undefined):originalInterval(fn,ms,...args);
+  const state={currentState:'active',addEventListener:(_event,fn)=>{onState=fn;return{remove(){}}}};
+  const {useCrewLocation}=load('hooks/use-crew-location.ts',{
+   'react-native':{AppState:state},'expo-router':{useFocusEffect:callback=>React.useEffect(callback,[callback])},
+   'expo-location':{Accuracy:{High:4},requestForegroundPermissionsAsync:async()=>({status:'granted'}),watchPositionAsync:(_options,callback)=>{const registration=deferred();registrations.push({...registration,callback});return registration.promise;}},
+   '@/auth/session':{getSession:()=>owner,useSession:()=>owner},'@/services/staff':{staffApi:{location:async(...args)=>posts.push(args)}},
+  });function Probe(){result=useCrewLocation();return null;}
+  let view=mount(Probe,{});const fix={timestamp:1700000000000,coords:{latitude:24,longitude:67}};
+  try{
+   await view.render();assert.equal(registrations.length,1);assert.equal(typeof timeout,'function');
+   if(cancellation==='timeout'){
+    await act(async()=>timeout());assert.match(result.message,/GPS timed out/);
+    await act(async()=>{void result.refresh();});
+   }else if(cancellation==='background'){
+    state.currentState='background';await act(async()=>onState('background'));
+    state.currentState='active';await act(async()=>onState('active'));
+   }else{
+    await view.close();view=mount(Probe,{});await view.render();
+   }
+   assert.equal(registrations.length,2); // First registration still has not settled.
+   let removed=0;
+   await act(async()=>registrations[0].callback(fix));assert.equal(posts.length,0);
+   await act(async()=>registrations[0].resolve({remove(){removed++;}}));assert.equal(removed,1);
+   await act(async()=>{void result.refresh();scheduled();});assert.equal(registrations.length,2);
+   await act(async()=>registrations[1].resolve({remove(){removed++;}}));
+   await act(async()=>registrations[1].callback(fix));assert.equal(posts.length,1);assert.equal(removed,2);
+  }finally{if(view.container.isConnected)await view.close();globalThis.setTimeout=originalTimeout;globalThis.setInterval=originalInterval;}
+ });
+}
+
 test('staff credentials come from the real SDK, expire on logout and reject resident sessions',async()=>{
  const app=authSdk();let session;
  try{

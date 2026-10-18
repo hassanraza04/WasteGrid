@@ -25,27 +25,24 @@ export function useCrewLocation() {
           let watch: Location.LocationSubscription | undefined;
           let timer: ReturnType<typeof setTimeout> | undefined;
           let finished = false;
-          let complete: (() => void) | undefined;
           const finish = (value: Location.LocationObject | null, error?: Error) => {
             if (finished) return;
             finished = true;
             clearTimeout(timer);
             watch?.remove();
-            complete = () => { if (error) reject(error); else resolve(value); };
-            if (watch) complete();
+            if (error) reject(error); else resolve(value);
           };
           cancelObservation = () => finish(null);
-          // The timeout bounds the observation, after the cancellable native
-          // subscription is installed. No uncancellable position request remains.
+          // Bound registration as well as the wait for a fix. A late subscription
+          // is removed below without blocking cancellation or the next retry.
+          timer = setTimeout(() => finish(null, new Error("GPS timed out. Try outdoors and refresh.")), 15000);
           void Location.watchPositionAsync({ accuracy: Location.Accuracy.High },
             value => finish(value), reason => finish(null, new Error(reason)),
           ).then(subscription => {
             watch = subscription;
-            if (finished) { subscription.remove(); complete?.(); return; }
-            timer = setTimeout(() => finish(null, new Error("GPS timed out. Try outdoors and refresh.")), 15000);
+            if (finished) subscription.remove();
           }, error => {
             finish(null, error instanceof Error ? error : new Error("Unable to observe GPS."));
-            complete?.();
           });
         });
         if (!observation || !active || AppState.currentState !== "active" || getSession() !== session) return;
