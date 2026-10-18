@@ -11,7 +11,7 @@ function setup(overrides = {}) {
  const sent = [], reads = [];
  const { ReportMessaging } = load('components/reports/report-messaging.tsx', {
   'react-native': { ...native, AppState: { addEventListener: (_event, callback) => { listener = callback; return { remove() { listener = undefined; } }; } } },
-  '@/components/ui': { ...ui, TextField: props => { field = props; return React.createElement('input', { placeholder: props.placeholder, value: props.value, disabled: !props.editable, onChange: () => {} }); } },
+  '@/components/ui': { ...ui, Card: native.View, TextField: props => { field = props; return React.createElement('input', { placeholder: props.placeholder, value: props.value, disabled: !props.editable, onChange: () => {} }); } },
   '@/theme': theme, '@/services/phone-updates-client': client,
   '@/services/reports': {
    phoneUpdates: async value => { reads.push(value.id); return overrides.phoneUpdates ? overrides.phoneUpdates(value) : state; },
@@ -25,19 +25,18 @@ test('Phone updates starts empty, shows the registered phone, and sends normaliz
  const app = setup(), view = mount(app.ReportMessaging, { draft });
  try {
   await view.render();
-  assert.match(view.container.textContent, /Registered phone ending 1234/);
+  assert.match(view.container.textContent, /phone ending 1234/);
   assert.equal(app.field().value, ''); assert.equal(app.field().placeholder, 'Type Status');
   assert.equal(button(view.container, 'Send').disabled, true);
-  assert.match(view.container.textContent, /Tapping Send shows the current status here/);
+  assert.match(view.container.textContent, /Send also sends a copy to phone ending 1234/);
   assert.doesNotMatch(view.container.textContent, /iMessage|LINK|QR|Open Messages|Report conversation/);
   assert.deepEqual(app.sent, []);
   await app.type('  sTaTuS '); await act(async () => button(view.container, 'Send').click());
   assert.deepEqual(app.sent, [[draft, 'Status']]);
-  assert.match(view.container.textContent, /Update queued/);
-  assert.match(view.container.textContent, /You: Status/);
-  assert.match(view.container.textContent, /WasteGrid reply/);
+  assert.match(view.container.textContent, /Phone copy queued/);
+  assert.doesNotMatch(view.container.textContent, /You: Status|WasteGrid reply|Check again|Checking phone updates/);
   assert.match(view.container.textContent, /Cleanup is in progress/);
-  assert.doesNotMatch(view.container.textContent, /Update delivered/);
+  assert.doesNotMatch(view.container.textContent, /Phone copy delivered/);
   assert.equal(app.field().value, '');
  } finally { await view.close(); }
 });
@@ -60,18 +59,18 @@ test('double taps send once and foreground refresh checks delivery without sendi
   await act(async () => pending.resolve(receipt('queued')));
   app.state({ ...initial, latest_request: receipt('delivered') });
   await act(async () => app.foreground());
-  assert.match(view.container.textContent, /Update delivered to the registered phone/);
+  assert.match(view.container.textContent, /Phone copy delivered/);
   assert.equal(app.sent.length, 1); assert.equal(app.reads.length, 2);
  } finally { await view.close(); }
 });
 test('all receipt states are honest and submitted permits a new explicit status request without claiming delivery', async () => {
- const expected = { queued: 'Update queued.', sending: 'Submitting update', submitted: 'Delivery has not been confirmed', delivered: 'Update delivered', failed: 'could not be sent', uncertain: 'Delivery is uncertain', cancelled: 'cancelled' };
+ const expected = { queued: 'Phone copy queued', sending: 'Sending phone copy', submitted: 'Phone delivery pending', delivered: 'Phone copy delivered', failed: 'could not be sent', uncertain: 'Phone delivery unconfirmed', cancelled: 'cancelled' };
  for (const [status, text] of Object.entries(expected)) {
   const app = setup({ phoneUpdates: async () => ({ ...initial, latest_request: receipt(status) }) });
   const view = mount(app.ReportMessaging, { draft });
   try {
    await view.render(); assert.ok(view.container.textContent.includes(text));
-   if (status !== 'delivered') assert.doesNotMatch(view.container.textContent, /Update delivered/);
+   if (status !== 'delivered') assert.doesNotMatch(view.container.textContent, /Phone copy delivered/);
    await app.type('Status');
    assert.equal(button(view.container, 'Send').disabled, ['queued', 'sending', 'uncertain'].includes(status));
    assert.deepEqual(app.sent, []);
@@ -85,12 +84,12 @@ test('an unknown request stays saved and only an explicit retry sends the same o
  try {
   await view.render(); await app.type('Status');
   await act(async () => button(view.container, 'Send').click());
-  assert.match(view.container.textContent, /last request is saved/);
+  assert.match(view.container.textContent, /Request saved/);
   assert.equal(app.sent.length, 1);
   await act(async () => button(view.container, 'Retry request').click());
   assert.deepEqual(app.sent, [[draft, 'Status'], [draft, 'Status']]);
-  assert.match(view.container.textContent, /Update submitted/);
-  assert.doesNotMatch(view.container.textContent, /last request is saved/);
+  assert.match(view.container.textContent, /Phone delivery pending/);
+  assert.doesNotMatch(view.container.textContent, /Request saved/);
  } finally { await view.close(); }
 });
 test('reopening with a saved uncertain request never auto-sends and allows a same-request retry even when new sends are disabled', async () => {
@@ -110,8 +109,8 @@ test('disabled reports hide the empty feature while existing receipts remain vis
   await view.render(); assert.equal(view.container.textContent, '');
   app.state({ ...initial, enabled: false, latest_request: receipt('submitted') });
   await act(async () => app.foreground());
-  assert.match(view.container.textContent, /Update submitted/);
-  assert.doesNotMatch(view.container.textContent, /Tapping Send/);
+  assert.match(view.container.textContent, /Phone delivery pending/);
+  assert.doesNotMatch(view.container.textContent, /Send also sends/);
  } finally { await view.close(); }
 });
 test('refresh failure preserves an existing receipt and remains retryable', async () => {
@@ -121,8 +120,8 @@ test('refresh failure preserves an existing receipt and remains retryable', asyn
  try {
   await view.render(); await act(async () => app.foreground());
   assert.match(view.container.textContent, /Unable to check/);
-  assert.match(view.container.textContent, /Update submitted/);
-  await act(async () => button(view.container, 'Check delivery status').click());
+  assert.match(view.container.textContent, /Phone delivery pending/);
+  await act(async () => button(view.container, 'Check again').click());
   assert.doesNotMatch(view.container.textContent, /Unable to check/); assert.deepEqual(app.sent, []);
  } finally { await view.close(); }
 });
@@ -132,7 +131,7 @@ test('a 409 conflict refreshes the existing receipt instead of suggesting anothe
  try {
   await view.render(); app.state({ ...initial, latest_request: receipt('sending') });
   await app.type('Status'); await act(async () => button(view.container, 'Send').click());
-  assert.match(view.container.textContent, /Submitting update/); assert.equal(app.reads.length, 2);
+  assert.match(view.container.textContent, /Sending phone copy/); assert.equal(app.reads.length, 2);
   assert.equal(button(view.container, 'Send').disabled, true); assert.equal(app.sent.length, 1);
  } finally { await view.close(); }
 });
@@ -155,7 +154,9 @@ test('account changes and unmounts hide late registered phone and receipt respon
 });
 
 
-test('the Android reply appears immediately and automatic receipt refresh never sends again', async t => {
+test('the reply stays compact, polling never sends again, and a delayed delivery stays recoverable', async t => {
+ let now = Date.now();
+ t.mock.method(Date, 'now', () => now);
  const ticks = [], realTimeout = globalThis.setTimeout, realClear = globalThis.clearTimeout;
  t.mock.method(globalThis, 'setTimeout', (callback, delay, ...args) => {
   if (delay === 3000) { const handle = { callback }; ticks.push(handle); return handle; }
@@ -169,14 +170,19 @@ test('the Android reply appears immediately and automatic receipt refresh never 
  try {
   await view.render(); await app.type('Status');
   await act(async () => button(view.container, 'Send').click());
-  assert.match(view.container.textContent, /WasteGrid reply/);
   assert.match(view.container.textContent, /Cleanup is in progress/);
-  assert.match(view.container.textContent, /Update queued/);
+  assert.match(view.container.textContent, /Phone copy queued/);
   assert.equal(app.sent.length, 1); assert.equal(ticks.length, 1);
-  app.state({ ...initial, latest_request: receipt('delivered') });
+  app.state({ ...initial, latest_request: receipt('submitted') });
+  now += 90_001;
   await act(async () => ticks.shift().callback());
-  assert.match(view.container.textContent, /Update delivered to the registered phone/);
-  assert.equal(app.sent.length, 1); assert.equal(app.reads.length, 2);
+  assert.equal(button(view.container, 'Check again').disabled, false);
+  assert.equal(app.sent.length, 1); assert.equal(ticks.length, 0);
+  app.state({ ...initial, latest_request: receipt('delivered') });
+  await act(async () => button(view.container, 'Check again').click());
+  assert.match(view.container.textContent, /Phone copy delivered/);
+  assert.equal(app.sent.length, 1); assert.equal(app.reads.length, 3);
   assert.equal(ticks.length, 0);
+  assert.doesNotMatch(view.container.textContent, /Check again/);
  } finally { await view.close(); }
 });
