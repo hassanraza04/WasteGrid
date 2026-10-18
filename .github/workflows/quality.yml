@@ -64,6 +64,13 @@ jobs:
       - run: npm audit --audit-level=high
       - run: npm run coverage
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: organizer-browser-evidence
+          path: web/test-results/
 
   mobile:
     name: Mobile connection checks

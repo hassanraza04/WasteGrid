@@ -1,0 +1,1107 @@
+@font-face {
+  font-family: Jakarta;
+  src: url("/fonts/PlusJakartaSans_400Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: Jakarta;
+  src: url("/fonts/PlusJakartaSans_500Medium.ttf") format("truetype");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: Jakarta;
+  src: url("/fonts/PlusJakartaSans_600SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: Jakarta;
+  src: url("/fonts/PlusJakartaSans_700Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-display: swap;
+}
+.wg-app {
+  --wg-green: #12804d;
+  --wg-ink: #0f141a;
+  --wg-muted: #626d79;
+  --wg-bg: #eceff3;
+  --wg-line: #dce1e7;
+  --wg-soft: #ddf1e6;
+  font-family: Jakarta, system-ui, sans-serif;
+  color: var(--wg-ink);
+  background: var(--wg-bg);
+  min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.6;
+  box-sizing: border-box;
+}
+.wg-app *,
+.wg-app *:before,
+.wg-app *:after {
+  box-sizing: border-box;
+}
+.wg-app h1,
+.wg-app h2,
+.wg-app h3,
+.wg-app h4,
+.wg-app p {
+  margin: 0;
+}
+.wg-app h1 {
+  font-size: 28px;
+  letter-spacing: -1px;
+  line-height: 1.3;
+}
+.wg-app h2 {
+  font-size: 22px;
+  line-height: 1.4;
+  letter-spacing: -0.5px;
+}
+.wg-app h3 {
+  font-size: 17px;
+  line-height: 1.5;
+}
+.wg-app h4 {
+  font-size: 14px;
+}
+.wg-app a {
+  color: var(--wg-green);
+  text-underline-offset: 4px;
+}
+.wg-app a:hover {
+  text-decoration-thickness: 2px;
+}
+.wg-app button,
+.wg-app input,
+.wg-app select,
+.wg-app textarea {
+  font: inherit;
+}
+.wg-app :focus-visible {
+  outline: 3px solid #096bda;
+  outline-offset: 4px;
+}
+.wg-app button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.wg-app button {
+  cursor: pointer;
+}
+.wg-app input,
+.wg-app select,
+.wg-app textarea,
+.wg-input {
+  border: 1px solid #bdc7d0;
+  border-radius: 12px;
+  background: white;
+  padding: 11px 13px;
+  min-height: 44px;
+  color: var(--wg-ink);
+  max-width: 100%;
+  width: 100%;
+}
+.wg-app textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+.wg-app input[type="checkbox"] {
+  width: 19px;
+  height: 19px;
+  min-height: auto;
+  accent-color: var(--wg-green);
+  flex-shrink: 0;
+}
+.wg-app label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+.wg-app fieldset {
+  border: 1px solid var(--wg-line);
+  border-radius: 16px;
+  padding: 16px;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.wg-app legend {
+  font-weight: 600;
+  padding: 0 5px;
+}
+.wg-app label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 500;
+}
+.wg-app form {
+  margin: 0;
+}
+.wg-app code {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.wg-shell {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+}
+.wg-sidebar {
+  background: #fff;
+  padding: 32px 20px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  border-right: 1px solid var(--wg-line);
+}
+.wg-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.7px;
+  text-decoration: none;
+  color: var(--wg-ink) !important;
+}
+.wg-brand-mark {
+  width: 38px;
+  height: 38px;
+  background: var(--wg-green);
+  border-radius: 12px;
+  color: white;
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  font-weight: 500;
+}
+.wg-navigation {
+  display: grid;
+  gap: 8px;
+}
+.wg-navigation a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #596470;
+  text-decoration: none;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-weight: 600;
+  min-height: 48px;
+}
+.wg-navigation a[aria-current="page"] {
+  background: var(--wg-soft);
+  color: #08663a;
+}
+.wg-navigation .wg-nav-icon {
+  font-size: 20px;
+  width: 24px;
+  text-align: center;
+}
+.wg-sidebar-note {
+  margin-top: auto !important;
+  color: var(--wg-muted);
+  font-size: 12px;
+}
+.wg-main {
+  min-width: 0;
+}
+.wg-topbar {
+  height: 82px;
+  background: #fff;
+  border-bottom: 1px solid var(--wg-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 36px;
+}
+.wg-topbar-account {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.wg-account {
+  font-size: 12px;
+  color: var(--wg-muted);
+  text-align: right;
+  max-width: 240px;
+  overflow-wrap: anywhere;
+}
+.wg-account strong {
+  color: var(--wg-ink);
+  display: block;
+  font-size: 13px;
+}
+.wg-page {
+  padding: 32px 36px 48px;
+  max-width: 1600px;
+  margin: auto;
+}
+.wg-page-heading,
+.wg-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.wg-section-heading {
+  margin-bottom: 16px;
+}
+.wg-page-heading > div,
+.wg-heading-copy {
+  display: grid;
+  gap: 6px;
+}
+.wg-eyebrow {
+  color: var(--wg-green);
+  font-size: 11px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.wg-muted {
+  color: var(--wg-muted);
+}
+.wg-small {
+  font-size: 12px;
+}
+.wg-breadcrumbs {
+  font-size: 12px;
+  color: var(--wg-muted);
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.wg-breadcrumbs a {
+  color: var(--wg-muted);
+}
+.wg-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  min-height: 44px;
+  padding: 10px 17px;
+  background: var(--wg-green);
+  color: white !important;
+  font-weight: 600;
+  text-decoration: none;
+  line-height: 1.4;
+}
+.wg-button:hover {
+  background: #0c6d40;
+  text-decoration: none !important;
+}
+.wg-button.wg-secondary {
+  background: #fff;
+  border-color: #cbd3dc;
+  color: var(--wg-ink) !important;
+}
+.wg-button.wg-secondary:hover {
+  background: #f4f7f5;
+}
+.wg-button.wg-danger {
+  background: #a52e2e;
+}
+.wg-button.wg-button-primary {
+  background: var(--wg-green);
+}
+.wg-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.wg-card {
+  background: #fff;
+  border: 1px solid #e1e7eb;
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 2px 3px #12251b03;
+  min-width: 0;
+}
+.wg-stack {
+  display: grid;
+  gap: 20px;
+}
+.wg-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.wg-grid.wg-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.wg-grid.wg-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.wg-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(300px, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.wg-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.wg-metric {
+  display: grid;
+  gap: 10px;
+  position: relative;
+}
+.wg-metric-label {
+  color: var(--wg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.wg-metric-value {
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -1.4px;
+  line-height: 1.2;
+}
+.wg-metric-link {
+  font-size: 12px;
+}
+.wg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 99px;
+  background: #eef1f4;
+  color: #4a5661;
+  padding: 5px 10px;
+  line-height: 1.5;
+}
+.wg-chip.wg-green {
+  background: #ddf1e6;
+  color: #09673b;
+}
+.wg-chip.wg-amber {
+  background: #fff0d1;
+  color: #80560c;
+}
+.wg-chip.wg-red {
+  background: #fbe6e4;
+  color: #972e2a;
+}
+.wg-alert {
+  background: #fff1ed;
+  border: 1px solid #eeb7a9;
+  color: #862b1f;
+  padding: 14px 16px;
+  border-radius: 14px;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+.wg-success {
+  background: var(--wg-soft);
+  border-radius: 14px;
+  padding: 14px;
+  color: #08663a;
+}
+.wg-empty {
+  text-align: center;
+  padding: 36px 20px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+.wg-empty p {
+  max-width: 440px;
+  color: var(--wg-muted);
+}
+.wg-empty-mark {
+  font-size: 32px;
+  color: var(--wg-green);
+  background: var(--wg-soft);
+  border-radius: 20px;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+}
+.wg-loading {
+  display: grid;
+  gap: 16px;
+  color: var(--wg-muted);
+  padding: 20px;
+}
+.wg-skeleton {
+  height: 18px;
+  background: linear-gradient(90deg, #edf0f3, #e4e9ee, #edf0f3);
+  border-radius: 8px;
+  width: 100%;
+  animation: wg-pulse 1.6s infinite;
+}
+.wg-skeleton.wg-short {
+  width: 60%;
+}
+@keyframes wg-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+.wg-filters {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.8fr) repeat(3, minmax(120px, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.wg-view-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.wg-view-tabs a {
+  background: white;
+  border: 1px solid var(--wg-line);
+  border-radius: 99px;
+  padding: 8px 14px;
+  min-height: 40px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--wg-muted);
+}
+.wg-view-tabs a[aria-current="page"] {
+  background: var(--wg-green);
+  border-color: var(--wg-green);
+  color: white;
+}
+.wg-table-wrap {
+  overflow: auto;
+  width: 100%;
+}
+.wg-table {
+  border-collapse: collapse;
+  width: 100%;
+  text-align: left;
+}
+.wg-table th {
+  font-weight: 600;
+  color: var(--wg-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  background: #f8faf9;
+}
+.wg-table th,
+.wg-table td {
+  padding: 16px 14px;
+  border-bottom: 1px solid #e9edf0;
+  vertical-align: middle;
+}
+.wg-table td {
+  font-size: 12px;
+}
+.wg-table th:first-child,
+.wg-table td:first-child {
+  padding-left: 0;
+}
+.wg-table th:last-child,
+.wg-table td:last-child {
+  padding-right: 0;
+}
+.wg-report-cell {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 220px;
+}
+.wg-report-cell h3 {
+  font-size: 13px;
+}
+.wg-report-cell .wg-photo {
+  width: 70px;
+  flex-shrink: 0;
+}
+.wg-report-cell .wg-photo img {
+  height: 64px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+.wg-report-cell .wg-photo .wg-photo-placeholder {
+  min-height: 64px;
+  padding: 8px;
+}
+.wg-report-cell .wg-photo button {
+  font-size: 10px;
+  min-height: 28px;
+  padding: 4px;
+}
+.wg-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-top: 20px;
+  color: var(--wg-muted);
+  font-size: 12px;
+}
+.wg-photo {
+  position: relative;
+  max-width: 100%;
+}
+.wg-photo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 480px;
+  object-fit: contain;
+  border-radius: 18px;
+  background: #f1f4f6;
+}
+.wg-photo-placeholder {
+  background: #f0f4f2;
+  border: 1px dashed #c6d3cb;
+  border-radius: 18px;
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  text-align: center;
+  gap: 8px;
+  color: var(--wg-muted);
+}
+.wg-photo > button {
+  margin-top: 10px;
+}
+.wg-field-value {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+}
+.wg-field-value strong {
+  font-weight: 600;
+  color: var(--wg-muted);
+  flex-shrink: 0;
+}
+.wg-facts {
+  display: grid;
+  gap: 9px;
+  margin-top: 16px;
+}
+.wg-facts.wg-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+}
+.wg-evidence-caption {
+  background: #f5f7f8;
+  border-left: 3px solid #b7c8bd;
+  padding: 14px;
+  border-radius: 0 12px 12px 0;
+  margin-top: 16px;
+}
+.wg-evidence-caption p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wg-assessment-lead {
+  font-size: 16px;
+  line-height: 1.8;
+  margin-bottom: 16px !important;
+}
+.wg-info-panel {
+  background: #f5f8f6;
+  border-radius: 16px;
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+}
+.wg-review-panel {
+  background: #fff6e3;
+  border: 1px solid #ead7a8;
+  border-radius: 16px;
+  padding: 16px;
+  color: #6f4c15;
+  display: grid;
+  gap: 7px;
+}
+.wg-timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.wg-timeline li {
+  position: relative;
+  padding: 0 0 22px 24px;
+  border-left: 1px solid #dbe5de;
+  margin-left: 5px;
+}
+.wg-timeline li:last-child {
+  padding-bottom: 0;
+}
+.wg-timeline li:before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--wg-green);
+  box-shadow: 0 0 0 4px #fff;
+}
+.wg-timeline li > p {
+  font-size: 12px;
+  margin-top: 4px;
+  color: var(--wg-muted);
+  overflow-wrap: anywhere;
+}
+.wg-timeline strong {
+  font-size: 12px;
+}
+.wg-form-grid {
+  display: grid;
+  gap: 16px;
+}
+.wg-form-grid > section {
+  display: grid;
+  gap: 16px;
+}
+.wg-form-grid label {
+  font-size: 12px;
+}
+.wg-confirmation {
+  display: grid;
+  gap: 12px;
+}
+.wg-confirmation > p {
+  font-size: 12px;
+}
+.wg-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #0d211b80;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow: auto;
+}
+.wg-dialog {
+  max-width: 660px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  background: white;
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: 0 18px 70px #0b211c40;
+}
+.wg-login {
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse at top left, #d8eee1, transparent 60%), var(--wg-bg);
+}
+.wg-login-card {
+  max-width: 440px;
+  width: 100%;
+  padding: 36px;
+  display: grid;
+  gap: 26px;
+}
+.wg-login-card form {
+  display: grid;
+  gap: 18px;
+}
+.wg-login-copy {
+  display: grid;
+  gap: 8px;
+}
+.wg-login-copy p {
+  color: var(--wg-muted);
+  font-size: 13px;
+}
+.wg-skip {
+  position: absolute;
+  left: 16px;
+  top: -100px;
+  z-index: 100;
+  background: #fff;
+  padding: 10px 18px;
+}
+.wg-skip:focus {
+  top: 12px;
+}
+.wg-no-wrap {
+  white-space: nowrap;
+}
+.wg-map {
+  height: 360px;
+  border-radius: 20px;
+  overflow: hidden;
+}
+.wg-app .leaflet-container {
+  font-family: Jakarta, system-ui, sans-serif;
+}
+.wg-route-stops {
+  display: grid;
+  gap: 12px;
+  padding-left: 24px;
+}
+.wg-route-stops li {
+  padding-left: 6px;
+}
+.wg-route-stops li::marker {
+  color: var(--wg-green);
+  font-weight: 700;
+}
+@media (min-width: 1500px) {
+  .wg-metrics {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1100px) {
+  .wg-shell {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+  .wg-sidebar {
+    padding: 26px 14px;
+  }
+  .wg-page {
+    padding: 26px 22px;
+  }
+  .wg-topbar {
+    padding: 18px 22px;
+  }
+  .wg-detail-layout {
+    grid-template-columns: 1fr;
+  }
+  .wg-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .wg-filters > label:first-child {
+    grid-column: 1/-1;
+  }
+  .wg-grid.wg-three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .wg-shell {
+    display: block;
+  }
+  .wg-sidebar {
+    height: auto;
+    position: static;
+    padding: 16px;
+    gap: 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--wg-line);
+  }
+  .wg-brand {
+    font-size: 20px;
+  }
+  .wg-brand-mark {
+    width: 34px;
+    height: 34px;
+  }
+  .wg-navigation {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+  }
+  .wg-navigation a {
+    padding: 9px 12px;
+    min-height: 40px;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .wg-navigation .wg-nav-icon {
+    font-size: 16px;
+    width: auto;
+  }
+  .wg-sidebar-note {
+    display: none;
+  }
+  .wg-topbar {
+    height: auto;
+    min-height: 66px;
+    padding: 12px 16px;
+  }
+  .wg-topbar-account {
+    gap: 8px;
+  }
+  .wg-account {
+    display: none;
+  }
+  .wg-topbar .wg-chip {
+    font-size: 9px;
+    padding: 4px 8px;
+  }
+  .wg-page {
+    padding: 24px 16px 36px;
+  }
+  .wg-app h1 {
+    font-size: 25px;
+  }
+  .wg-page-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .wg-card {
+    padding: 18px;
+    border-radius: 20px;
+  }
+  .wg-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .wg-metric-value {
+    font-size: 29px;
+  }
+  .wg-metric-label {
+    font-size: 11px;
+  }
+  .wg-grid,
+  .wg-grid.wg-three,
+  .wg-grid.wg-two {
+    grid-template-columns: 1fr;
+  }
+  .wg-facts.wg-columns {
+    grid-template-columns: 1fr;
+  }
+  .wg-field-value {
+    flex-wrap: wrap;
+    gap: 2px 7px;
+  }
+  .wg-pagination {
+    flex-wrap: wrap;
+  }
+  .wg-pagination > .wg-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .wg-login {
+    padding: 16px;
+  }
+  .wg-login-card {
+    padding: 26px;
+  }
+  .wg-dialog {
+    padding: 20px;
+  }
+  .wg-map {
+    height: 300px;
+  }
+  .wg-app .wg-table th,
+  .wg-app .wg-table td {
+    padding: 12px 10px;
+  }
+  .wg-app .wg-table th:first-child,
+  .wg-app .wg-table td:first-child {
+    padding-left: 0;
+  }
+  .wg-filters {
+    gap: 10px;
+  }
+  .wg-report-cell {
+    min-width: 190px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wg-skeleton {
+    animation: none;
+  }
+}
+@media print {
+  .wg-sidebar,
+  .wg-topbar,
+  .wg-no-print,
+  .wg-button,
+  .wg-navigation {
+    display: none !important;
+  }
+  .wg-shell {
+    display: block;
+  }
+  .wg-app {
+    background: white;
+  }
+  .wg-page {
+    padding: 0;
+    max-width: none;
+  }
+  .wg-card {
+    break-inside: avoid;
+    box-shadow: none;
+    border: 1px solid #bbb;
+  }
+  .wg-map {
+    display: none;
+  }
+  .wg-grid {
+    display: block;
+  }
+  .wg-grid > .wg-card {
+    margin-bottom: 20px;
+  }
+}
+.wg-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.wg-app .wg-routing-choice {
+  border: 1px solid var(--wg-line);
+  border-radius: 18px;
+  padding: 16px;
+  margin: 12px 0;
+}
+.wg-app .wg-routing-choice p {
+  margin: 8px 0;
+}
+.wg-app .wg-route-map {
+  height: 360px;
+  border-radius: 18px;
+  z-index: 0;
+}
+.wg-app .wg-routing > section,
+.wg-app .wg-routing > div {
+  margin-bottom: 20px;
+}
+.wg-app .wg-print-route li {
+  margin: 16px 0;
+}
+@media print {
+  .wg-app .wg-sidebar,
+  .wg-app .wg-topbar,
+  .wg-app .wg-no-print,
+  .wg-app .wg-dialog-backdrop,
+  .wg-app button {
+    display: none !important;
+  }
+  .wg-app .wg-main {
+    margin: 0;
+    padding: 0;
+  }
+  .wg-app .wg-print-route {
+    break-inside: avoid;
+    box-shadow: none;
+    border: 1px solid #777;
+  }
+  .wg-app .wg-grid {
+    display: block;
+  }
+}
+body:has(.wg-app) {
+  margin: 0;
+}
+.wg-routing {
+  display: grid;
+  gap: 22px;
+}
+.wg-routing > .wg-card {
+  display: grid;
+  gap: 18px;
+}
+.wg-routing-choice {
+  border: 1px solid var(--wg-line);
+  border-radius: 16px;
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.wg-routing .wg-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+}
+.wg-routing .wg-form-grid .wg-check {
+  align-self: center;
+}
+.wg-route-map {
+  height: 380px;
+  width: 100%;
+  border-radius: 16px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.wg-routing section[aria-label="Route preview"] {
+  display: grid;
+  gap: 20px;
+}
+.wg-routing .wg-print-route {
+  display: grid;
+  gap: 12px;
+}
+.wg-print-route ol {
+  display: grid;
+  gap: 16px;
+  padding-left: 24px;
+  margin: 0;
+}
+.wg-print-route li {
+  padding-left: 6px;
+}
+.wg-print-route li::marker {
+  font-weight: 700;
+  color: var(--wg-green);
+}
+.wg-routing-choice p {
+  font-size: 12px;
+}
+.wg-routing .wg-card > p {
+  overflow-wrap: anywhere;
+}
+.wg-topbar-environment {
+  display: grid;
+  gap: 2px;
+}
+.wg-topbar-environment small {
+  font-size: 10px;
+  text-align: center;
+  color: var(--wg-muted);
+  max-width: 220px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 720px) {
+  .wg-routing .wg-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .wg-route-map {
+    height: 280px;
+  }
+  .wg-topbar-environment small {
+    max-width: 130px;
+    font-size: 8px;
+  }
+  .wg-routing > .wg-card {
+    gap: 14px;
+  }
+}

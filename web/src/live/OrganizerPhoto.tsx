@@ -2,33 +2,108 @@ import { useEffect, useRef, useState } from "react";
 
 import { AccessError, type OrganizerApi } from "./organizerApi";
 
-export function OrganizerPhoto({ api, id, width, onSessionExpired }: { api: OrganizerApi; id: string; width: number; onSessionExpired?: (error: AccessError) => void }) {
+export function OrganizerPhoto({
+  api,
+  id,
+  width,
+  onSessionExpired,
+}: {
+  api: OrganizerApi;
+  id: string;
+  width: number;
+  onSessionExpired?: (error: AccessError) => void;
+}) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
-
-  useEffect(() => () => { generation.current++; }, []);
-
+  const container = useRef<HTMLDivElement>(null);
+  const inFlight = useRef(false);
+  const currentId = useRef(id);
+  currentId.current = id;
   async function load() {
+    if (inFlight.current) return;
     const request = ++generation.current;
-    setBusy(true); setError("");
+    const session = api.sessionVersion;
+    const current = () =>
+      request === generation.current &&
+      currentId.current === id &&
+      session === api.sessionVersion;
+    inFlight.current = true;
+    setBusy(true);
+    setError("");
     try {
       const nextUrl = await api.photo(id);
-      if (request === generation.current) setUrl(nextUrl);
+      if (current()) setUrl(nextUrl);
     } catch (caught) {
-      if (request === generation.current) {
-        if (caught instanceof AccessError) { onSessionExpired?.(caught); return; }
-        setError("Photo unavailable. Try loading it again.");
+      if (current()) {
+        if (caught instanceof AccessError) onSessionExpired?.(caught);
+        else setError("Photo unavailable. Try loading it again.");
       }
     } finally {
-      if (request === generation.current) setBusy(false);
+      if (request === generation.current) {
+        inFlight.current = false;
+        setBusy(false);
+      }
     }
   }
-
-  return <div>
-    <button disabled={busy} onClick={() => void load()}>Load photo</button>
-    {url && <img src={url} alt="Reported waste" width={width} onError={() => { setUrl(""); setError("Photo link expired. Load it again."); }} />}
-    {error && <p role="alert">{error}</p>}
-  </div>;
+  useEffect(() => {
+    setUrl("");
+    setError("");
+    setBusy(false);
+    inFlight.current = false;
+    let observer: IntersectionObserver | undefined;
+    if (typeof IntersectionObserver !== "undefined" && container.current) {
+      observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) {
+            observer?.disconnect();
+            void load();
+          }
+        },
+        { rootMargin: "120px" },
+      );
+      observer.observe(container.current);
+    }
+    return () => {
+      generation.current++;
+      observer?.disconnect();
+    };
+  }, [api, id]);
+  return (
+    <div
+      className="wg-photo"
+      ref={container}
+      style={{ maxWidth: width < 100 ? width : "100%" }}
+    >
+      {url ? (
+        <img
+          src={url}
+          alt="Reported waste"
+          width={width}
+          loading="lazy"
+          onError={() => {
+            setUrl("");
+            setError("Photo link expired. Load it again.");
+          }}
+        />
+      ) : (
+        <div className="wg-photo-placeholder" aria-hidden="true">
+          <span>{busy ? "Loading photo…" : "Private photo"}</span>
+        </div>
+      )}
+      <button
+        className="wg-button wg-secondary"
+        disabled={busy}
+        onClick={() => void load()}
+      >
+        Load photo
+      </button>
+      {error && (
+        <p className="wg-alert" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
 }

@@ -185,3 +185,19 @@ test("direct report navigation resets edited drafts and submits only the destina
   expect(api.applyDecision).toHaveBeenCalledTimes(1);
   expect(api.applyDecision).toHaveBeenCalledWith("report-b", expect.objectContaining({ report_id: "report-b", expected_version: 15, category: "Category B", decision_summary: "Original B", evidence_report_ids: ["report-b"] }));
 });
+
+test("shows sanitized task progress separately from the report assessment and preserves original caption evidence", async () => {
+  setup({ ...details, report: { ...details.report, title: "Original resident words" }, processing: { assessment: { status: "failed", attempts: 1, error_code: "assessment_timeout" }, triage: { status: "pending", attempts: 0, error_code: null }, demo_run_id: "run-a" } });
+  await screen.findByRole("heading", { name: "WG-123" });
+  expect(screen.getByText("Original resident words")).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Original resident words" })).not.toBeInTheDocument();
+  expect(screen.getByText("Assessment: failed · 1 attempt · assessment_timeout")).toBeInTheDocument();
+  expect(screen.getByText("Triage: pending · 0 attempts")).toBeInTheDocument();
+});
+
+test("reports unqueued processing work without inventing task success", async () => {
+  setup({ ...details, processing: { assessment: null, triage: null, demo_run_id: null } });
+  await screen.findByRole("heading", { name: "WG-123" });
+  expect(screen.getByText("Assessment: Not queued")).toBeInTheDocument();
+  expect(screen.getByText("Triage: Not queued")).toBeInTheDocument();
+});

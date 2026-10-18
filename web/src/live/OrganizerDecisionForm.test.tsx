@@ -347,3 +347,13 @@ test("keeps the reviewed priority version even if the same report refreshes befo
   await user.click(screen.getByRole("button", { name: "Apply priority update" }));
   expect(api.setPriority).toHaveBeenCalledWith("report-1", expect.objectContaining({ expected_version: 12 }));
 });
+
+test("closing a decision confirmation restores keyboard focus to the new review trigger", async () => {
+  const { user } = setup();
+  await triageFields(user);
+  await user.click(screen.getByRole("button", { name: "Review decision" }));
+  expect(screen.getByRole("dialog", { name: "Review organiser decision" })).toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Review decision" })).toHaveFocus();
+});
