@@ -88,3 +88,29 @@ def test_preflight_propagates_only_sanitized_deployed_refusal(monkeypatch):
     monkeypatch.setattr("scripts.assessment_demo.require_deployed_api", refuse)
     with pytest.raises(DemoRefused, match="Deployed revision"):
         require_configuration(config(), REVISION, "https://api.invalid")
+
+
+def test_only_explicit_scoped_resume_allows_messaging_during_preflight(monkeypatch):
+    fake_checkout(monkeypatch)
+    checked = []
+
+    def ready(url, revision, client, **options):
+        checked.append(options)
+
+    monkeypatch.setattr("scripts.assessment_demo.require_deployed_api", ready)
+    settings = config(
+        messaging_pilot_enabled=True,
+        messaging_pilot_report_ids=[
+            "00000000-0000-4000-8000-000000000001",
+            "00000000-0000-4000-8000-000000000002",
+        ],
+    )
+    with pytest.raises(DemoRefused):
+        require_configuration(settings, REVISION, "https://api.invalid")
+    require_configuration(
+        settings,
+        REVISION,
+        "https://api.invalid",
+        scoped_resume=True,
+    )
+    assert checked == [{"allow_messaging_pilot": True}]

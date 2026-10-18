@@ -101,9 +101,12 @@ def require_configuration(
         raise DemoRefused("Run the reviewed code from a clean worker checkout")
     with httpx.Client(timeout=20) as client:
         try:
-            require_deployed_api(
-                api_url, revision, client, allow_messaging_pilot=scoped_resume
-            )
+            if scoped_resume:
+                require_deployed_api(
+                    api_url, revision, client, allow_messaging_pilot=True
+                )
+            else:
+                require_deployed_api(api_url, revision, client)
         except VerificationRefused as exc:
             raise DemoRefused(str(exc)) from exc
 
