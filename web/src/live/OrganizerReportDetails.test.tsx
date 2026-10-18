@@ -30,7 +30,9 @@ test("shows the complete persisted assessment, triage, and activity without load
   const { api } = setup();
   expect(await screen.findByRole("heading", { name: "WG-123" })).toBeInTheDocument();
   expect(screen.getByText("Bags block part of the path")).toBeInTheDocument();
-  expect(screen.getByText("Collection is needed.")).toBeInTheDocument();
+  expect(screen.getAllByText("Collection is needed.").length).toBeGreaterThan(0);
+  expect(screen.getByText((_, element) => element?.tagName === "P" && element.textContent === "Resident fire: false")).toBeInTheDocument();
+  expect(screen.getByText((_, element) => element?.tagName === "P" && element.textContent === "Evidence sufficient: true")).toBeInTheDocument();
   expect(screen.getByText("report.assessed")).toBeInTheDocument();
   expect(screen.queryByAltText("Reported waste")).not.toBeInTheDocument();
   expect(api.photo).not.toHaveBeenCalled();
