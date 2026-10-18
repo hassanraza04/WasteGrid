@@ -158,3 +158,30 @@ test("shows the selected report UUID and its duplicate candidate for an accounta
   expect(screen.getByText((_, node) => node?.textContent === "Report ID: report-123")).toBeInTheDocument();
   expect(screen.getByText((_, node) => node?.textContent === "Duplicate candidate: candidate-report-uuid")).toBeInTheDocument();
 });
+
+
+test("direct report navigation resets edited drafts and submits only the destination report's decision", async () => {
+  const first = { ...details, report: { ...details.report, id: "report-a", public_reference: "WG-A", triage: { ...details.report.triage!, category: "Category A", decision_summary: "Original A", evidence_report_ids: ["report-a"] } } };
+  const second = { ...details, report: { ...details.report, id: "report-b", public_reference: "WG-B", version: 15, triage: { ...details.report.triage!, category: "Category B", decision_summary: "Original B", evidence_report_ids: ["report-b"] } } };
+  const api = {
+    report: vi.fn(async (id: string) => id === "report-a" ? first : second),
+    applyDecision: vi.fn().mockResolvedValue({ ...second.report, version: 16 }),
+    setPriority: vi.fn(), photo: vi.fn(),
+  } as unknown as OrganizerApi;
+  render(<MemoryRouter initialEntries={["/admin/reports/report-a"]}><Link to="/admin/reports/report-b">Other report</Link><Routes><Route path="/admin/reports/:reportId" element={<OrganizerReportDetails api={api} />} /></Routes></MemoryRouter>);
+  const user = userEvent.setup();
+  await screen.findByRole("heading", { name: "WG-A" });
+  await user.clear(screen.getByLabelText("Category"));
+  await user.type(screen.getByLabelText("Category"), "Unsaved A category");
+  await user.clear(screen.getByLabelText("Decision summary"));
+  await user.type(screen.getByLabelText("Decision summary"), "Unsaved A rationale");
+  await user.click(screen.getByRole("link", { name: "Other report" }));
+  await screen.findByRole("heading", { name: "WG-B" });
+  expect(screen.getByLabelText("Category")).toHaveValue("Category B");
+  expect(screen.getByLabelText("Decision summary")).toHaveValue("Original B");
+  expect(screen.getByLabelText("Evidence report IDs")).toHaveValue("report-b");
+  await user.click(screen.getByRole("button", { name: "Review decision" }));
+  await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
+  expect(api.applyDecision).toHaveBeenCalledTimes(1);
+  expect(api.applyDecision).toHaveBeenCalledWith("report-b", expect.objectContaining({ report_id: "report-b", expected_version: 15, category: "Category B", decision_summary: "Original B", evidence_report_ids: ["report-b"] }));
+});

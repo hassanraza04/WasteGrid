@@ -133,7 +133,7 @@ function DecisionForm({ report, api, onReportUpdated, onReload, onSessionExpired
       <p>Estimated service minutes: {pending.decision.estimated_service_minutes ?? "Not recorded"}</p>
     </>}
     <p>Priority: {pending.priority?.priority ?? "Unchanged"}</p><p>Priority reason: {pending.priority?.reason ?? "Not recorded"}</p>
-    <p>Applying this decision creates an attributed organiser event. It does not start a worker or send a message.</p>
+    <p>Applying this decision creates an attributed organiser event. Any job creation or linking follows the existing server triage rules; a saved decision may still require review or more information. It does not start a worker or send a message.</p>
     {outcome && <p role="status">{outcome}</p>}
     {error && <p role="alert">{error}</p>}
     {stale ? <button disabled={saving} onClick={() => void reloadAfterStale()}>Reload latest report</button> : <button disabled={saving} onClick={() => void apply()}>{decisionSaved || !pending.decision ? (error ? "Retry priority update" : "Apply priority update") : (error ? "Retry organiser decision" : "Apply organiser decision")}</button>}
