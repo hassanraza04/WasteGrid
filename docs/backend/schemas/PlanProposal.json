@@ -50,6 +50,7 @@
         "reason_code": {
           "enum": [
             "no_eligible_crew",
+            "outside_scope",
             "shift_limit",
             "held",
             "hazard_review",

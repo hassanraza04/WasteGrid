@@ -320,6 +320,7 @@ class UnassignedJob(Contract):
     job_id: UUID
     reason_code: Literal[
         "no_eligible_crew",
+        "outside_scope",
         "shift_limit",
         "held",
         "hazard_review",

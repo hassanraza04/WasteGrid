@@ -7,6 +7,7 @@ from datetime import timedelta, timezone
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import ValidationError
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -59,8 +60,13 @@ def fresh_location(crew, settings, at):
             raise HTTPException(409, f"Crew {crew.id} location is stale or invalid")
 
 
-def snapshot(db, crew_ids, settings, at):
+def snapshot(db, crew_ids, settings, at, job_ids=None):
     crew_ids = sorted(str(c) for c in crew_ids)
+    job_ids = sorted(str(j) for j in job_ids) if job_ids is not None else None
+    if job_ids is not None and (
+        not 1 <= len(job_ids) <= 25 or len(set(job_ids)) != len(job_ids)
+    ):
+        raise HTTPException(422, "Select between 1 and 25 distinct jobs")
     crews = {
         str(c.id): c
         for c in db.scalars(
@@ -73,19 +79,45 @@ def snapshot(db, crew_ids, settings, at):
         if not crew.available:
             raise HTTPException(409, f"Crew {crew.id} is not available")
         fresh_location(crew, settings, at)
-    candidates = list(
-        db.scalars(
-            select(Job)
+    candidate_query = select(Job)
+    if job_ids is None:
+        candidate_query = candidate_query.where(
+            Job.status != "completed",
+            or_(
+                Job.assigned_crew_id.is_(None),
+                Job.assigned_crew_id.in_([UUID(c) for c in crew_ids]),
+            ),
+        )
+    else:
+        candidate_query = candidate_query.where(Job.id.in_([UUID(j) for j in job_ids]))
+    candidates = list(db.scalars(candidate_query.order_by(Job.id)))
+    if job_ids is not None:
+        if {str(j.id) for j in candidates} != set(job_ids):
+            raise HTTPException(404, "Selected job does not exist")
+        if any(
+            j.status == "completed"
+            or (
+                j.assigned_crew_id is not None
+                and str(j.assigned_crew_id) not in crew_ids
+            )
+            for j in candidates
+        ):
+            raise HTTPException(
+                409, "Selected job is completed or assigned to another crew"
+            )
+        outside_assignment = db.scalar(
+            select(Job.id)
             .where(
                 Job.status != "completed",
-                or_(
-                    Job.assigned_crew_id.is_(None),
-                    Job.assigned_crew_id.in_([UUID(c) for c in crew_ids]),
-                ),
+                Job.assigned_crew_id.in_([UUID(c) for c in crew_ids]),
+                Job.id.not_in([UUID(j) for j in job_ids]),
             )
-            .order_by(Job.id)
+            .limit(1)
         )
-    )
+        if outside_assignment is not None:
+            raise HTTPException(
+                409, "Selected crew has unfinished work outside the selected jobs"
+            )
     reports_by_job, approvals = defaultdict(list), defaultdict(list)
     reports = (
         list(
@@ -166,6 +198,10 @@ def snapshot(db, crew_ids, settings, at):
                 }
             )
         if reason:
+            if job_ids is not None:
+                raise HTTPException(
+                    409, f"Selected job {job.id} is ineligible: {reason}"
+                )
             exclusions.append(dict(job_id=str(job.id), reason=reason))
             continue
         service, source = settings.routing_service_minutes, "fixed_collection_time"
@@ -243,28 +279,28 @@ def snapshot(db, crew_ids, settings, at):
         )
         for cid in crew_ids
     }
+    revision_data = dict(
+        jobs=business,
+        crews=[(cid, crews[cid].version, crews[cid].available) for cid in crew_ids],
+    )
+    if job_ids is not None:
+        revision_data["job_ids"] = job_ids
     return dict(
         crews=crew_ids,
+        job_ids=job_ids,
         jobs=jobs,
         prefixes=prefixes,
         exclusions=exclusions,
         node_ids=[f"crew:{cid}" for cid in crew_ids] + [f"job:{j['id']}" for j in jobs],
         locations=locations,
         settings=frozen,
-        revision=digest(
-            dict(
-                jobs=business,
-                crews=[
-                    (cid, crews[cid].version, crews[cid].available) for cid in crew_ids
-                ],
-            )
-        ),
+        revision=digest(revision_data),
     )
 
 
-def compute_preview(db, crew_ids, settings, road_times, actor):
+def compute_preview(db, crew_ids, settings, road_times, actor, job_ids=None):
     at = now()
-    snap = snapshot(db, crew_ids, settings, at)
+    snap = snapshot(db, crew_ids, settings, at, job_ids=job_ids)
     locations = [snap["locations"][cid]["location"] for cid in snap["crews"]] + [
         j["location"] for j in snap["jobs"]
     ]
@@ -324,6 +360,7 @@ def compute_preview(db, crew_ids, settings, road_times, actor):
     preview = RoutingPreview(id=uuid4(), payload={})
     view = RoutePreviewView(
         id=preview.id,
+        job_ids=snap["job_ids"],
         computed_at=at,
         expires_at=at + timedelta(seconds=settings.routing_preview_max_age_seconds),
         matrix_id=matrix_id,
@@ -354,11 +391,27 @@ def dispatch_preview(db, preview, command_id, actor, settings):
     ):
         raise HTTPException(409, "Dispatch command already used for another preview")
     data, at = preview.payload, now()
-    view = RoutePreviewView.model_validate(data["view"])
+    try:
+        view = RoutePreviewView.model_validate(data["view"])
+    except (ValidationError, KeyError, TypeError):
+        raise HTTPException(409, "Preview route data is invalid") from None
     if not view.dispatchable or utc(view.expires_at) < at:
         raise HTTPException(409, "Preview is incomplete or expired; recompute required")
     old = data["snapshot"]
-    current = snapshot(db, old["crews"], settings, at)
+    frozen_job_ids = old.get("job_ids")
+    visible_job_ids = (
+        [str(j) for j in view.job_ids] if view.job_ids is not None else None
+    )
+    if visible_job_ids != frozen_job_ids:
+        raise HTTPException(409, "Preview job scope is invalid")
+    try:
+        current = snapshot(db, old["crews"], settings, at, job_ids=frozen_job_ids)
+    except HTTPException as error:
+        if frozen_job_ids is not None and error.status_code in (404, 422):
+            raise HTTPException(
+                409, "Preview job scope changed; recompute required"
+            ) from None
+        raise
     if current["revision"] != old["revision"] or current["settings"] != old["settings"]:
         raise HTTPException(
             409, "Planning business state or settings changed; recompute required"
@@ -409,6 +462,7 @@ def dispatch_preview(db, preview, command_id, actor, settings):
     db.flush()
     assignments, unassigned, execution_rules = [], [], {}
     selected = set(old["crews"])
+    explicit_scope = set(frozen_job_ids) if frozen_job_ids is not None else None
     excluded = {str(i.job_id): i.reason for i in view.exclusions}
     for job in unfinished:
         jid = str(job.id)
@@ -476,12 +530,16 @@ def dispatch_preview(db, preview, command_id, actor, settings):
             )
         else:
             reason = (
-                "held"
-                if job.held
+                "outside_scope"
+                if explicit_scope is not None and jid not in explicit_scope
                 else (
-                    job.status
-                    if job.status in ("blocked", "recheck_requested")
-                    else "hazard_review"
+                    "held"
+                    if job.held
+                    else (
+                        job.status
+                        if job.status in ("blocked", "recheck_requested")
+                        else "hazard_review"
+                    )
                 )
             )
             unassigned.append(dict(job_id=jid, reason_code=reason))
@@ -695,7 +753,12 @@ def routing_router(settings):
                 settings.routing_provider_timeout_seconds,
             )
         return compute_preview(
-            db, body.crew_ids, settings, provider, str(staff.user_id)
+            db,
+            body.crew_ids,
+            settings,
+            provider,
+            str(staff.user_id),
+            job_ids=body.job_ids,
         )
 
     @router.get("/routing/previews/{preview_id}", response_model=RoutePreviewView)
