@@ -3,7 +3,7 @@
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,3 +55,14 @@ class Settings(BaseSettings):
     routing_travel_weight: float = Field(
         default=0.25, gt=0, le=100, allow_inf_nan=False
     )
+
+    @model_validator(mode="after")
+    def validate_pilot_report_scope(self):
+        if self.messaging_pilot_enabled and (
+            len(self.messaging_pilot_report_ids) != 2
+            or len(set(self.messaging_pilot_report_ids)) != 2
+        ):
+            raise ValueError(
+                "An enabled messaging pilot requires two distinct report IDs"
+            )
+        return self

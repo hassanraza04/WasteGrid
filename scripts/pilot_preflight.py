@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
+from pydantic import ValidationError
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -23,7 +24,8 @@ from api.models import (
     Report,
     Task,
 )
-from api.pilot import enabled
+from api.pilot import enabled, matching_run, scope_matches
+from api.schemas import Location
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
 LIMITS = {"image_calls": 2, "followup_calls": 12, "send_attempts": 30}
@@ -44,6 +46,14 @@ def _safe_url(value):
         )
     except ValueError:
         return False
+
+
+def _valid_coordinates(location):
+    try:
+        Location.model_validate(location, strict=True)
+    except ValidationError:
+        return False
+    return True
 
 
 def _database(engine, settings):
@@ -93,15 +103,20 @@ def _database(engine, settings):
                     "illustrative": report.illustrative,
                     "assessment_status": report.assessment_status,
                     "has_photo_metadata": db.get(Photo, report.photo_id) is not None,
+                    "has_valid_coordinates": _valid_coordinates(report.location),
                     "has_job": report.job_id is not None,
                 }
                 for report in sorted(reports, key=lambda report: str(report.id))
             ]
-            result["reports_present"] = len(reports) == len(
-                settings.messaging_pilot_report_ids
-            ) and all(
-                not report["illustrative"] and report["has_photo_metadata"]
-                for report in result["reports"]
+            result["reports_present"] = (
+                len(reports) == len(set(settings.messaging_pilot_report_ids)) == 2
+                and len(settings.messaging_pilot_report_ids) == 2
+                and all(
+                    not report["illustrative"]
+                    and report["has_photo_metadata"]
+                    and report["has_valid_coordinates"]
+                    for report in result["reports"]
+                )
             )
             scope = (
                 Task.payload["report_id"]
@@ -125,13 +140,11 @@ def _database(engine, settings):
                 if settings.messaging_pilot_id
                 else None
             )
+            if run is None:
+                run = matching_run(db, settings)
             result["pilot_persisted"] = run is not None
             result["scope_matches"] = run is None or (
-                run.project_id == settings.photon_project_id
-                and run.sender_id == settings.photon_agent_sender_id
-                and run.report_ids
-                == sorted(str(value) for value in settings.messaging_pilot_report_ids)
-                and run.chat_ids == sorted(settings.messaging_pilot_chat_ids)
+                run.id == settings.messaging_pilot_id and scope_matches(run, settings)
             )
             result["usage"] = {
                 name: getattr(run, name) if run else 0 for name in LIMITS
@@ -156,7 +169,8 @@ def _database(engine, settings):
                         Conversation.id == MessagingOutgoing.conversation_id,
                     )
                     .where(
-                        MessagingThread.pilot_id == settings.messaging_pilot_id,
+                        MessagingThread.pilot_id
+                        == (run.id if run else settings.messaging_pilot_id),
                         MessagingThread.external_id.in_(
                             settings.messaging_pilot_chat_ids
                         ),

@@ -1,7 +1,9 @@
 """Disposable real PostgreSQL; fake only external Supabase Auth/Storage calls."""
 
 import os
+from datetime import timedelta
 from io import BytesIO
+from secrets import token_urlsafe
 from uuid import uuid4
 
 import psycopg
@@ -14,9 +16,10 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
+from api.auth import digest
 from api.config import Settings
 from api.main import create_app
-from api.models import Crew, StaffRole
+from api.models import Crew, LinkCode, StaffRole, now
 from scripts.migrate import migrate
 
 
@@ -208,16 +211,23 @@ INTERNAL = {"X-Integration-Key": "message-test-key"}
 
 
 def bind(client, created, external="chat-1"):
+    """Seed a preexisting legacy code; minting new codes requires the pilot."""
     rid = created["report"]["id"]
-    link = client.post(
-        f"/reports/{rid}/followup-link", headers=auth(created["access_token"])
-    )
-    assert link.status_code == 201, link.text
+    code = token_urlsafe(32)
+    with Session(client.app.state.engine) as db:
+        db.add(
+            LinkCode(
+                code_hash=digest(code),
+                report_id=rid,
+                expires_at=now() + timedelta(minutes=10),
+            )
+        )
+        db.commit()
     result = client.post(
         "/internal/conversations/bind",
         headers=INTERNAL,
         json={
-            "link_code": link.json()["link_code"],
+            "link_code": code,
             "channel": "imessage",
             "external_id": external,
             "opted_in": True,

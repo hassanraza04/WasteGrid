@@ -20,7 +20,7 @@ from api.models import (
     Task,
     now,
 )
-from api.pilot import allowed_link, enabled, ensure_run, queue_text
+from api.pilot import allowed_link, current_text, enabled, ensure_run, queue_text
 from api.schemas import Clarification, Location, Recheck
 from api.services import apply_clarification, apply_recheck
 
@@ -88,31 +88,12 @@ def _context(db, inbound, report):
     }
 
 
-def _status(report, job):
-    state = job.status if job else report.state
-    messages = {
-        "received": "Your report has been received.",
-        "needs_info": "More information is needed about your report.",
-        "needs_review": "Your report needs organizer review.",
-        "linked_to_job": "Your report is linked to a cleanup job.",
-        "unassigned": "The cleanup job is awaiting assignment.",
-        "assigned": "A crew has been assigned to the cleanup.",
-        "in_progress": "Cleanup is in progress.",
-        "blocked": "Cleanup is blocked and needs attention.",
-        "completed": "The crew reported cleanup complete.",
-        "recheck_requested": "A recheck of the cleanup was requested.",
-    }
-    if report.needs_review or report.organizer_review_required:
-        return "Your report needs organizer review."
-    return messages.get(state, "Your report is being reviewed.")
-
-
 def _apply(db, settings, inbound, report, saved):
     intent = validate_intent(inbound.body, saved["intent"])
     job = db.get(Job, report.job_id) if report.job_id else None
     prefix = f"{report.public_reference}: "
     if intent.kind == "status":
-        return prefix + _status(report, job)
+        return current_text(db, report)
     if intent.kind == "help":
         return prefix + (
             "Ask for report status, send additional information or explicit GPS "

@@ -11,9 +11,11 @@ No new subscription, hosting plan, credits purchase or paid map service is neede
 
 Migration 0012 supplies organiser routing; 0013 supplies persistent pilot counters,
 transport threads, report-specific conversation links and the durable inbox/outbox.
-0013 backfills existing links without changing their UUIDs or transcripts. Legacy
-single-report endpoints remain available for non-enrolled conversations; ambiguous
-legacy resolution returns 409. Enrolled mutations must enter the new inbox.
+0013 backfills existing links without changing their UUIDs or transcripts. Migration
+0014 prevents the same approved scope from acquiring a second budget under a new
+pilot ID. Legacy single-report endpoints remain available for non-enrolled
+conversations; ambiguous legacy resolution returns 409. Enrolled mutations must
+enter the new inbox.
 
 New reports require photo bytes and valid coordinates from GPS or a confirmed map
 pin. An address is supplementary context. An identical retry of an already accepted
@@ -97,9 +99,19 @@ PHOTON_DELIVERY_DB_PATH=.data/photon-pilot.db
 Use the existing server/provider keys; never copy backend secrets into Expo or web.
 The API `MESSAGING_API_KEY` and local poller's `WASTEGRID_MESSAGING_API_KEY` must match.
 The pilot ID is stable across restarts, as are its report/chat/project/sender scope.
+An enabled pilot requires exactly two distinct report UUIDs. Both persisted reports
+must be real, have photo metadata, and contain finite latitude/longitude coordinates
+within −90…90 and −180…180 before preflight reports readiness. Link-code issuance
+during the pilot accepts only reports in this configured scope and fails closed
+when pilot configuration is incomplete.
 PostgreSQL caps remain at **2 image calls, 12 interpretation calls, 30 outbound
-submission attempts**. A scope mismatch fails closed. A new ID starts a new run;
-it is not a way to reset this approved canary's counters.
+submission attempts**. A scope mismatch fails closed. The database permits one
+budget per canonical project/sender/report/chat scope. Changing only the pilot ID
+is rejected, and preflight continues to show the existing usage rather than a new
+zero budget. Preserve the original pilot ID and counters across restarts.
+If migration 0014 detects duplicate historical scopes, stop activation and
+reconcile their history and combined usage under review; never discard usage or
+zero counters to make migration pass.
 
 1. Review and merge the implementation, then apply checked-in migrations with
    `uv run --env-file .env --extra backend python -m scripts.migrate`. Preserve the
@@ -113,7 +125,8 @@ it is not a way to reset this approved canary's counters.
    fixed pilot configuration on API and local worker. Exclude illustrative reports.
 4. Change the flag to true on API and local processes. Run the read-only preflight:
    `uv run --env-file .env --extra backend python -m scripts.pilot_preflight --api-url https://wastegrid-api-dev.onrender.com --expected-revision REVIEWED_40_HEX_COMMIT`.
-   Stop if revision, migrations, scope or routing flags do not match.
+   Stop if revision, migrations, scope, either report's coordinates, or routing
+   flags do not match.
 5. Start exactly one worker and one poller in separate terminals:
 
    ```sh

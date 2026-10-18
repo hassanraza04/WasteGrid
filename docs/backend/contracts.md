@@ -48,7 +48,7 @@ ID merely to bypass a conflict.
 | `GET /organizer/reports` | Organizer | Paginated `OrganizerReportView` array (`limit` 1–100, `offset`) |
 | `GET /organizer/reports/{id}` | Organizer | `OrganizerReportView` plus audit details/decisions |
 | `POST /organizer/reports/{id}/decision` | Organizer | `TriageRecommendation` input; audited override returns `OrganizerReportView` |
-| `POST /reports/{id}/followup-link` | Resident token | Ten-minute one-time code; Person 4 builds the actual channel link |
+| `POST /reports/{id}/followup-link` | Resident token | Ten-minute one-time iMessage code for an enabled, fully configured pilot and allowlisted report; otherwise 503/403; persisted scope conflicts return 409 |
 | `GET /photos/{id}/access` | Authorized report/job reader | Signed private URL, expires in 300 seconds |
 | `GET /jobs` | Staff | Organizer jobs or own crew's jobs, ordered by crew/stop position; MVP cap 100 |
 | `GET /jobs/{id}` | Organizer/assigned crew | Job, photo IDs, audit events including completion/recheck reasons |

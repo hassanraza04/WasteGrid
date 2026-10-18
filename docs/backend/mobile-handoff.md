@@ -461,7 +461,10 @@ do not assume they are already available on `main`.
 See [pilot contracts and activation](photon-chalk-pilot.md). Report details expose
 opt-in only when the report is in the configured pilot. `POST /reports/{id}/followup-link`
 requires that report's bearer token and returns a ten-minute `link_code`,
-`expires_at`, `recipient`, and `channel: imessage`. Explain consent before the
+`expires_at`, `recipient`, and `channel: imessage`. Creation returns `503` while
+the pilot is disabled or incompletely configured, `403` for an out-of-scope report,
+and `409` for a persisted scope conflict. No code is issued in those cases.
+Explain consent before the
 resident sends `LINK <code>` to the verified recipient. A composed message does
 not establish a link. Poll `GET /reports/{id}/messaging-links` for backend-confirmed
 active/paused links; its response never exposes transport identities. Unlink with

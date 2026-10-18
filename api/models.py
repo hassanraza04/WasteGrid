@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     JSON,
     Boolean,
+    Computed,
     DateTime,
     Float,
     ForeignKey,
@@ -13,9 +14,11 @@ from sqlalchemy import (
     MetaData,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -251,11 +254,19 @@ class Task(Base):
 
 class MessagingPilot(Base):
     __tablename__ = "messaging_pilots"
+    __table_args__ = (UniqueConstraint("scope_key", name="messaging_pilots_scope_key"),)
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
     project_id: Mapped[str] = mapped_column(String(200))
     sender_id: Mapped[str] = mapped_column(String(200))
     report_ids: Mapped[list] = mapped_column(JSON, default=list)
     chat_ids: Mapped[list] = mapped_column(JSON, default=list)
+    scope_key: Mapped[list] = mapped_column(
+        JSONB,
+        Computed(
+            "wastegrid.messaging_pilot_scope(project_id, sender_id, report_ids, chat_ids)",
+            persisted=True,
+        ),
+    )
     image_calls: Mapped[int] = mapped_column(Integer, default=0)
     followup_calls: Mapped[int] = mapped_column(Integer, default=0)
     send_attempts: Mapped[int] = mapped_column(Integer, default=0)

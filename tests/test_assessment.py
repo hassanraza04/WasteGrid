@@ -9,7 +9,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import DefaultClause, MetaData, create_engine, select, text
+from sqlalchemy import JSON, DefaultClause, MetaData, create_engine, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -168,6 +168,11 @@ def assessment_db(monkeypatch):
     metadata.tables["wastegrid.reports"].c.public_reference.server_default = (
         DefaultClause(text("('WG-' || upper(hex(randomblob(6))))"))
     )
+    # Scope generation/uniqueness is exercised against PostgreSQL in backend tests.
+    # These legacy assessment/routing unit tests never create pilot budget rows.
+    scope_key = metadata.tables["wastegrid.messaging_pilots"].c.scope_key
+    scope_key.type = JSON()
+    scope_key.computed = scope_key.server_default = None
     metadata.create_all(engine)
     monkeypatch.setattr("api.worker.mutation_lock", lambda db: None)
     monkeypatch.setattr("api.db.mutation_lock", lambda db: None)

@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.auth import authorization_header, digest, messaging_access, require_resident
@@ -48,7 +49,8 @@ def enabled(settings):
     return bool(
         settings.messaging_pilot_enabled
         and settings.messaging_pilot_id
-        and settings.messaging_pilot_report_ids
+        and len(settings.messaging_pilot_report_ids) == 2
+        and len(set(settings.messaging_pilot_report_ids)) == 2
         and settings.messaging_pilot_chat_ids
         and settings.photon_project_id
         and settings.photon_agent_sender_id
@@ -57,30 +59,62 @@ def enabled(settings):
     )
 
 
+def configured_scope(settings):
+    """Match the database key: allowlist order and duplicates do not define scope."""
+    return [
+        settings.photon_project_id,
+        settings.photon_agent_sender_id,
+        sorted({str(value) for value in settings.messaging_pilot_report_ids}),
+        sorted(set(settings.messaging_pilot_chat_ids)),
+    ]
+
+
+def scope_matches(run, settings):
+    return bool(run and run.scope_key == configured_scope(settings))
+
+
+def matching_run(db, settings):
+    """Read the scope's durable budget even if configuration names a different UUID."""
+    return db.scalar(
+        select(MessagingPilot).where(
+            MessagingPilot.scope_key == configured_scope(settings)
+        )
+    )
+
+
 def ensure_run(db, settings):
-    """Freeze the scope and counters under the ordinary database mutation lock."""
+    """Freeze one lifetime budget per scope under the database mutation lock."""
     if not enabled(settings):
         raise HTTPException(503, "The supervised messaging pilot is not configured")
-    reports = sorted(str(x) for x in settings.messaging_pilot_report_ids)
-    chats = sorted(settings.messaging_pilot_chat_ids)
     run = db.get(MessagingPilot, settings.messaging_pilot_id)
-    if run is None:
-        run = MessagingPilot(
-            id=settings.messaging_pilot_id,
-            project_id=settings.photon_project_id,
-            sender_id=settings.photon_agent_sender_id,
-            report_ids=reports,
-            chat_ids=chats,
-        )
-        db.add(run)
-        db.flush()
-    elif (
-        run.project_id != settings.photon_project_id
-        or run.sender_id != settings.photon_agent_sender_id
-        or run.report_ids != reports
-        or run.chat_ids != chats
-    ):
-        raise HTTPException(409, "The persisted pilot scope differs from configuration")
+    if run is not None:
+        if not scope_matches(run, settings):
+            raise HTTPException(
+                409, "The persisted pilot scope differs from configuration"
+            )
+        return run
+    if matching_run(db, settings) is not None:
+        raise HTTPException(409, "The persisted pilot scope uses a different pilot ID")
+    _, _, reports, chats = configured_scope(settings)
+    run = MessagingPilot(
+        id=settings.messaging_pilot_id,
+        project_id=settings.photon_project_id,
+        sender_id=settings.photon_agent_sender_id,
+        report_ids=reports,
+        chat_ids=chats,
+    )
+    try:
+        with db.begin_nested():
+            db.add(run)
+            db.flush()
+    except IntegrityError as error:
+        # The unique scope constraint also protects callers without the MVP lock.
+        if getattr(getattr(error.orig, "diag", None), "constraint_name", None) in (
+            "messaging_pilots_scope_key",
+            "messaging_pilots_pkey",
+        ):
+            raise HTTPException(409, "The pilot scope was already persisted") from error
+        raise
     return run
 
 
@@ -708,7 +742,10 @@ def link_status(
     available = allowed_report(settings, report)
     links = []
     for link in db.scalars(
-        select(Conversation).where(Conversation.report_id == report.id)
+        select(Conversation).where(
+            Conversation.report_id == report.id,
+            Conversation.channel == "imessage",
+        )
     ):
         thread = db.get(MessagingThread, link.thread_id) if link.thread_id else None
         if thread:

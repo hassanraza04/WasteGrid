@@ -59,7 +59,7 @@ from api.models import (
     Task,
     now,
 )
-from api.pilot import allowed_report
+from api.pilot import allowed_report, enabled, ensure_run
 from api.pilot import router as pilot_router
 from api.routing import routing_router
 from api.schemas import (
@@ -508,10 +508,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ):
         report = find_report(db, report_id)
         require_resident(report, authorization)
-        if settings.messaging_pilot_enabled and not allowed_report(settings, report):
+        if not enabled(settings):
+            raise HTTPException(503, "The supervised messaging pilot is not configured")
+        if not allowed_report(settings, report):
             raise HTTPException(
                 403, "This report is outside the supervised messaging pilot"
             )
+        ensure_run(db, settings)
         code = token_urlsafe(32)
         expires = now() + timedelta(minutes=10)
         db.add(
