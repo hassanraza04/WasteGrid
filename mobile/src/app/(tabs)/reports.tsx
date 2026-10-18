@@ -104,7 +104,7 @@ export default function Reports() {
     {visible?.drafts.map(draft => <Card key={draft.id} style={s.card}>
       <AppText variant="headline">{draft.fields.title}</AppText>
       <AppText selectable>{visible.reports[draft.id]?.public_reference ?? draft.reference ?? "Saved on device — upload not confirmed"}</AppText>
-      {visible.reports[draft.id] && <AppText>Status: {visible.reports[draft.id].display_status} · Assessment: {visible.reports[draft.id].assessment_status}</AppText>}
+      {visible.reports[draft.id] && <AppText>Status: {visible.reports[draft.id].display_status}</AppText>}
       {visible.reports[draft.id] && <ReportDetails draft={draft} report={visible.reports[draft.id]} />}
       {draft.rejection && <AppText accessibilityRole="alert">{draft.rejection}</AppText>}
       <Button disabled={busy} label={draft.reference || draft.rejection ? "Check status" : "Retry saved upload"} variant="outline" onPress={() => void run(() => draft.reference || draft.rejection ? refreshReport(draft) : sendDraft(draft))} />

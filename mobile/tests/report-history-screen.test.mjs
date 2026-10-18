@@ -43,6 +43,7 @@ test('history focus refreshes accepted statuses and cleanup evidence without ret
   await app.view.render();
   assert.deepEqual(app.reads, ['accepted']);
   assert.match(app.view.container.textContent, /Status: completed/);
+  assert.doesNotMatch(app.view.container.textContent, /Assessment|assessed/);
   assert.match(app.view.container.textContent, /Evidence: cleanup-accepted/);
   assert.match(app.view.container.textContent, /Saved on device — upload not confirmed/);
   assert.deepEqual(app.uploads, []); assert.deepEqual(app.mutations, []);
