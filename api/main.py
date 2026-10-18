@@ -63,6 +63,7 @@ from api.models import (
 )
 from api.organizer import organizer_router, report_processing
 from api.organizer_schemas import OrganizerReportDetailsView
+from api.phone_updates import router as phone_updates_router
 from api.pilot import allowed_report, enabled, ensure_run
 from api.pilot import router as pilot_router
 from api.routing import routing_router
@@ -231,6 +232,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(routing_router(settings))
     app.include_router(organizer_router(settings))
     app.include_router(pilot_router)
+    app.include_router(phone_updates_router)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

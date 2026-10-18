@@ -6,6 +6,7 @@ import { Platform } from "react-native";
 import { createFollowupLink, discardRejectedDraft, readMessagingLinks, readReportMessages, unlinkMessaging, readReportUpdates, readPhotoAccess, readReport, residentToken, sendSavedDraft, type ReportDraft, type Transport } from "./report-client";
 
 import { getSession } from "@/auth/session";
+import { isDefinitePhoneRejection, readPhoneUpdates, requestPhoneUpdate, statusCommand, type PhoneUpdateReceipt } from "./phone-updates-client";
 
 const request: Transport = (url, init) => fetch(url, init);
 function directory() {
@@ -174,3 +175,67 @@ export async function followupLink(draft: ReportDraft) { return createFollowupLi
 export async function messagingLinks(draft: ReportDraft) { return readMessagingLinks(draft, await credential(draft), request); }
 export async function unlinkReportMessaging(draft: ReportDraft, linkId: string) { return unlinkMessaging(draft, await credential(draft), linkId, request); }
 export async function reportMessages(draft: ReportDraft, offset = 0) { return readReportMessages(draft, await credential(draft), offset, request); }
+
+// Keep an uncertain request identity across app restarts. Loading a report never resends it.
+const phoneKey = (id: string) => `wastegrid.phone-update.${id}`;
+type PendingPhoneUpdate = { command_id: string; ownerId: string; apiUrl: string };
+function phoneOwner(draft: ReportDraft, owner: string | undefined): asserts owner is string {
+  if (!owner || draft.ownerId !== owner || getSession()?.userId !== owner) throw new Error("Sign in to the account that saved this report.");
+}
+async function pendingPhoneUpdate(draft: ReportDraft, owner: string): Promise<PendingPhoneUpdate | null> {
+  const saved = await SecureStore.getItemAsync(phoneKey(draft.id));
+  phoneOwner(draft, owner);
+  if (!saved) return null;
+  let value: PendingPhoneUpdate;
+  try { value = JSON.parse(saved); } catch { throw new Error("The saved phone request is unreadable. Keep tracking this report here."); }
+  if (!value || typeof value.command_id !== "string" || value.ownerId !== owner || value.apiUrl !== draft.apiUrl) {
+    throw new Error("The saved phone request is unavailable for this account.");
+  }
+  return value;
+}
+export async function phoneUpdates(draft: ReportDraft) {
+  const owner = getSession()?.userId;
+  phoneOwner(draft, owner);
+  return serialize(draft.id, async () => {
+    const token = await credential(draft);
+    const pending = await pendingPhoneUpdate(draft, owner);
+    const value = await readPhoneUpdates(draft, token, request);
+    phoneOwner(draft, owner);
+    const acknowledged = pending && value.latest_request?.id === pending.command_id;
+    if (acknowledged) await SecureStore.deleteItemAsync(phoneKey(draft.id));
+    phoneOwner(draft, owner);
+    return { ...value, pending: !!pending && !acknowledged };
+  });
+}
+const sendingPhone = new Map<string, Promise<PhoneUpdateReceipt>>();
+export function sendPhoneUpdate(draft: ReportDraft, message: string): Promise<PhoneUpdateReceipt> {
+  const owner = getSession()?.userId;
+  try { phoneOwner(draft, owner); statusCommand(message); } catch (error) { return Promise.reject(error); }
+  const key = `${owner}:${draft.id}`;
+  const existing = sendingPhone.get(key);
+  if (existing) return existing;
+  const operation = serialize(draft.id, async () => {
+    phoneOwner(draft, owner);
+    const token = await credential(draft);
+    const previous = await pendingPhoneUpdate(draft, owner);
+    const command = previous ?? { command_id: Crypto.randomUUID(), ownerId: owner, apiUrl: draft.apiUrl };
+    if (!previous) await SecureStore.setItemAsync(phoneKey(draft.id), JSON.stringify(command), { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+    phoneOwner(draft, owner);
+    try {
+      const result = await requestPhoneUpdate(draft, token, command.command_id, message, request);
+      phoneOwner(draft, owner);
+      await SecureStore.deleteItemAsync(phoneKey(draft.id));
+      phoneOwner(draft, owner);
+      return result;
+    } catch (error) {
+      // Definite rejection did not queue a send; unknown outcomes retain their identity.
+      if (isDefinitePhoneRejection(error)) {
+        phoneOwner(draft, owner);
+        await SecureStore.deleteItemAsync(phoneKey(draft.id));
+      }
+      throw error;
+    }
+  }).finally(() => { sendingPhone.delete(key); });
+  sendingPhone.set(key, operation);
+  return operation;
+}

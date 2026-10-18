@@ -293,6 +293,22 @@ def fixtures():
             lease_id=UUID("90000000-0000-4000-8000-000000000001"),
             leased_until=instant,
         ),
+        "phone-update-command": P.PhoneUpdateCommand(
+            command_id=UUID("90000000-0000-4000-8000-000000000002"),
+            message="Status",
+            consent=True,
+        ),
+        "phone-update-receipt": P.PhoneUpdateReceipt(
+            id=UUID("90000000-0000-4000-8000-000000000002"),
+            status="queued",
+            message="WG-A1B2C3D4E5F6: Your report has been received.",
+            created_at=instant,
+        ),
+        "phone-updates": P.PhoneUpdates(
+            enabled=True,
+            phone_label="Registered phone ending 1234",
+            latest_request=None,
+        ),
         "pilot-inbound": P.PilotInboundEnvelope(
             project_id="example-project",
             agent_sender_id="example-bot",
@@ -429,6 +445,8 @@ def artifacts():
         "DemoProcessingStatus",
     ):
         result[f"schemas/{name}.json"] = getattr(O, name).model_json_schema()
+    for name in ("PhoneUpdateCommand", "PhoneUpdateReceipt", "PhoneUpdates"):
+        result[f"schemas/{name}.json"] = getattr(P, name).model_json_schema()
     result["schemas/FollowupIntent.json"] = FollowupIntent.model_json_schema()
     result.update(
         {

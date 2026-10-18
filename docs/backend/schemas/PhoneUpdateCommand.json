@@ -1,0 +1,27 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "command_id": {
+      "format": "uuid",
+      "title": "Command Id",
+      "type": "string"
+    },
+    "consent": {
+      "title": "Consent",
+      "type": "boolean"
+    },
+    "message": {
+      "maxLength": 100,
+      "minLength": 1,
+      "title": "Message",
+      "type": "string"
+    }
+  },
+  "required": [
+    "command_id",
+    "message",
+    "consent"
+  ],
+  "title": "PhoneUpdateCommand",
+  "type": "object"
+}

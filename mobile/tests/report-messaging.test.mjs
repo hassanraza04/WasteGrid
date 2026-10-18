@@ -1,79 +1,152 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import React from 'react';
+import * as client from '../src/services/phone-updates-client.ts';
 import { act, button, deferred, load, mount, native, theme, ui } from './helpers/render.mjs';
 const draft = { id: 'report-a', ownerId: 'owner-a' };
-const initial = { enabled: true, recipient: 'pilot@example.test', links: [] };
+const initial = { enabled: true, phone_label: 'Registered phone ending 1234', latest_request: null, pending: false };
+const receipt = status => ({ id: '00000000-0000-4000-8000-000000000001', status, message: 'Cleanup is in progress.', created_at: '2026-10-18T00:00:00Z' });
 function setup(overrides = {}) {
- let owner = 'owner-a', listener, status = initial;
- const opened = [];
- const services = {
-  messagingLinks: async () => status,
-  followupLink: async () => ({ link_code: 'secret_code', expires_at: new Date(Date.now() + 600000).toISOString(), recipient: 'pilot@example.test', channel: 'imessage' }),
-  reportMessages: async () => ({ items: [], offset: 0, limit: 50, total: 0 }),
-  unlinkReportMessaging: async () => { status = initial; }, ...overrides,
- };
+ let owner = 'owner-a', listener, state = initial, field;
+ const sent = [], reads = [];
  const { ReportMessaging } = load('components/reports/report-messaging.tsx', {
-  'react-native': { ...native, Platform: { OS: 'ios' }, AppState: { addEventListener: (_event, fn) => { listener = fn; return { remove() { listener = undefined; } }; } } },
-  'expo-linking': { openURL: async url => { opened.push(url); } },
-  '@/components/ui': ui, '@/theme': theme, '@/services/reports': services,
+  'react-native': { ...native, AppState: { addEventListener: (_event, callback) => { listener = callback; return { remove() { listener = undefined; } }; } } },
+  '@/components/ui': { ...ui, TextField: props => { field = props; return React.createElement('input', { placeholder: props.placeholder, value: props.value, disabled: !props.editable, onChange: () => {} }); } },
+  '@/theme': theme, '@/services/phone-updates-client': client,
+  '@/services/reports': {
+   phoneUpdates: async value => { reads.push(value.id); return overrides.phoneUpdates ? overrides.phoneUpdates(value) : state; },
+   sendPhoneUpdate: async (...args) => { sent.push(args); return overrides.sendPhoneUpdate ? overrides.sendPhoneUpdate(...args) : receipt('queued'); },
+  },
   '@/auth/session': { useSession: () => owner ? { userId: owner } : null, getSession: () => owner ? { userId: owner } : null },
  });
- return { ReportMessaging, opened, owner: value => { owner = value; }, status: value => { status = value; }, foreground: () => listener?.('active') };
+ return { ReportMessaging, sent, reads, field: () => field, type: value => act(() => field.onChangeText(value)), owner: value => { owner = value; }, state: value => { state = value; }, foreground: () => listener?.('active') };
 }
-test('requesting or opening a link never claims success before backend binding; refresh and unlink reflect committed status', async () => {
- const app = setup(); const view = mount(app.ReportMessaging, { draft });
+test('Phone updates starts empty, shows the registered phone, and sends normalized Status only on a user action', async () => {
+ const app = setup(), view = mount(app.ReportMessaging, { draft });
  try {
   await view.render();
-  await act(async () => button(view.container, 'Get iMessage updates').click());
-  assert.match(view.container.textContent, /LINK secret_code/);
-  assert.match(view.container.textContent, /not linked/);
-  await act(async () => button(view.container, 'Open Messages').click());
-  assert.match(app.opened[0], /^sms:pilot%40example.test&body=LINK%20secret_code$/);
-  assert.match(view.container.textContent, /not linked/);
-  app.status({ ...initial, links: [{ id: 'linked', channel: 'imessage', active: true, paused: true }] });
+  assert.match(view.container.textContent, /Registered phone ending 1234/);
+  assert.equal(app.field().value, ''); assert.equal(app.field().placeholder, 'Type Status');
+  assert.equal(button(view.container, 'Send to phone').disabled, true);
+  assert.match(view.container.textContent, /Tapping Send to phone sends this report/);
+  assert.doesNotMatch(view.container.textContent, /iMessage|LINK|QR|Open Messages|Report conversation/);
+  assert.deepEqual(app.sent, []);
+  await app.type('  sTaTuS '); await act(async () => button(view.container, 'Send to phone').click());
+  assert.deepEqual(app.sent, [[draft, 'Status']]);
+  assert.match(view.container.textContent, /Update queued/);
+  assert.doesNotMatch(view.container.textContent, /Update delivered/);
+  assert.equal(app.field().value, '');
+ } finally { await view.close(); }
+});
+test('unsupported messages show clear guidance and never send', async () => {
+ const app = setup(), view = mount(app.ReportMessaging, { draft });
+ try {
+  await view.render(); await app.type('Where is the crew?');
+  await act(async () => button(view.container, 'Send to phone').click());
+  assert.match(view.container.textContent, /Type "Status"/);
+  assert.deepEqual(app.sent, []);
+ } finally { await view.close(); }
+});
+test('double taps send once and foreground refresh checks delivery without sending again', async () => {
+ const pending = deferred(); const app = setup({ sendPhoneUpdate: () => pending.promise });
+ const view = mount(app.ReportMessaging, { draft });
+ try {
+  await view.render(); await app.type('Status');
+  await act(() => { button(view.container, 'Send to phone').click(); button(view.container, 'Send to phone').click(); });
+  assert.equal(app.sent.length, 1);
+  await act(async () => pending.resolve(receipt('queued')));
+  app.state({ ...initial, latest_request: receipt('delivered') });
   await act(async () => app.foreground());
-  assert.match(view.container.textContent, /updates paused/);
-  assert.ok(!view.container.textContent.includes('secret_code'));
-  await act(async () => button(view.container, 'Unlink this report').click());
-  assert.match(view.container.textContent, /not linked/);
+  assert.match(view.container.textContent, /Update delivered to the registered phone/);
+  assert.equal(app.sent.length, 1); assert.equal(app.reads.length, 2);
  } finally { await view.close(); }
 });
-test('expired codes are hidden and cannot open Messages', async () => {
- const original = Date.now; let now = original(); Date.now = () => now;
- const app = setup(); const view = mount(app.ReportMessaging, { draft });
- try {
-  await view.render(); await act(async () => button(view.container, 'Get iMessage updates').click());
-  now += 600001; await act(async () => app.foreground());
-  assert.ok(!view.container.textContent.includes('secret_code'));
-  assert.equal(app.opened.length, 0);
- } finally { Date.now = original; await view.close(); }
+test('all receipt states are honest and submitted permits a new explicit status request without claiming delivery', async () => {
+ const expected = { queued: 'Update queued.', sending: 'Submitting update', submitted: 'Delivery has not been confirmed', delivered: 'Update delivered', failed: 'could not be sent', uncertain: 'Delivery is uncertain', cancelled: 'cancelled' };
+ for (const [status, text] of Object.entries(expected)) {
+  const app = setup({ phoneUpdates: async () => ({ ...initial, latest_request: receipt(status) }) });
+  const view = mount(app.ReportMessaging, { draft });
+  try {
+   await view.render(); assert.ok(view.container.textContent.includes(text));
+   if (status !== 'delivered') assert.doesNotMatch(view.container.textContent, /Update delivered/);
+   await app.type('Status');
+   assert.equal(button(view.container, 'Send to phone').disabled, ['queued', 'sending', 'uncertain'].includes(status));
+   assert.deepEqual(app.sent, []);
+  } finally { await view.close(); }
+ }
 });
-test('status failure remains retryable and never invents an active link', async () => {
+test('an unknown request stays saved and only an explicit retry sends the same operation', async () => {
+ let attempt = 0;
+ const app = setup({ sendPhoneUpdate: async () => { if (++attempt === 1) throw new client.PhoneUpdatesError('The request could not be confirmed.', 408); return receipt('submitted'); } });
+ const view = mount(app.ReportMessaging, { draft });
+ try {
+  await view.render(); await app.type('Status');
+  await act(async () => button(view.container, 'Send to phone').click());
+  assert.match(view.container.textContent, /last request is saved/);
+  assert.equal(app.sent.length, 1);
+  await act(async () => button(view.container, 'Retry request').click());
+  assert.deepEqual(app.sent, [[draft, 'Status'], [draft, 'Status']]);
+  assert.match(view.container.textContent, /Update submitted/);
+  assert.doesNotMatch(view.container.textContent, /last request is saved/);
+ } finally { await view.close(); }
+});
+test('reopening with a saved uncertain request never auto-sends and allows a same-request retry even when new sends are disabled', async () => {
+ const app = setup({ phoneUpdates: async () => ({ ...initial, enabled: false, pending: true }) });
+ const view = mount(app.ReportMessaging, { draft });
+ try {
+  await view.render(); assert.deepEqual(app.sent, []);
+  assert.equal(button(view.container, 'Retry request').disabled, false);
+  await act(async () => button(view.container, 'Retry request').click());
+  assert.equal(app.sent.length, 1);
+ } finally { await view.close(); }
+});
+test('disabled reports hide the empty feature while existing receipts remain visible', async () => {
+ const app = setup(); app.state({ ...initial, enabled: false, phone_label: null });
+ const view = mount(app.ReportMessaging, { draft });
+ try {
+  await view.render(); assert.equal(view.container.textContent, '');
+  app.state({ ...initial, enabled: false, latest_request: receipt('submitted') });
+  await act(async () => app.foreground());
+  assert.match(view.container.textContent, /Update submitted/);
+  assert.doesNotMatch(view.container.textContent, /Send to phone/);
+ } finally { await view.close(); }
+});
+test('refresh failure preserves an existing receipt and remains retryable', async () => {
  let calls = 0;
- const app = setup({ messagingLinks: async () => { if (++calls === 1) throw Error('offline'); return initial; } });
+ const app = setup({ phoneUpdates: async () => { if (++calls === 2) throw new client.PhoneUpdatesError('Unable to check phone updates.'); return { ...initial, latest_request: receipt('submitted') }; } });
  const view = mount(app.ReportMessaging, { draft });
  try {
-  await view.render(); assert.match(view.container.textContent, /temporarily unavailable/);
-  assert.equal(button(view.container, 'Get iMessage updates').disabled, true);
-  await act(async () => button(view.container, 'Refresh messaging status').click());
-  assert.match(view.container.textContent, /not linked/);
-  assert.equal(button(view.container, 'Get iMessage updates').disabled, false);
+  await view.render(); await act(async () => app.foreground());
+  assert.match(view.container.textContent, /Unable to check/);
+  assert.match(view.container.textContent, /Update submitted/);
+  await act(async () => button(view.container, 'Check delivery status').click());
+  assert.doesNotMatch(view.container.textContent, /Unable to check/); assert.deepEqual(app.sent, []);
  } finally { await view.close(); }
 });
-test('account changes and unmounts suppress private late conversations and link codes', async () => {
- const pending = deferred();
- const app = setup({ reportMessages: () => pending.promise });
+test('a 409 conflict refreshes the existing receipt instead of suggesting another send', async () => {
+ const app = setup({ sendPhoneUpdate: async () => { throw new client.PhoneUpdatesError('Check delivery status.', 409); } });
  const view = mount(app.ReportMessaging, { draft });
  try {
-  await view.render(); await act(() => button(view.container, 'Refresh conversation').click());
-  app.owner('owner-b'); await view.render();
-  await act(async () => pending.resolve({ items: [{ id: 'm1', direction: 'inbound', body: 'Private account A text', created_at: '2026-10-17' }], offset: 0, total: 1 }));
-  assert.equal(view.container.textContent, '');
+  await view.render(); app.state({ ...initial, latest_request: receipt('sending') });
+  await app.type('Status'); await act(async () => button(view.container, 'Send to phone').click());
+  assert.match(view.container.textContent, /Submitting update/); assert.equal(app.reads.length, 2);
+  assert.equal(button(view.container, 'Send to phone').disabled, true); assert.equal(app.sent.length, 1);
  } finally { await view.close(); }
- const code = deferred(); const second = setup({ followupLink: () => code.promise });
- const screen = mount(second.ReportMessaging, { draft });
- await screen.render(); await act(() => button(screen.container, 'Get iMessage updates').click());
- await screen.close();
- await act(async () => code.resolve({ link_code: 'late_secret', expires_at: new Date(Date.now() + 600000).toISOString(), recipient: 'pilot@example.test', channel: 'imessage' }));
- assert.equal(second.opened.length, 0);
+});
+test('account changes and unmounts hide late registered phone and receipt responses', async () => {
+ const pending = deferred(); const app = setup({ phoneUpdates: () => pending.promise });
+ const view = mount(app.ReportMessaging, { draft });
+ try {
+  await view.render(); app.owner('owner-b'); await view.render();
+  await act(async () => pending.resolve(initial)); assert.equal(view.container.textContent, '');
+ } finally { await view.close(); }
+ for (const change of ['account', 'unmount']) {
+  const result = deferred(); const second = setup({ sendPhoneUpdate: () => result.promise });
+  const screen = mount(second.ReportMessaging, { draft });
+  await screen.render(); await second.type('Status');
+  await act(() => button(screen.container, 'Send to phone').click());
+  if (change === 'unmount') await screen.close(); else { second.owner('owner-b'); await screen.render(); }
+  await act(async () => result.resolve(receipt('delivered')));
+  if (change === 'account') { assert.equal(screen.container.textContent, ''); await screen.close(); }
+ }
 });
