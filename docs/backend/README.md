@@ -12,6 +12,11 @@ Start with [setup.md](setup.md), then share [contracts.md](contracts.md).
 [example payloads](fixtures/) are generated from the Python models.
 [verification.md](verification.md) records what has actually been tested.
 
+Current organiser preview limits and partial approval are described in
+[routing-controls.md](routing-controls.md), with generated routing request, preview
+and dispatch examples under [fixtures/](fixtures/). The web dispatch workspace
+remains a separate workstream in issue #22.
+
 For the mobile app owner, share the standalone [mobile integration handoff](mobile-handoff.md).
 It covers resident tokens, uploads, tracking, optional staff authentication and the
 connection details still needed for device integration.

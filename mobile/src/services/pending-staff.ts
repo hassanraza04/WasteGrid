@@ -39,6 +39,7 @@ async function savedStaff(): Promise<StaffCommand[]> {
           typeof command.resource_id !== "string" || typeof command.ownerId !== "string" || typeof command.apiUrl !== "string" ||
           (command.recomputeRequired !== undefined && typeof command.recomputeRequired !== "boolean") ||
           (command.reconciled !== undefined && typeof command.reconciled !== "boolean") ||
+          (command.acceptPartial !== undefined && (command.kind !== "dispatch" || typeof command.acceptPartial !== "boolean")) ||
           (command.dispatchAttemptPending !== undefined && typeof command.dispatchAttemptPending !== "boolean") ||
           (command.kind !== "dispatch" && (!Number.isSafeInteger(command.expected_version) || command.expected_version! < 1)) ||
           (["start", "completion"].includes(command.kind) && typeof command.crewId !== "string") ||
@@ -78,7 +79,7 @@ function serial<T>(work: () => Promise<T>): Promise<T> {
   mutation = next;
   return next;
 }
-export function prepareStaff(kind: StaffCommand["kind"], resource: string | Job, photoUri?: string, reason?: string): Promise<StaffCommand> {
+export function prepareStaff(kind: StaffCommand["kind"], resource: string | Job, photoUri?: string, reason?: string, dispatchOptions?: { accept_partial: true }): Promise<StaffCommand> {
   const owner = getSession();
   return serial(async () => {
     if (!owner || getSession() !== owner) throw new Error("Your account changed. Try again.");
@@ -86,9 +87,13 @@ export function prepareStaff(kind: StaffCommand["kind"], resource: string | Job,
     const commands = await savedStaff();
     if (getSession() !== owner) throw new Error("Your account changed. Try again.");
     const existing = commands.find(command => command.kind === kind && command.resource_id === id);
-    if (existing) { requireFreshDispatch(existing); return existing; }
+    if (existing) {
+      requireFreshDispatch(existing);
+      if (kind === "dispatch" && !!existing.acceptPartial !== !!dispatchOptions?.accept_partial) throw new Error("This saved dispatch has different partial-route approval. Keep its original submission details.");
+      return existing;
+    }
     const command: StaffCommand = { command_id: Crypto.randomUUID(), kind, resource_id: id, ownerId: owner.userId,
-      crewId: owner.crewId, apiUrl: apiUrl(), ...(typeof resource !== "string" ? { expected_version: resource.version } : {}), ...(reason ? { reason } : {}) };
+      crewId: owner.crewId, apiUrl: apiUrl(), ...(typeof resource !== "string" ? { expected_version: resource.version } : {}), ...(reason ? { reason } : {}), ...(kind === "dispatch" && dispatchOptions?.accept_partial ? { acceptPartial: true } : {}) };
     authorised(command);
     if (kind === "completion" && photoUri !== undefined) {
       if (!photoUri.trim()) throw new Error("Choose a valid cleanup photo or complete without one.");

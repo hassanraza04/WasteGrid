@@ -187,8 +187,8 @@ def seed_routing(engine):
                 Crew(
                     id=cid,
                     name=f"Routing {index}",
-                    equipment=[],
-                    shift_minutes=1,
+                    equipment=["pickup_truck"],
+                    shift_minutes=240,
                     available=True,
                     start_location=dict(latitude=24.92, longitude=67.09),
                     location_recorded_at=now(),
@@ -258,7 +258,7 @@ def config():
     )
 
 
-def test_preview_dispatch_preserves_unselected_and_ignores_equipment_shift(
+def test_preview_dispatch_preserves_unselected_and_validates_equipment_shift(
     assessment_db, monkeypatch
 ):
     monkeypatch.setattr("api.routing.mutation_lock", lambda db: None)
@@ -274,7 +274,7 @@ def test_preview_dispatch_preserves_unselected_and_ignores_equipment_shift(
         assert db.get(Job, jobs[2]).version == 1
         assert db.get(Plan, result["plan_id"]).routing_mode == "organizer"
         assert len(db.get(Plan, result["plan_id"]).payload["assignments"]) == 3
-        # Equipment and one-minute legacy shifts do not block dispatched work.
+        # Resource-compatible dispatched work remains startable.
         ensure_can_start(db, db.get(Job, jobs[0]))
         repeat = dispatch_preview(db, saved, saved.dispatch_command_id, actor, settings)
         assert repeat == result and roads.calls == 1
@@ -650,6 +650,10 @@ def seed_valid_legacy_assignment(engine):
 
     ids, jobs = seed_routing(engine)
     with Session(engine) as db:
+        # This legacy fixture must have genuinely exhausted resources when the
+        # original plan justifies leaving the other jobs unassigned.
+        for cid in ids[:2]:
+            db.get(Crew, cid).shift_minutes = 1
         crew = db.get(Crew, ids[2])
         crew.equipment, crew.shift_minutes = ["pickup_truck"], 55
         report = db.scalar(select(Report).where(Report.job_id == jobs[2]))
@@ -691,6 +695,10 @@ def seed_valid_legacy_assignment(engine):
                 ],
             ),
         )
+        # Later organiser work gets fresh remaining-route capacity, while the
+        # preserved legacy assignment retains its original validated terms.
+        for cid in ids[:2]:
+            db.get(Crew, cid).shift_minutes = 240
         db.commit()
         ensure_can_start(db, db.get(Job, jobs[2]))
         return ids, jobs, plan.id
@@ -760,7 +768,9 @@ def verify_preserved_preview_durations(engine):
                 "stale": first.stale,
             }
         )
-        # Select a different crew; neither prior stop belongs to this new scope.
+        # New work gives the second crew a nonempty dispatch; neither prior
+        # stop belongs to this new scope or can be re-estimated by it.
+        seed_routing(engine)
         next_preview = compute_preview(db, ids[1:2], settings, FakeRoads(), str(actor))
         second_result = dispatch_preview(
             db, db.get(RoutingPreview, next_preview.id), uuid4(), actor, settings
@@ -923,7 +933,9 @@ def verify_recheck_route_resolution(client, engine, ids, jobs):
         ).status_code
         == 409
     )
-    assert patch(next_id, "crew", start).status_code == 200
+    # New resource-aware routes freeze the path; releasing an unfinished stop
+    # requires replanning before the following stop can consume those terms.
+    assert patch(next_id, "crew", start).status_code == 409
     with Session(engine) as db:
         first = db.get(Job, first_id)
         assert first.status == "unassigned" and first.assigned_crew_id is None
@@ -949,6 +961,7 @@ def verify_recheck_route_resolution(client, engine, ids, jobs):
             db, db.get(RoutingPreview, preview.id), uuid4(), actor, settings
         )
         assert db.get(Job, first_id).assigned_crew_id == ids[0]
+        ensure_can_start(db, db.get(Job, preview.routes[0].stops[0].job_id))
 
 
 def test_audited_recheck_release_restores_route_and_replanning(

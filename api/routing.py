@@ -24,6 +24,7 @@ from api.routing_schemas import (
     PriorityDecision,
     RouteDispatchView,
     RoutePreviewView,
+    RoutingConstraints,
 )
 from api.schemas import OrganizerReportView
 from api.services import (
@@ -60,7 +61,11 @@ def fresh_location(crew, settings, at):
             raise HTTPException(409, f"Crew {crew.id} location is stale or invalid")
 
 
-def snapshot(db, crew_ids, settings, at, job_ids=None):
+def snapshot(db, crew_ids, settings, at, job_ids=None, constraints=None):
+    try:
+        constraints = RoutingConstraints.model_validate(constraints or {})
+    except ValidationError:
+        raise HTTPException(422, "Routing constraints are invalid") from None
     crew_ids = sorted(str(c) for c in crew_ids)
     job_ids = sorted(str(j) for j in job_ids) if job_ids is not None else None
     if job_ids is not None and (
@@ -182,6 +187,7 @@ def snapshot(db, crew_ids, settings, at, job_ids=None):
                         )
                     },
                     "location": job.location,
+                    "required_equipment": sorted(job.required_equipment),
                     "eligibility_reason": reason,
                     "reports": [
                         (
@@ -221,6 +227,7 @@ def snapshot(db, crew_ids, settings, at, job_ids=None):
                 id=str(job.id),
                 location=job.location,
                 priority=max(priorities, key=PRIORITY_WEIGHTS.get),
+                required_equipment=sorted(job.required_equipment),
                 service=service,
                 service_source=source,
                 ongoing=job.status == "in_progress",
@@ -259,7 +266,16 @@ def snapshot(db, crew_ids, settings, at, job_ids=None):
                 "Fixed prefix contains held or ineligible work; organiser resolution required",
             )
         prefixes[cid] = prefix
+    resources = {
+        cid: dict(
+            equipment=sorted(crews[cid].equipment),
+            shift_minutes=crews[cid].shift_minutes,
+        )
+        for cid in crew_ids
+    }
     frozen = dict(
+        routing_contract_version=2,
+        constraints=constraints.model_dump(mode="json"),
         service_minutes=settings.routing_service_minutes,
         priority_weights=PRIORITY_WEIGHTS,
         alpha=settings.routing_wait_weight,
@@ -280,8 +296,13 @@ def snapshot(db, crew_ids, settings, at, job_ids=None):
         for cid in crew_ids
     }
     revision_data = dict(
+        routing_contract_version=2,
+        constraints=constraints.model_dump(mode="json"),
         jobs=business,
-        crews=[(cid, crews[cid].version, crews[cid].available) for cid in crew_ids],
+        crews=[
+            (cid, crews[cid].version, crews[cid].available, resources[cid])
+            for cid in crew_ids
+        ],
     )
     if job_ids is not None:
         revision_data["job_ids"] = job_ids
@@ -294,13 +315,18 @@ def snapshot(db, crew_ids, settings, at, job_ids=None):
         node_ids=[f"crew:{cid}" for cid in crew_ids] + [f"job:{j['id']}" for j in jobs],
         locations=locations,
         settings=frozen,
+        resources=resources,
         revision=digest(revision_data),
     )
 
 
-def compute_preview(db, crew_ids, settings, road_times, actor, job_ids=None):
+def compute_preview(
+    db, crew_ids, settings, road_times, actor, job_ids=None, constraints=None
+):
     at = now()
-    snap = snapshot(db, crew_ids, settings, at, job_ids=job_ids)
+    snap = snapshot(
+        db, crew_ids, settings, at, job_ids=job_ids, constraints=constraints
+    )
     locations = [snap["locations"][cid]["location"] for cid in snap["crews"]] + [
         j["location"] for j in snap["jobs"]
     ]
@@ -326,6 +352,16 @@ def compute_preview(db, crew_ids, settings, road_times, actor, job_ids=None):
             termination_reason="travel_data_unavailable",
             dispatchable=False,
         )
+    routed_ids = {
+        stop["job_id"] for route in result["routes"] for stop in route["stops"]
+    }
+    if any(
+        job["previous_crew_id"] and job["id"] not in routed_ids for job in snap["jobs"]
+    ):
+        result["dispatchable"] = False
+        result["termination_reason"] = "assigned_job_infeasible"
+    if not routed_ids:
+        result["dispatchable"] = False
     excluded_ids = {i["job_id"] for i in snap["exclusions"]}
     if excluded_ids:
         # Read after provider I/O without relying on it for freshness; dispatch
@@ -379,9 +415,13 @@ def compute_preview(db, crew_ids, settings, road_times, actor, job_ids=None):
     return view
 
 
-def dispatch_preview(db, preview, command_id, actor, settings):
+def dispatch_preview(db, preview, command_id, actor, settings, accept_partial=False):
     if preview.dispatched_plan_id:
-        if preview.dispatch_command_id != command_id or preview.dispatched_by != actor:
+        if (
+            preview.dispatch_command_id != command_id
+            or preview.dispatched_by != actor
+            or preview.payload.get("dispatch_accept_partial", False) != accept_partial
+        ):
             raise HTTPException(409, "Preview has already been dispatched")
         return dict(preview_id=preview.id, plan_id=preview.dispatched_plan_id)
     if db.scalar(
@@ -398,6 +438,16 @@ def dispatch_preview(db, preview, command_id, actor, settings):
     if not view.dispatchable or utc(view.expires_at) < at:
         raise HTTPException(409, "Preview is incomplete or expired; recompute required")
     old = data["snapshot"]
+    try:
+        constraints = RoutingConstraints.model_validate(
+            old["settings"].get("constraints", {})
+        )
+    except (ValidationError, KeyError, TypeError):
+        raise HTTPException(409, "Preview routing constraints are invalid") from None
+    if view.settings != old["settings"]:
+        raise HTTPException(409, "Preview routing settings are invalid")
+    if view.unassigned and not (constraints.allow_partial and accept_partial):
+        raise HTTPException(409, "Confirm the omitted jobs before partial dispatch")
     frozen_job_ids = old.get("job_ids")
     visible_job_ids = (
         [str(j) for j in view.job_ids] if view.job_ids is not None else None
@@ -405,7 +455,14 @@ def dispatch_preview(db, preview, command_id, actor, settings):
     if visible_job_ids != frozen_job_ids:
         raise HTTPException(409, "Preview job scope is invalid")
     try:
-        current = snapshot(db, old["crews"], settings, at, job_ids=frozen_job_ids)
+        current = snapshot(
+            db,
+            old["crews"],
+            settings,
+            at,
+            job_ids=frozen_job_ids,
+            constraints=constraints,
+        )
     except HTTPException as error:
         if frozen_job_ids is not None and error.status_code in (404, 422):
             raise HTTPException(
@@ -430,10 +487,16 @@ def dispatch_preview(db, preview, command_id, actor, settings):
     routes = {str(r.crew_id): [str(s.job_id) for s in r.stops] for r in view.routes}
     expected = {j["id"] for j in old["jobs"]}
     actual = [jid for ids in routes.values() for jid in ids]
+    omitted = [str(item.job_id) for item in view.unassigned]
+    assigned_before = {job["id"] for job in old["jobs"] if job.get("previous_crew_id")}
     if (
-        set(routes) != set(old["crews"])
-        or set(actual) != expected
-        or len(actual) != len(expected)
+        len(routes) != len(view.routes)
+        or set(routes) != set(old["crews"])
+        or not actual
+        or set(actual) | set(omitted) != expected
+        or len(actual) + len(omitted) != len(expected)
+        or set(actual) & set(omitted)
+        or assigned_before - set(actual)
     ):
         raise HTTPException(409, "Preview coverage is invalid")
     for cid, prefix in old["prefixes"].items():
@@ -441,9 +504,11 @@ def dispatch_preview(db, preview, command_id, actor, settings):
             raise HTTPException(409, "Preview changed fixed work")
     # Revalidate directed travel and all stored stop metrics against the frozen input.
     evaluated = evaluate(old, data["matrix"], routes)
-    if evaluated is None or evaluated["routes"] != [
-        r.model_dump(mode="json") for r in view.routes
-    ]:
+    if (
+        evaluated is None
+        or evaluated["routes"] != [r.model_dump(mode="json") for r in view.routes]
+        or evaluated["metrics"] != view.metrics.model_dump(mode="json")
+    ):
         raise HTTPException(409, "Preview route data is invalid")
     unfinished = list(
         db.scalars(select(Job).where(Job.status != "completed").order_by(Job.id))
@@ -464,6 +529,8 @@ def dispatch_preview(db, preview, command_id, actor, settings):
     selected = set(old["crews"])
     explicit_scope = set(frozen_job_ids) if frozen_job_ids is not None else None
     excluded = {str(i.job_id): i.reason for i in view.exclusions}
+    omitted_reasons = {str(i.job_id): i.reason for i in view.unassigned}
+    route_by_crew = {str(route.crew_id): route for route in view.routes}
     for job in unfinished:
         jid = str(job.id)
         saved_stop, saved_rule = preserved.get(jid, (None, None))
@@ -524,12 +591,24 @@ def dispatch_preview(db, preview, command_id, actor, settings):
             if jid not in proposed and saved_stop:
                 assignments[-1]["travel_minutes"] = saved_stop["travel_minutes"]
             execution_rules[jid] = (
-                {"mode": "organizer", "source_plan_id": str(plan.id)}
+                {
+                    "mode": "organizer",
+                    "source_plan_id": str(plan.id),
+                    "routing_contract_version": 2,
+                    "constraints": constraints.model_dump(mode="json"),
+                    "route_job_ids": [
+                        str(stop.job_id)
+                        for stop in route_by_crew[str(job.assigned_crew_id)].stops
+                    ],
+                    "return_travel_minutes": route_by_crew[
+                        str(job.assigned_crew_id)
+                    ].return_travel_minutes,
+                }
                 if jid in proposed
                 else saved_rule
             )
         else:
-            reason = (
+            reason = omitted_reasons.get(jid) or (
                 "outside_scope"
                 if explicit_scope is not None and jid not in explicit_scope
                 else (
@@ -550,6 +629,7 @@ def dispatch_preview(db, preview, command_id, actor, settings):
         travel_estimates_label=view.travel_label,
         execution_rules=execution_rules,
     )
+    preview.payload = {**data, "dispatch_accept_partial": accept_partial}
     preview.dispatched_plan_id, preview.dispatch_command_id, preview.dispatched_by = (
         plan.id,
         command_id,
@@ -759,6 +839,7 @@ def routing_router(settings):
             provider,
             str(staff.user_id),
             job_ids=body.job_ids,
+            constraints=body.constraints,
         )
 
     @router.get("/routing/previews/{preview_id}", response_model=RoutePreviewView)
@@ -791,6 +872,13 @@ def routing_router(settings):
         )
         if preview is None:
             raise HTTPException(404, "Preview not found")
-        return dispatch_preview(db, preview, body.command_id, staff.user_id, settings)
+        return dispatch_preview(
+            db,
+            preview,
+            body.command_id,
+            staff.user_id,
+            settings,
+            accept_partial=body.accept_partial,
+        )
 
     return router

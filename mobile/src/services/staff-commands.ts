@@ -3,7 +3,7 @@ import type { Job, StaffClient } from "./staff-client";
 export type StaffCommand = {
   command_id: string; kind: "start" | "completion" | "dispatch" | "release"; resource_id: string;
   ownerId: string; crewId?: string; apiUrl: string; expected_version?: number;
-  photoUri?: string; rejected?: boolean; reason?: string; recomputeRequired?: boolean; reconciled?: boolean; dispatchAttemptPending?: boolean;
+  acceptPartial?: boolean; photoUri?: string; rejected?: boolean; reason?: string; recomputeRequired?: boolean; reconciled?: boolean; dispatchAttemptPending?: boolean;
 };
 
 // Recover by command identity, not merely by a matching status: another actor may
@@ -15,7 +15,7 @@ export async function recoverOrSend(command: StaffCommand, api: StaffClient, pho
     if (preview.plan_id) return { plan_id: preview.plan_id };
     if (command.dispatchAttemptPending) throw new Error("Dispatch confirmation is still unknown. Keep the saved action and check its result; do not resubmit this preview.");
     await beforeDispatch?.();
-    return api.json<{ plan_id: string }>(`/routing/previews/${encodeURIComponent(command.resource_id)}/dispatch`, { command_id: command.command_id });
+    return api.json<{ plan_id: string }>(`/routing/previews/${encodeURIComponent(command.resource_id)}/dispatch`, { command_id: command.command_id, ...(command.acceptPartial ? { accept_partial: true } : {}) });
   }
   const details = await api.job(command.resource_id);
   const kind = command.kind === "completion" ? "job.completed" : "job.changed";

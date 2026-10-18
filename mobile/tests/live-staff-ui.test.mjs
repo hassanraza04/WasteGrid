@@ -3,20 +3,22 @@ import assert from 'node:assert/strict';
 import React from 'react';
 import {act,button,load,mount,native,theme,ui,wrap,deferred} from './helpers/render.mjs';
 const {StaffApiError}=load('services/staff-client.ts');
+const routing=load('services/routing-preview.ts');
+const defaults={max_duration_minutes:120,max_stops_per_crew:10,return_to_start:true,allow_partial:false};
 const blocks={...ui,Screen:wrap,Card:wrap,ScreenHeader:props=>React.createElement('h1',null,props.title),TextField:wrap};
 const job={id:'job',version:2,status:'assigned',category:'mixed_waste',location:{latitude:24,longitude:67},assigned_crew_id:'A',route_position:0,held:false,locked:false,illustrative:false};
-function preview(patch={}){return{id:'preview',job_ids:['job'],expires_at:new Date(Date.now()+120000).toISOString(),dispatchable:true,plan_id:null,termination_reason:'complete',travel_label:'Driving times',routes:[{crew_id:'A',duration_minutes:6,travel_minutes:1,stops:[{job_id:'job',position:0,priority:'routine',travel_minutes:1,service_minutes:5,completion_minutes:6}]}],unassigned:[],exclusions:[],reassignments:[],...patch};}
-function dispatchSetup(calculate=async()=>preview(),submit=async()=>{},prepare,reconcile){
- const state={data:{crews:[{id:'A',name:'Crew A',available:true,location_recorded_at:null},{id:'B',name:'Crew B',available:true,location_recorded_at:null}],jobs:[job],pending:[],currentPlan:{plan:null}},loading:false,error:'',refresh:async()=>{}};
+function preview(patch={}){return{id:'preview',job_ids:['job'],expires_at:new Date(Date.now()+120000).toISOString(),dispatchable:true,plan_id:null,termination_reason:'complete',travel_label:'Driving times',settings:{routing_contract_version:2,constraints:{...defaults}},routes:[{crew_id:'A',duration_minutes:6,travel_minutes:1,return_travel_minutes:0,returns_to_start:true,stops:[{job_id:'job',position:0,priority:'routine',travel_minutes:1,service_minutes:5,completion_minutes:6}]}],unassigned:[],exclusions:[],reassignments:[],...patch};}
+function dispatchSetup(calculate=async(ids,_jobIds,constraints)=>preview({settings:{routing_contract_version:2,constraints},routes:ids.map(crew_id=>({...preview().routes[0],crew_id,stops:crew_id===ids[0]?preview().routes[0].stops:[]}))}),submit=async()=>{},prepare,reconcile){
+ const state={data:{crews:[{id:'A',name:'Crew A',available:true,equipment:['gloves'],shift_minutes:240,location_recorded_at:null},{id:'B',name:'Crew B',available:true,equipment:['gloves'],shift_minutes:240,location_recorded_at:null}],jobs:[job],pending:[],currentPlan:{plan:null}},loading:false,error:'',refresh:async()=>{}};
  const requests=[],prepared=[],reconciled=[];let read,planReads=0;
- const api={crews:async()=>state.data.crews,jobs:async()=>state.data.jobs,currentPlan:async()=>{planReads++;return state.data.currentPlan;},compute:(ids,jobIds)=>{requests.push({crew_ids:ids,job_ids:jobIds});return calculate(ids,jobIds);}};
+ const api={crews:async()=>state.data.crews,jobs:async()=>state.data.jobs,currentPlan:async()=>{planReads++;return state.data.currentPlan;},compute:(ids,jobIds,constraints)=>{requests.push({crew_ids:ids,job_ids:jobIds,constraints});return calculate(ids,jobIds,constraints);}};
  state.refresh=async()=>{state.data=await read();};
  const {LiveDispatch}=load('components/admin/live-dispatch.tsx',{
   'expo-router':{Link:({href,children})=>React.createElement('a',{href},children)},
   'react-native':native,'@/components/ui':blocks,'@/components/account/account-button':{AccountButton:wrap},'@/theme':theme,
   '@/hooks/use-staff-data':{useStaffData:callback=>{read=callback;return state;}},'@/services/staff':{staffApi:api},
-  '@/services/pending-staff':{pendingStaff:async()=>state.data?.pending??[],prepareStaff:async(kind,id)=>{prepared.push({kind,id});return prepare?prepare(kind,id):{command_id:'stable',kind,resource_id:id};},submitStaff:submit,reconcileDispatchConflict:async command=>{reconciled.push(command);const result=await reconcile?.(command);state.data.pending=[];return result;}},
-  '@/services/staff-client':{StaffApiError},
+  '@/services/pending-staff':{pendingStaff:async()=>state.data?.pending??[],prepareStaff:async(kind,id,_photo,_reason,options)=>{prepared.push({kind,id,...(options?{options}:{})});return prepare?prepare(kind,id):{command_id:'stable',kind,resource_id:id,...(options?.accept_partial?{acceptPartial:true}:{})};},submitStaff:submit,reconcileDispatchConflict:async command=>{reconciled.push(command);const result=await reconcile?.(command);state.data.pending=[];return result;}},
+  '@/services/staff-client':{StaffApiError},'@/services/routing-preview':routing,
   '@/components/route/pending-actions':{PendingActions:wrap},'@/components/route/route-map':{RouteMap:wrap},
  });
  return{state,requests,prepared,reconciled,planReads:()=>planReads,view:mount(LiveDispatch,{})};
@@ -26,15 +28,15 @@ test('compute is read-only; selection changes invalidate the preview and only ap
  try{
   await view.render();assert.equal(button(view.container,'Compute routes').disabled,true);
   await act(()=>button(view.container,'Crew A').click());await act(()=>button(view.container,'Job job').click());await act(async()=>button(view.container,'Compute routes').click());
-  assert.deepEqual(app.requests,[{crew_ids:['A'],job_ids:['job']}]);assert.equal(app.prepared.length,0);assert.match(view.container.textContent,/6 min total/);assert.match(view.container.textContent,/1 min travel · 5 min service/);
-  assert.equal(view.container.textContent.includes('Return to start'),false);assert.equal(view.container.textContent.includes('Max stops'),false);
+  assert.deepEqual(app.requests,[{crew_ids:['A'],job_ids:['job'],constraints:defaults}]);assert.equal(app.prepared.length,0);assert.match(view.container.textContent,/6 min total/);assert.match(view.container.textContent,/1 min travel · 5 min service/);
+  assert.match(view.container.textContent,/Return to start/);assert.match(view.container.textContent,/Max stops per crew/);assert.match(view.container.textContent,/Equipment: gloves/);
   await act(()=>button(view.container,'Crew B').click());assert.equal(view.container.textContent.includes('Route preview'),false);
   await act(async()=>button(view.container,'Compute routes').click());await act(async()=>button(view.container,'Approve and dispatch').click());
   assert.deepEqual(app.prepared,[{kind:'dispatch',id:'preview'}]);assert.equal(view.container.textContent.includes('Route preview'),false);
  }finally{await view.close();}
 });
 test('expired and partial previews cannot dispatch and exclusions remain prominent',async()=>{
- for(const value of [preview({expires_at:new Date(Date.now()-1000).toISOString()}),preview({dispatchable:false,termination_reason:'travel_data_unavailable',unassigned:[{job_id:'missing',reason:'travel_data_unavailable'}]})]){
+ for(const value of [preview({expires_at:new Date(Date.now()-1000).toISOString()}),preview({dispatchable:false,routes:[],termination_reason:'travel_data_unavailable',unassigned:[{job_id:'job',reason:'travel_data_unavailable'}]})]){
   const {view}=dispatchSetup(async()=>value);
   try{await view.render();await act(()=>button(view.container,'Crew A').click());await act(()=>button(view.container,'Job job').click());await act(async()=>button(view.container,'Compute routes').click());assert.equal(button(view.container,'Approve and dispatch').disabled,true);assert.match(view.container.textContent,/Dispatch unavailable/);}
   finally{await view.close();}
@@ -269,4 +271,55 @@ test('completion evidence copy follows the immutable saved command rather than t
   await view.render();await act(()=>button(view.container,'Mark cleanup complete').click());await act(async()=>button(view.container,'Confirm completion without photo').click());
   assert.match(view.container.textContent,/resident can see your completion photo/);assert.equal(view.container.textContent.includes('No cleanup photo was attached'),false);
  }finally{await view.close();}
+});
+
+test('routing controls invalidate previews, lock during compute and freeze every requested limit',async()=>{
+ const app=dispatchSetup(async(_ids,_jobs,constraints)=>preview({settings:{routing_contract_version:2,constraints},routes:[{...preview().routes[0],returns_to_start:constraints.return_to_start}]}));const {view}=app;
+ try{
+  await view.render();await act(()=>button(view.container,'Crew A').click());await act(()=>button(view.container,'Job job').click());
+  await act(async()=>button(view.container,'Compute routes').click());assert.match(view.container.textContent,/Route preview/);
+  await act(()=>button(view.container,'Less time').click());assert.equal(view.container.textContent.includes('Route preview'),false);
+  await act(()=>button(view.container,'Fewer stops').click());await act(()=>button(view.container,'Return to start').click());await act(()=>button(view.container,'Allow feasible subset').click());
+  await act(async()=>button(view.container,'Compute routes').click());
+  assert.deepEqual(app.requests.at(-1).constraints,{max_duration_minutes:90,max_stops_per_crew:9,return_to_start:false,allow_partial:true});
+  assert.match(view.container.textContent,/Route preview/);assert.equal(button(view.container,'Approve and dispatch').disabled,false);assert.equal(app.prepared.length,0);
+ }finally{await view.close();}
+ const pending=deferred();const locked=dispatchSetup(()=>pending.promise);
+ try{
+  await locked.view.render();await act(()=>button(locked.view.container,'Crew A').click());await act(()=>button(locked.view.container,'Job job').click());await act(()=>button(locked.view.container,'Compute routes').click());
+  for(const label of ['Less time','More time','Fewer stops','More stops','Return to start','Allow feasible subset']) assert.equal(button(locked.view.container,label).disabled,true);
+  await act(async()=>pending.resolve(preview()));
+ }finally{await locked.view.close();}
+});
+
+test('a partial preview needs explicit opt-in, retained assignments and separate approval of omitted work',async()=>{
+ const app=dispatchSetup(async(_ids,_jobs,constraints)=>preview({job_ids:['job','new-job'],settings:{routing_contract_version:2,constraints},unassigned:[{job_id:'new-job',reason:'max_stops'}]}));const{view,state}=app;
+ state.data.jobs.push({...job,id:'new-job',assigned_crew_id:null});
+ try{
+  await view.render();await act(()=>button(view.container,'Crew A').click());await act(()=>button(view.container,'Job job').click());await act(()=>button(view.container,'Job new-job').click());
+  await act(async()=>button(view.container,'Compute routes').click());assert.match(view.container.textContent,/backend did not confirm/);assert.equal(app.prepared.length,0);
+  await act(()=>button(view.container,'Allow feasible subset').click());await act(async()=>button(view.container,'Compute routes').click());
+  assert.match(view.container.textContent,/Partial route: 1 selected job/);assert.match(view.container.textContent,/new-job: max stops/);
+  assert.equal(button(view.container,'Approve and dispatch').disabled,true);assert.equal(app.prepared.length,0);
+  await act(()=>button(view.container,'I reviewed and accept the omitted jobs').click());assert.equal(button(view.container,'Approve and dispatch').disabled,false);
+  await act(async()=>button(view.container,'Approve and dispatch').click());
+  assert.deepEqual(app.prepared,[{kind:'dispatch',id:'preview',options:{accept_partial:true}}]);
+ }finally{await view.close();}
+});
+
+test('constraint echo, partition duplicates and dropping an existing assignment fail closed',async()=>{
+ const invalid=[
+  preview({settings:{constraints:defaults}}),preview({routes:[{...preview().routes[0],returns_to_start:false}]}),preview({settings:{routing_contract_version:2,constraints:{...defaults,max_duration_minutes:30}}}),
+  preview({unassigned:[{job_id:'job',reason:'duplicate'}]}),
+  preview({job_ids:['job','new-job'],routes:[{...preview().routes[0],stops:[{...preview().routes[0].stops[0],job_id:'new-job'}]}],unassigned:[{job_id:'job',reason:'max_stops'}],settings:{routing_contract_version:2,constraints:{...defaults,allow_partial:true}}}),
+ ];
+ for(const response of invalid){
+  const app=dispatchSetup(async()=>response);const{view,state}=app;
+  if(response.job_ids.length===2)state.data.jobs.push({...job,id:'new-job',assigned_crew_id:null});
+  try{
+   await view.render();await act(()=>button(view.container,'Crew A').click());await act(()=>button(view.container,'Job job').click());
+   if(response.job_ids.length===2){await act(()=>button(view.container,'Job new-job').click());await act(()=>button(view.container,'Allow feasible subset').click());}
+   await act(async()=>button(view.container,'Compute routes').click());assert.match(view.container.textContent,/backend did not confirm/);assert.equal(view.container.textContent.includes('Route preview'),false);assert.equal(app.prepared.length,0);
+  }finally{await view.close();}
+ }
 });

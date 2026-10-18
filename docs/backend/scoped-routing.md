@@ -34,7 +34,7 @@ approve a held report or waive any organiser/assessment requirement.
 ## Preview and dispatch
 
 Computing a preview persists a proposal and does not change job assignments.
-Changing the selected crews or jobs invalidates the client-side proposal. Check
+Changing the selected crews, jobs or routing controls invalidates the client-side proposal. Check
 that returned `job_ids` match the requested set before offering dispatch. A
 server without this contract must produce a visible deployment/contract error,
 not an expanded-scope fallback.
@@ -76,6 +76,10 @@ For an already terminal conflict, a missing old preview (HTTP 404) can be retire
 after the current plan refresh succeeds. Other preview errors and any failed
 current-plan refresh preserve the blocked action. A missing preview does not
 establish success or resolve an unclassified dispatch attempt.
+
+Optional time/stop limits, equipment checks, return-to-start and explicitly
+acknowledged partial dispatch are defined in [routing-controls.md](routing-controls.md).
+Omitting those request fields preserves the existing full-coverage contract.
 
 ## Supervised acceptance
 

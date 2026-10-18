@@ -1,0 +1,14 @@
+{
+  "constraints": {
+    "allow_partial": false,
+    "max_duration_minutes": 120.0,
+    "max_stops_per_crew": 10,
+    "return_to_start": true
+  },
+  "crew_ids": [
+    "30000000-0000-4000-8000-000000000001"
+  ],
+  "job_ids": [
+    "20000000-0000-4000-8000-000000000001"
+  ]
+}
