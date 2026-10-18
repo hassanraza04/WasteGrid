@@ -1,4 +1,10 @@
-# Dashboard and messaging handoff: proposed v0.2
+# Dashboard and messaging handoff: v0.2
+
+The web organizer dashboard now uses the live API and Supabase sign-in; browser
+entry directs users to Android; legacy report routes redirect there. Use the [web README](../../web/README.md)
+and [backend overview](README.md) for current setup. The connection snapshots and
+acceptance counts below retain their recorded historical context and do not
+establish today's deployment, worker, or Photon status.
 
 ## Local demo status
 

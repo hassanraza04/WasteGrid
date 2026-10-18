@@ -8,14 +8,20 @@
 
 **Contract:** implemented API v0.2; coordinate contract changes with the backend owner.
 
+The connected mobile adapters, native token/draft storage, Supabase sessions, and
+staff screens are now implemented. See the [mobile README](../../mobile/README.md)
+for current setup and behavior. The initial readiness/acceptance snapshot below
+is dated history; verify runtime status against the deployed revision. The
+acceptance checklist is a device-validation procedure, not a list of missing code.
+
 This document contains the mobile integration requirements and shareable connection
 details. Passwords and backend secrets are supplied separately. The mobile app is
 the user interface. FastAPI's optional `/docs` page is only a developer tool for
 trying requests; Swagger is not a mobile framework or a product requirement.
 
-## 1. What is ready, and what is pending
+## 1. Initial integration checkpoint: 17 October 2026
 
-| Item | Current status |
+| Item | Recorded status |
 | --- | --- |
 | Backend | FastAPI with Supabase PostgreSQL, Auth and private photo Storage |
 | Local API | `http://127.0.0.1:8000`, on Omer's machine while its process is running |
@@ -394,34 +400,33 @@ issues. Handle both shapes and unexpected non-JSON/network failures. Do not show
 raw credentials/request bodies in crash reporting. If editing a failed draft after
 an uncertain upload, resolve the original submission first to avoid duplicates.
 
-## 10. Changes needed in the current mobile app
+## 10. Implemented mobile adapter
 
-The repository's `mobile/src/app/report.tsx` currently builds
-`{ photoUri, caption, location }`, logs it and navigates back. Replace that placeholder
-with the asynchronous flow above. The browser demo's local report shape is not the
-backend wire contract.
+`mobile/src/app/report.tsx` uses the asynchronous report services in
+`mobile/src/services/reports.ts` and `report-client.ts`. Native secure storage and
+durable drafts preserve report identity and bytes across interrupted submissions.
+The browser demo's local report shape is separate from this backend wire contract.
 
 | Current UI value | Backend mapping |
 | --- | --- |
 | `photoUri` | Actual multipart `photo` file; inspect/retain correct MIME, size and dimensions |
-| `caption` | `note`; existing 280-character UI limit is within the backend limit |
-| New title input or deliberate short summary | `title`, at most 160 characters; do not pass an unrestricted caption as title |
+| `caption` | Trimmed `note`; the adapter derives `title` from its first 160 characters |
 | `location.address` | `address`, omit if blank |
-| `location.coords` | `latitude` and `longitude`, only when available |
-| New persisted submission identity | `client_report_id` plus `X-Report-Token` |
+| `location.coords` | Required `latitude` and `longitude` from GPS or a confirmed map pin |
+| Persisted submission identity | `client_report_id` plus `X-Report-Token` |
 
-Add a typed API adapter, protected report-token storage, durable pending drafts,
-success/tracking views, authenticated photo loading, history pagination and clear
-loading/error states. Remove the report-content console log. Use platform-compatible
-cryptographic randomness and storage libraries. Staff authentication is an additional
-adapter only if those screens are in scope.
+The implemented flow includes typed clients, protected report tokens, saved
+upload drafts, receipts/tracking, authorized photos, paginated history, and
+loading/error states. Staff clients reuse verified Supabase sessions for dispatch,
+foreground crew location, ordered starts, and optional-photo completion. See
+[mobile routing and completion](mobile-routing-completion.md) for recovery details.
 
 ## 11. Integration acceptance checklist
 
 Use disposable test data for writes. Keep the shared illustrative fixture intact.
 
 - [ ] Obtain a reachable base URL; check `/health` and `/ready` from the actual device.
-- [ ] Submit a real multipart photo with title, note and GPS or manual address.
+- [ ] Submit a real multipart photo with title, note and GPS or a confirmed map pin; an address is optional context.
 - [ ] Persist identity/token before upload; verify a repeated identical request creates one report.
 - [ ] Recover after a simulated timeout and app restart without creating duplicates.
 - [ ] Restore the intended account after restart, then show its local history and fetch each report with its saved report token.
@@ -431,8 +436,8 @@ Use disposable test data for writes. Keep the shared illustrative fixture intact
 - [ ] Load authorized report/completion photos and renew an expired signed URL.
 - [ ] Render null location, empty history, detailed states and illustrative labels correctly.
 - [ ] Handle denied GPS permission, offline mode, oversize/invalid photos and server errors.
-- [ ] If staff screens are included: verify `/auth/me`, organizer reports, Crew A/B assignment isolation and session refresh.
-- [ ] Keep AI work visibly pending and messaging unavailable until the owners connect them.
+- [ ] Verify `/auth/me`, organizer reports, crew assignment isolation, and session refresh.
+- [ ] Show pending AI work while its worker is stopped and unavailable messaging while its configured integration is inactive.
 - [ ] Confirm no backend secrets, resident tokens or signed URLs are in source/logs/analytics.
 
 Optional developer walkthrough: readiness → Supabase organizer sign-in → `/auth/me`

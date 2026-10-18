@@ -1,11 +1,11 @@
-# Waste assessment and Person 3 decisions
+# Waste assessment and deterministic decisions
 
 ## Processing flow
 
 `POST /reports` retains the photo, location, optional note and resident yes/no
 answers, returns 201 with `assessment_status: pending`, and queues one assessment
-task. The existing worker makes one Qwen-through-Groq request via Chalk Model
-Gateway. It validates the result, calculates priority in Python, and persists it.
+task. The worker makes one request through Chalk Model Gateway to the configured
+`CHALK_MODEL`. It validates the result, calculates priority in Python, and persists it.
 An eligible assessment queues the existing triage task in the same transaction.
 Triage creates a job; existing plan invalidation queues planning. Review and failed
 reports remain visible without an automatically assigned ordinary cleanup job.
@@ -29,7 +29,9 @@ ASSESSMENT_TIMEOUT_SECONDS=30
 DUPLICATE_RADIUS_METERS=10
 ```
 
-Apply migrations 0007–0011, then start the existing worker alongside FastAPI:
+Apply all checked-in migrations. Assessment schema changes were introduced in
+0007–0011; later migrations support routing and messaging. For your own isolated
+demo project, seed illustrative data only if needed, then start the worker:
 
 ```sh
 uv run --extra backend python -m scripts.migrate
@@ -51,9 +53,11 @@ This code does not migrate or reseed a hosted database automatically.
 
 `POST /reports` is multipart: `photo`, `latitude`, `longitude`, optional `note`,
 `resident_fire`, and `resident_sharp_objects`. Boolean answers use true/false;
-omitted answers mean unknown. The current backend still permits legacy reports
-without GPS and can request location information; mandatory capture/GPS enforcement
-is a separate app/API contract change. No frontend code changed here.
+omitted answers mean unknown. New submissions require both coordinates, supplied
+by GPS or an explicitly confirmed map pin. A typed address adds context and does
+not replace them. Existing accepted address-only reports can still be read,
+clarified, and retried identically; they need coordinates before routing. The
+native form does not currently ask the optional resident fire/sharp-object questions.
 
 Report endpoints expose these additive fields:
 

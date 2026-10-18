@@ -2,11 +2,17 @@
 
 ## Current local demo
 
-The configured project is `einjnvlhdogzdxafauyr`, with Supabase URL
-`https://einjnvlhdogzdxafauyr.supabase.co`. Migrations 0001–0011 and the private
-`report-photos` bucket are installed. The preserved fixture contains ten
-illustrative reports, six jobs, two crews, ten photos and five assignments.
-Email/password Auth and the protected organizer/crew roles are configured.
+The client templates target the shared project `einjnvlhdogzdxafauyr`, with
+Supabase URL `https://einjnvlhdogzdxafauyr.supabase.co`, and the development API
+at `https://wastegrid-api-dev.onrender.com`. Its private photo bucket is
+`report-photos`. Use the [demo guide](../demo.md) for the current walkthrough and
+privately provisioned accounts. Preserve the shared data; do not seed or reset it.
+
+The older [verification records](verification.md) describe a ten-report,
+two-crew fixture and migrations 0001–0011. Those are historical observations,
+not a guarantee of the current deployment. The repository now contains migrations
+0001–0016; check the running revision, applied migrations, and feature flags before
+using a new client. Apply all checked-in migrations to a project you are setting up.
 
 Backend credentials are in the Git-ignored `.env`. Demo account passwords,
 Auth UUIDs and crew UUIDs are in the separate Git-ignored `.env.supabase-demo`:
@@ -56,12 +62,14 @@ accounts, submit reports, or execute workflow commands. Run it while no one is
 editing the demo data. Expected fixture counts and assignments are intentional;
 a changed demo should fail rather than be silently reset.
 
-The worker remains inactive until Person 3 configures a real provider. New
-reports would queue durable work, but the current demo preserves its fixtures.
-Photon transport and frontend adapters are separate integration work. The
-localhost address is accessible on this machine; teammates must run their own
-backend or use a later shared deployment. See the
-[Swagger walkthrough and owner handoff](dashboard-handoff.md#local-swagger-walkthrough).
+The API and worker are separate processes. New reports queue durable work and
+can remain assessment-pending while the worker is stopped. The built-in decision
+provider works with configured Chalk assessment; an external decision service is
+optional. Starting a worker or Photon poller against shared data is a separate
+operator action, not a consequence of starting a client. The connected mobile app
+and organizer dashboard already have API adapters. See the
+[Swagger walkthrough](dashboard-handoff.md#local-swagger-walkthrough) for endpoint
+examples and [client setup](../../README.md#getting-started) for the current apps.
 
 ## 1. Local configuration
 
@@ -85,7 +93,7 @@ Keep `.env` ignored. Existing Photon settings remain in the example. Configure:
 | `CORS_ORIGINS` | JSON array of exact dashboard origins, e.g. `["http://localhost:5173","https://your-dashboard.example"]`. |
 | `CHALK_ROUTER_API_KEY` | Chalk Model Gateway key for the assessment worker, not an upstream provider key. |
 | `CHALK_ENV_ID` | Chalk environment ID for the assessment worker. |
-| `CHALK_MODEL` | Default `groq/qwen/qwen3.8-27b`; use the configured connection prefix. |
+| `CHALK_MODEL` | Explicit gateway model with its configured connection prefix. The code default is `groq/qwen/qwen3.8-27b`; `.env.example` selects `xai/grok-4.3`, so use the model available in your environment. |
 | `ASSESSMENT_TIMEOUT_SECONDS` | Default 30; one request and no automatic retries. |
 | `DUPLICATE_RADIUS_METERS` | Proximity review for real unresolved reports; default 10 metres, 0 disables. Photos are retained. |
 | `PERSON3_BASE_URL` | Optional external Person 3 HTTP facade; leave blank for the built-in decisions. |
@@ -102,6 +110,12 @@ Only Supabase's project URL and **publishable/anon key** go in the frontend's
 public configuration. The database password and secret/service-role key stay
 on the backend. Resident tokens belong in device secure storage, never URLs,
 analytics, organizer listings or model context.
+
+The web app reads root environment files because Vite uses `envDir: ".."`.
+Copy `web/.env.example` to root `.env.local` and supply its three public `VITE_`
+values. Mobile reads `mobile/.env.local`. These client files do not replace the
+backend `.env`; see the [web](../../web/README.md) and
+[mobile](../../mobile/README.md) guides.
 
 ## 2. Supabase project
 
@@ -121,11 +135,13 @@ analytics, organizer listings or model context.
    `wastegrid`, with client access revoked and RLS enabled. Keep it out of the
    Supabase exposed API schemas. Migration 0002 creates the private 8 MiB
    JPEG/PNG/WebP bucket. Do not add public Storage policies for this bucket.
-   Existing installations also apply additive migrations 0004–0011 for report
-   identity, event status snapshots and conversation history. Existing references
-   are backfilled; unknown addresses/historical statuses stay null. No existing
-   migration checksum changes are needed. Apply these before deploying API v0.2.
-4. Populate the illustrative demo:
+   Existing installations also apply every outstanding additive migration.
+   Migrations through 0016 cover report identity/history, assessment, organizer
+   routing, bounded messaging, and supervised assessment approval/reopening. Existing references are backfilled;
+   unknown addresses/historical statuses stay null. Never edit a previously
+   applied migration to make a checksum match. Apply migrations before deploying
+   the corresponding API revision; applying a pilot migration does not enable it.
+4. Optionally populate an **isolated, demo-only project**:
 
    ```bash
    uv run --extra backend python -m scripts.seed_demo
@@ -135,6 +151,8 @@ analytics, organizer listings or model context.
    reports in Gulshan-e-Iqbal, including missing information, duplicate/review,
    hazard and shift-capacity cases, plus a validated fixture plan. Its synthetic
    images and decisions are explicitly labeled; they are not real model results.
+   This is a fresh-demo setup step, not a prerequisite for using an existing
+   shared project. Never seed or reset the shared demonstration database.
 5. Provision the protected roles using the Auth UUIDs and printed crew UUIDs:
 
    ```bash
@@ -155,13 +173,16 @@ analytics, organizer listings or model context.
    `signInWithPassword`; send the resulting **user access JWT** as `Bearer` to
    FastAPI. `/auth/me` verifies the session and returns the protected role.
 
-## 3. Connect Persons 3 and 4
+## 3. Assessment worker and messaging
 
-Share `contracts.md`, `openapi.json` and the fixture directory first. Configure
+Use `contracts.md`, `openapi.json` and the fixture directory for integration. Configure
 the Chalk gateway key/environment for photo assessment. The default built-in
 provider also processes triage, plan and followup tasks with those settings alone;
 no separate decision service is required. Explicit facade/factory settings take
-precedence for those decision methods. Then start the worker:
+precedence for those decision methods. Then start the worker against the intended
+development dataset. For the shared hackathon project, use the
+[approved scoped assessment session](organizer-prototype.md) instead and keep
+the general worker stopped:
 
 ```bash
 uv run --extra backend python -m api.worker
@@ -173,29 +194,41 @@ organizers inspect `/tasks` and retry failed legacy tasks explicitly. Assessment
 configuration means the worker exits with a configuration message, preserving
 the queue. API imports do not deploy Chalk functions.
 
-Person 4 keeps the Photon service separate, uses `MESSAGING_API_KEY`, resolves
-linked conversations, submits inbound messages and claims outgoing records.
-Delivery retries and provider-side idempotency remain Person 4's responsibility.
-The existing Photon echo agent is a smoke test, not the integrated adapter.
-The upstream SQLite delivery ledger is also transport-only. API v0.2 requires
-the actual `sent_text` on successful delivery acknowledgements; see
-`dashboard-handoff.md` before connecting or updating the adapter.
+The [Photon adapter](photon-adapter.md) runs separately. It uses the matching
+messaging integration key, resolves linked conversations, submits inbound messages,
+and claims outgoing records. Its SQLite ledger handles transport recovery; the
+backend remains the source of report/conversation state. Successful acknowledgements
+include the actual `sent_text`. The [supervised pilot](photon-chalk-pilot.md)
+requires its fixed scope, migrations, budgets, and preflight before activation.
+
+For organizer preview/dispatch, configure `ORGANIZER_ROUTING_ENABLED=true` and
+`ROUTING_OSRM_BASE_URL` consistently on API and worker. Use the [routing guide](routing.md)
+and [routing controls](routing-controls.md); the older plan-generation path is
+not a read-only preview.
 
 ## 4. Render
 
+The current supervised setup uses `render.dev.yaml` for API-only recreation and
+`render.organizer.yaml` for the static console. Follow the
+[one-phone deployment checklist](hackathon-finish.md#public-organizer-deployment)
+for exact commands, SPA rewrite, CORS, and doctor checks. The general-worker
+Blueprint below is a legacy option for independent deployments, not the shared
+bounded assessment workflow.
+
 For the shared development milestone, follow the
 [API-only deployment runbook](shared-development-api.md). The live Docker Web
-Service is at `https://wastegrid-api-dev.onrender.com`, created from the public
-Git repository URL with manual deployments and `/ready` health checks. The
-equivalent Blueprint is `render.dev.yaml`; the worker stays inactive. The
-API-plus-worker instructions below describe the later provider-integrated setup.
+Service is configured at `https://wastegrid-api-dev.onrender.com`, with manual
+deployments and `/ready` health checks. The equivalent Blueprint is
+`render.dev.yaml`; it creates no worker. Check the running revision and optional
+integration flags directly. The API-plus-worker instructions below describe
+the separate worker deployment.
 
 1. Create/connect the Git repository in Render once you have committed/pushed
    the reviewed changes. The prepared `render.yaml` defines the API Docker web
    service and worker. Choose the intended branch in Render. Create the API
-   first; enable the worker only after the real Person 3 provider is reachable
-   and its configuration is supplied. Do not activate the whole Blueprint with
-   empty provider settings.
+   first; enable the worker after supplying and verifying its Chalk configuration
+   or explicitly chosen external decision provider. Configure the intended queue
+   scope before starting it; do not activate it with empty provider settings.
 2. Put the variables above in Render environment settings. Give the worker
    database/Storage/Chalk settings (and optional external decision settings); give
    the API database/Storage/integration
@@ -247,24 +280,28 @@ Docker smoke run, execute `scripts/verify_backend.sh` with the same exported
 
 ## 6. Live acceptance and reset
 
-These are the later full-product checks. They write data and require the real
-provider, frontend and messaging integrations. For the current preserved local
-demo, use `scripts.verify_live_backend`; exercise write workflows with the
-disposable PostgreSQL suite in section 5 instead.
+These full-product checks write data and require the real integrations used in
+the walkthrough. Use dedicated, agreed test records. The fixture-specific
+`scripts.verify_live_backend` command is read-only but can fail if the old
+illustrative fixture has changed; it must never be used as a reason to reset
+shared data. Exercise unrestricted write workflows in the disposable suite.
 
 - Sign in as organizer and both crews. Verify one crew cannot access the other's
-  job or evidence and that a user without a protected role is denied.
+  job or evidence and that a resident without a protected role is denied staff routes.
 - Submit a real photo from the device, retrieve it using the resident token,
   and see the report in the organizer API/dashboard.
-- Run real Person 3 triage and planning, inspect task/event evidence, and verify
-  clarification, hazard review, duplicate handling and visible unassigned work.
+- Run configured Chalk assessment and deterministic triage, inspect task/event
+  evidence, and verify clarification, hazard review, nearby-report handling,
+  organizer preview/dispatch, and visible unassigned work.
 - Use a real Photon exchange to bind a report, clarify it, request status and
   receive completion notification. Verify adapter restart/retry behavior.
-- Disable a crew; verify no new start on invalid assignments and a feasible new
-  plan. Complete a job with an after-photo, then request recheck.
+- Change crew availability; verify starts and ownership follow the current
+  routing contract. Complete jobs with a photo and with explicitly confirmed
+  photo-free completion, then request a recheck and review its resolution.
 - Verify Supabase denies public photo access while authorized signed URLs work.
 
-For another demo, stop the worker/adapter, then run:
+Only in a separate demo-only project, stop its worker/adapter before deliberately
+rebuilding its illustrative fixtures:
 
 ```bash
 uv run --extra backend python -m scripts.seed_demo --reset-demo
