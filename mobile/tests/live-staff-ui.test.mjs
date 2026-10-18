@@ -11,6 +11,7 @@ function dispatchSetup(calculate=async()=>preview(),submit=async()=>{}){
  const api={crews:async()=>state.data.crews,jobs:async()=>state.data.jobs,currentPlan:async()=>{planReads++;return state.data.currentPlan;},compute:ids=>{requests.push(ids);return calculate();}};
  state.refresh=async()=>{state.data=await read();};
  const {LiveDispatch}=load('components/admin/live-dispatch.tsx',{
+  'expo-router':{Link:({href,children})=>React.createElement('a',{href},children)},
   'react-native':native,'@/components/ui':blocks,'@/components/account/account-button':{AccountButton:wrap},'@/theme':theme,
   '@/hooks/use-staff-data':{useStaffData:callback=>{read=callback;return state;}},'@/services/staff':{staffApi:api},
   '@/services/pending-staff':{pendingStaff:async()=>[],prepareStaff:async(kind,id)=>{prepared.push({kind,id});return{command_id:'stable'};},submitStaff:submit},

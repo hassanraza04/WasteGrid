@@ -1,8 +1,47 @@
 """OSRM Table adapter. Null is a known missing road, never a zero-time fallback."""
 
 import math
+from contextlib import contextmanager
+from threading import Lock
+from time import monotonic
+from urllib.parse import urlsplit
 
 import httpx
+
+USER_AGENT = "WasteGrid/0.2 (+https://github.com/hassanraza04/WasteGrid)"
+PUBLIC_DEMO_HOSTS = {"routing.openstreetmap.de", "router.project-osrm.org"}
+_public_request_lock = Lock()
+_public_last_request_at = None
+
+
+@contextmanager
+def public_request_budget(base_url):
+    """One in-flight public call and a one-second cooldown shared across aliases.
+
+    The Free Render API runs one process. Multiple processes/replicas require a
+    shared limiter or a different provider; this is not a distributed limiter.
+    """
+    if urlsplit(base_url).hostname not in PUBLIC_DEMO_HOSTS:
+        yield
+        return
+    global _public_last_request_at
+    if not _public_request_lock.acquire(blocking=False):
+        raise TravelDataUnavailable("Public road service is busy; recompute later")
+    try:
+        if (
+            _public_last_request_at is not None
+            and monotonic() - _public_last_request_at < 1
+        ):
+            raise TravelDataUnavailable(
+                "Public road service request limit reached; recompute after one second"
+            )
+        try:
+            yield
+        finally:
+            # Completion-based spacing also covers a delayed client constructor.
+            _public_last_request_at = monotonic()
+    finally:
+        _public_request_lock.release()
 
 
 class TravelDataUnavailable(Exception):
@@ -19,7 +58,14 @@ class OSRMRoadTimes:
             return []
         coordinates = ";".join(f'{p["longitude"]},{p["latitude"]}' for p in locations)
         try:
-            with httpx.Client(timeout=self.timeout, follow_redirects=False) as client:
+            with (
+                public_request_budget(self.base_url),
+                httpx.Client(
+                    timeout=self.timeout,
+                    follow_redirects=False,
+                    headers={"User-Agent": USER_AGENT},
+                ) as client,
+            ):
                 response = client.get(
                     f"{self.base_url}/table/v1/driving/{coordinates}",
                     params={"annotations": "duration"},
