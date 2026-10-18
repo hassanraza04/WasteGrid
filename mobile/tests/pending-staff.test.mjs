@@ -410,3 +410,27 @@ test('photo-free completion keeps its owner and version through restart and cann
  });
  await restarted.submitStaff(command);assert.equal(posts,1);assert.deepEqual(await restarted.pendingStaff(),[]);
 });
+
+test('partial approval survives restart and retries and cannot change its saved intent',async()=>{
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','partial-preview',undefined,undefined,{accept_partial:true});
+ assert.equal(command.acceptPartial,true);let posts=0;const bodies=[];
+ app.respond((_url,init)=>{if(init.method==='POST'){posts++;bodies.push(JSON.parse(init.body));throw Error('lost response');}return Response.json({plan_id:null});});
+ await assert.rejects(app.service.submitStaff(command),/lost response/);
+ const restarted=app.reload(),[saved]=await restarted.pendingStaff();assert.equal(saved.acceptPartial,true);
+ await assert.rejects(restarted.prepareStaff('dispatch','partial-preview'),/different partial-route approval/);
+ // Even an in-memory caller changing intent cannot rewrite the persisted payload.
+ await assert.rejects(restarted.submitStaff({...saved,acceptPartial:false}),/lost response/);
+ assert.equal(posts,2);assert.deepEqual(bodies,[{command_id:command.command_id,accept_partial:true},{command_id:command.command_id,accept_partial:true}]);
+ const full=await restarted.prepareStaff('dispatch','full-preview');assert.equal(full.acceptPartial,undefined);
+ await assert.rejects(restarted.prepareStaff('dispatch','full-preview',undefined,undefined,{accept_partial:true}),/different partial-route approval/);
+});
+
+test('a crashed partial dispatch remains GET-only with its approval intent intact',async()=>{
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','preview',undefined,undefined,{accept_partial:true});let posts=0;
+ app.respond((_url,init)=>{if(init.method==='POST'){posts++;app.faults.move=true;throw Error('lost response');}return Response.json({plan_id:null});});
+ await assert.rejects(app.service.submitStaff(command),/lost response/);app.faults.move=false;
+ const restarted=app.reload(),[saved]=await restarted.pendingStaff();assert.equal(saved.acceptPartial,true);assert.equal(saved.dispatchAttemptPending,true);
+ await assert.rejects(restarted.submitStaff(saved),/confirmation is still unknown/);assert.equal(posts,1);assert.equal((await restarted.pendingStaff())[0].acceptPartial,true);
+});

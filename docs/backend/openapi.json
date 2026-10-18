@@ -4,6 +4,16 @@
       "AssignmentExecution": {
         "additionalProperties": false,
         "properties": {
+          "constraints": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RoutingConstraints"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "mode": {
             "enum": [
               "legacy",
@@ -11,6 +21,41 @@
             ],
             "title": "Mode",
             "type": "string"
+          },
+          "return_travel_minutes": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Return Travel Minutes",
+            "type": "number"
+          },
+          "route_job_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 25,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route Job Ids"
+          },
+          "routing_contract_version": {
+            "anyOf": [
+              {
+                "const": 2,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Contract Version"
           },
           "source_plan_id": {
             "anyOf": [
@@ -359,6 +404,9 @@
       "ComputeRoutes": {
         "additionalProperties": false,
         "properties": {
+          "constraints": {
+            "$ref": "#/components/schemas/RoutingConstraints"
+          },
           "crew_ids": {
             "items": {
               "format": "uuid",
@@ -660,6 +708,16 @@
             "title": "Duration Minutes",
             "type": "number"
           },
+          "return_travel_minutes": {
+            "default": 0,
+            "title": "Return Travel Minutes",
+            "type": "number"
+          },
+          "returns_to_start": {
+            "default": false,
+            "title": "Returns To Start",
+            "type": "boolean"
+          },
           "stops": {
             "items": {
               "$ref": "#/components/schemas/RoutingStop"
@@ -870,6 +928,11 @@
       "DispatchRoutes": {
         "additionalProperties": false,
         "properties": {
+          "accept_partial": {
+            "default": false,
+            "title": "Accept Partial",
+            "type": "boolean"
+          },
           "command_id": {
             "format": "uuid",
             "title": "Command Id",
@@ -2732,6 +2795,44 @@
         "title": "RoutePreviewView",
         "type": "object"
       },
+      "RoutingConstraints": {
+        "additionalProperties": false,
+        "description": "Limits apply to the remaining route from the recorded crew origin.",
+        "properties": {
+          "allow_partial": {
+            "default": false,
+            "title": "Allow Partial",
+            "type": "boolean"
+          },
+          "max_duration_minutes": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 480.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Duration Minutes"
+          },
+          "max_stops_per_crew": {
+            "default": 25,
+            "maximum": 25.0,
+            "minimum": 1.0,
+            "title": "Max Stops Per Crew",
+            "type": "integer"
+          },
+          "return_to_start": {
+            "default": false,
+            "title": "Return To Start",
+            "type": "boolean"
+          }
+        },
+        "title": "RoutingConstraints",
+        "type": "object"
+      },
       "RoutingIssue": {
         "additionalProperties": false,
         "properties": {
@@ -3123,6 +3224,11 @@
               "no_eligible_crew",
               "outside_scope",
               "shift_limit",
+              "equipment_mismatch",
+              "max_stops",
+              "duration_limit",
+              "search_incomplete",
+              "no_usable_route_found",
               "held",
               "hazard_review",
               "blocked",

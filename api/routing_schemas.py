@@ -6,12 +6,13 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from api.schemas import Command, Contract, Location
+from api.schemas import Command, Contract, Location, RoutingConstraints
 
 
 class ComputeRoutes(Contract):
     crew_ids: list[UUID] = Field(min_length=1, max_length=5)
     job_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=25)
+    constraints: RoutingConstraints = Field(default_factory=RoutingConstraints)
 
     @model_validator(mode="after")
     def unique_crews(self):
@@ -37,6 +38,7 @@ class CrewLocationView(Contract):
 
 class DispatchRoutes(Contract):
     command_id: UUID
+    accept_partial: bool = False
 
 
 class PriorityDecision(Command):
@@ -60,6 +62,8 @@ class CrewRoute(Contract):
     stops: list[RoutingStop]
     duration_minutes: float
     travel_minutes: float
+    return_travel_minutes: float = 0
+    returns_to_start: bool = False
 
 
 class RoutingIssue(Contract):

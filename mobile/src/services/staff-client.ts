@@ -8,15 +8,23 @@ export type Job = {
   held: boolean; locked: boolean; decision_summary: string; unassigned_reason: string | null;
 };
 export type Crew = {
-  id: string; name: string; available: boolean;
+  id: string; name: string; available: boolean; equipment: string[]; shift_minutes: number;
   start_location: Job["location"];
   location_recorded_at: string | null; location_received_at: string | null;
 };
 export type Stop = { job_id: string; position: number; priority: string; fixed: boolean; travel_minutes: number; service_minutes: number; completion_minutes: number };
+export type RoutingConstraints = {
+  max_duration_minutes: number | null; max_stops_per_crew: number; return_to_start: boolean; allow_partial: boolean;
+};
+export type CrewRoute = {
+  crew_id: string; duration_minutes: number; travel_minutes: number;
+  return_travel_minutes: number; returns_to_start: boolean; stops: Stop[];
+};
 export type Preview = {
   id: string; computed_at: string; expires_at: string; plan_id: string | null; job_ids: string[] | null;
   dispatchable: boolean; termination_reason: string; travel_label: string;
-  routes: { crew_id: string; duration_minutes: number; travel_minutes: number; stops: Stop[] }[];
+  routes: CrewRoute[];
+  settings: { routing_contract_version?: number; constraints?: RoutingConstraints };
   exclusions: { job_id: string; reason: string }[]; unassigned: { job_id: string; reason: string }[];
   reassignments: { job_id: string; previous_crew_id: string | null; proposed_crew_id: string; previous_position: number | null; proposed_position: number }[];
 };
@@ -70,11 +78,16 @@ export class StaffClient {
     throw new Error("Too many active jobs to load. Narrow the operational scope before routing.");
   }
   job(id: string) { return this.request<JobDetails>(`/jobs/${encodeURIComponent(id)}`); }
-  compute(ids: string[], jobIds?: string[]) {
+  compute(ids: string[], jobIds?: string[], constraints?: RoutingConstraints) {
     if (jobIds !== undefined && (jobIds.length < 1 || jobIds.length > 25 || new Set(jobIds).size !== jobIds.length)) {
       throw new Error("Choose between 1 and 25 distinct jobs for this preview.");
     }
-    return this.json<Preview>("/routing/previews", { crew_ids: ids, ...(jobIds === undefined ? {} : { job_ids: [...jobIds] }) });
+    if (constraints && (
+      (constraints.max_duration_minutes !== null && (!Number.isFinite(constraints.max_duration_minutes) || constraints.max_duration_minutes <= 0 || constraints.max_duration_minutes > 480)) ||
+      !Number.isInteger(constraints.max_stops_per_crew) || constraints.max_stops_per_crew < 1 || constraints.max_stops_per_crew > 25 ||
+      typeof constraints.return_to_start !== "boolean" || typeof constraints.allow_partial !== "boolean"
+    )) throw new Error("Choose valid routing time, stop and return limits.");
+    return this.json<Preview>("/routing/previews", { crew_ids: [...ids], ...(jobIds === undefined ? {} : { job_ids: [...jobIds] }), ...(constraints ? { constraints: { ...constraints } } : {}) });
   }
   preview(id: string) { return this.request<Preview>(`/routing/previews/${encodeURIComponent(id)}`); }
   location(location: Job["location"], recordedAt: string) {

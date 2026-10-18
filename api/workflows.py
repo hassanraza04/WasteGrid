@@ -500,8 +500,58 @@ def ensure_can_start(db: Session, job: Job):
             raise HTTPException(
                 409, "Finish the preceding crew stop before starting this job"
             )
+        if rule and rule.get("routing_contract_version") == 2:
+            # Removing an unfinished stop changes the frozen path and its return
+            # leg. Replan instead of subtracting an edge that the crew still needs.
+            original_ids = {UUID(jid) for jid in rule["route_job_ids"]}
+            original = list(db.scalars(select(Job).where(Job.id.in_(original_ids))))
+            if len(original) != len(original_ids) or any(
+                item.status != "completed" and item.assigned_crew_id != crew.id
+                for item in original
+            ):
+                raise HTTPException(409, "Dispatched route changed; replan required")
+            # These are remaining-route budgets from dispatch, not a lifetime
+            # ledger of all completed jobs. Preserved old rules stay compatible.
+            remaining = list(
+                db.scalars(
+                    select(Job).where(
+                        Job.assigned_crew_id == crew.id, Job.status != "completed"
+                    )
+                )
+            )
+            if any(
+                not set(item.required_equipment) <= set(crew.equipment)
+                for item in remaining
+            ):
+                raise HTTPException(409, "Crew equipment changed; replan required")
+            terms = {item["job_id"]: item for item in plan.payload["assignments"]}
+            if any(str(item.id) not in terms for item in remaining):
+                raise HTTPException(
+                    409, "Current route terms required; replan required"
+                )
+            constraints = rule["constraints"]
+            budget = min(
+                crew.shift_minutes,
+                (
+                    constraints["max_duration_minutes"]
+                    if constraints["max_duration_minutes"] is not None
+                    else crew.shift_minutes
+                ),
+            )
+            required = (
+                sum(
+                    terms[str(item.id)]["service_minutes"]
+                    + terms[str(item.id)]["travel_minutes"]
+                    for item in remaining
+                )
+                + rule["return_travel_minutes"]
+            )
+            if required > budget or len(remaining) > constraints["max_stops_per_crew"]:
+                raise HTTPException(
+                    409, "Crew remaining route capacity changed; replan required"
+                )
         # Another crew starting/completing work invalidates future previews, not
-        # the ownership of already dispatched jobs. No equipment/shift budget here.
+        # the ownership of already dispatched jobs.
         return
     if not eligible(job, crew) or job.held:
         raise HTTPException(409, "Crew or job is no longer eligible; replan required")

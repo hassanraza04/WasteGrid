@@ -111,3 +111,19 @@ test('missing or empty saved photo bytes block completion after its accepted-com
  const accepted=setup(()=>Response.json({job:{id:'job',status:'completed'},events:[{kind:'job.completed',command_id:'stable'}]}));
  assert.equal((await recoverOrSend(command,accepted.api)).status,'completed');assert.equal(accepted.calls.length,1);
 });
+
+test('routing limits serialize immutably and invalid limits never reach the server',async()=>{
+ const {api,calls}=setup(()=>Response.json({id:'preview'}));
+ const limits={max_duration_minutes:120,max_stops_per_crew:10,return_to_start:true,allow_partial:true};
+ await api.compute(['crew'],['job'],limits);limits.max_duration_minutes=30;
+ assert.deepEqual(JSON.parse(calls[0][1].body),{crew_ids:['crew'],job_ids:['job'],constraints:{max_duration_minutes:120,max_stops_per_crew:10,return_to_start:true,allow_partial:true}});
+ for(const patch of [{max_duration_minutes:0},{max_duration_minutes:481},{max_duration_minutes:Infinity},{max_stops_per_crew:0},{max_stops_per_crew:26},{max_stops_per_crew:1.5},{return_to_start:'yes'},{allow_partial:undefined}]) assert.throws(()=>api.compute(['crew'],['job'],{...limits,...patch}),/valid routing/);
+ assert.equal(calls.length,1);
+});
+
+test('partial approval is frozen in dispatch retries and legacy full approvals omit the flag',async()=>{
+ const bodies=[];const {api}=setup((_url,init)=>init.method==='POST'?(bodies.push(JSON.parse(init.body)),Response.json({plan_id:'saved'})):Response.json({plan_id:null}));
+ const dispatch={...command,kind:'dispatch',resource_id:'preview',acceptPartial:true};
+ await recoverOrSend(dispatch,api);await recoverOrSend({...dispatch,acceptPartial:undefined},api);
+ assert.deepEqual(bodies,[{command_id:'stable',accept_partial:true},{command_id:'stable'}]);
+});

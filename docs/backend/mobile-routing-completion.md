@@ -11,11 +11,14 @@ Dispatch loads real crews and active jobs. Select at most five crews and 1–25
 jobs, then Compute routes. This creates a read-only preview of that explicit
 scope. Include every unfinished assignment of a selected crew. See
 [scoped routing](scoped-routing.md) for eligibility and conflict recovery. The
-live screen has no city, hours, max-stop or return-to-start controls.
+live screen adds hours, maximum stops, return-to-start and explicit partial
+dispatch controls; see [routing-controls.md](routing-controls.md). City filtering
+remains outside this flow.
 
 Review per-crew time, ordered stops and priorities, fixed work, reassignments,
 excluded jobs and unassigned reasons. Maps show the stop sequence, not road
-geometry. Only a complete, unexpired dispatchable preview can be approved.
+geometry. Only an unexpired dispatchable preview can be approved. An incomplete proposal
+requires partial mode and a separate acknowledgement of omitted work.
 Approval saves a command ID before POST /routing/previews/{id}/dispatch. Recover a
 lost response with the saved action; do not create a replacement command blindly.
 An unresolved saved dispatch blocks another calculation. A definite dispatch 409

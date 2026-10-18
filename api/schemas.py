@@ -322,6 +322,11 @@ class UnassignedJob(Contract):
         "no_eligible_crew",
         "outside_scope",
         "shift_limit",
+        "equipment_mismatch",
+        "max_stops",
+        "duration_limit",
+        "search_incomplete",
+        "no_usable_route_found",
         "held",
         "hazard_review",
         "blocked",
@@ -356,9 +361,36 @@ class PlanProposal(Contract):
     travel_estimates_label: str = Field(min_length=1)
 
 
+class RoutingConstraints(Contract):
+    """Limits apply to the remaining route from the recorded crew origin."""
+
+    max_duration_minutes: float | None = Field(
+        default=None, gt=0, le=480, allow_inf_nan=False
+    )
+    max_stops_per_crew: int = Field(default=25, ge=1, le=25)
+    return_to_start: bool = False
+    allow_partial: bool = False
+
+
 class AssignmentExecution(Contract):
     mode: Literal["legacy", "organizer"]
     source_plan_id: UUID | None
+    routing_contract_version: Literal[2] | None = None
+    constraints: RoutingConstraints | None = None
+    return_travel_minutes: float = Field(default=0, ge=0, allow_inf_nan=False)
+    route_job_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=25)
+
+    @model_validator(mode="after")
+    def resource_terms(self):
+        if self.routing_contract_version == 2 and (
+            self.mode != "organizer"
+            or self.constraints is None
+            or self.route_job_ids is None
+            or len(set(self.route_job_ids)) != len(self.route_job_ids)
+            or "return_travel_minutes" not in self.model_fields_set
+        ):
+            raise ValueError("Resource-aware execution requires frozen route terms")
+        return self
 
 
 class StoredPlan(PlanProposal):

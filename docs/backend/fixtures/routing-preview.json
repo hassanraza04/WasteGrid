@@ -1,0 +1,74 @@
+{
+  "computed_at": "2026-10-16T22:00:00Z",
+  "dispatchable": true,
+  "exclusions": [],
+  "expires_at": "2026-10-16T22:02:00Z",
+  "id": "40000000-0000-4000-8000-000000000002",
+  "job_ids": [
+    "20000000-0000-4000-8000-000000000001"
+  ],
+  "matrix_id": "EXAMPLE_FROZEN_MATRIX_REPLACE_WITH_CURRENT_PREVIEW",
+  "metrics": {
+    "latest_finish": 10.0,
+    "score": 18.25,
+    "total_travel": 5.0,
+    "weighted_wait": 7.0
+  },
+  "plan_id": null,
+  "reassignments": [
+    {
+      "job_id": "20000000-0000-4000-8000-000000000001",
+      "previous_crew_id": null,
+      "previous_position": null,
+      "proposed_crew_id": "30000000-0000-4000-8000-000000000001",
+      "proposed_position": 0
+    }
+  ],
+  "routes": [
+    {
+      "crew_id": "30000000-0000-4000-8000-000000000001",
+      "duration_minutes": 10.0,
+      "return_travel_minutes": 3.0,
+      "returns_to_start": true,
+      "stops": [
+        {
+          "completion_minutes": 7.0,
+          "fixed": false,
+          "job_id": "20000000-0000-4000-8000-000000000001",
+          "position": 0,
+          "priority": "routine",
+          "service_estimate_source": "fixed_collection_time",
+          "service_minutes": 5.0,
+          "travel_minutes": 2.0
+        }
+      ],
+      "travel_minutes": 5.0
+    }
+  ],
+  "settings": {
+    "alpha": 1,
+    "beta": 1,
+    "constraints": {
+      "allow_partial": false,
+      "max_duration_minutes": 120.0,
+      "max_stops_per_crew": 10,
+      "return_to_start": true
+    },
+    "gamma": 0.25,
+    "improvement_budget": 10000,
+    "location_max_age_seconds": 120,
+    "max_displacement_meters": 100,
+    "preview_max_age_seconds": 120,
+    "priority_weights": {
+      "high": 3,
+      "medium": 2,
+      "routine": 1
+    },
+    "routing_contract_version": 2,
+    "service_minutes": 5,
+    "solver_seconds": 5
+  },
+  "termination_reason": "local_optimum",
+  "travel_label": "OSRM directional driving-time estimates using OpenStreetMap data (ODbL); no live traffic guarantee",
+  "unassigned": []
+}

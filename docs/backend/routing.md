@@ -155,8 +155,9 @@ set priority. Replay of the same command is idempotent.
 4. Crews use existing `GET /jobs` for ordered, crew-scoped assignments. Start the
    next stop using the existing job PATCH command, which records collection start
    time. In organiser plans, starting respects route order and current approved
-   assignment; legacy equipment and shift budgets are not applied to newly routed
-   organiser assignments. Unselected legacy assignments retain their original
+   assignment. New previews enforce equipment and remaining-route budgets,
+   and new assignments recheck those resource terms at start; see
+   [routing-controls.md](routing-controls.md). Unselected legacy assignments retain their original
    validated plan and execution checks, including equipment/shift checks, without
    gaining a new priority requirement. Ownership edits
    through the legacy job PATCH are rejected in organiser mode; use dispatch.
@@ -165,13 +166,16 @@ set priority. Replay of the same command is idempotent.
    a `recheck_requested` job with `status: "unassigned"`, `expected_version`,
    `command_id`, and an audit `reason`, without assignment, lock or hold fields.
    The version check, audit event and release are atomic; exact command retries
-   are idempotent. This removes the stop from its old crew so later stops can
-   proceed and puts the reviewed job back into the next routing calculation.
+   are idempotent. This removes the stop from its old crew and puts the reviewed job back into
+   the next routing calculation. New resource-aware routes require a fresh preview
+   before later stops can start, because removing unfinished work changes travel
+   estimates; historical execution rules retain their previous behavior.
    A resident recheck alone does not release ownership or resume the route.
    Availability changes pause a crew but retain its ownership; they do not release
    jobs through the crew PATCH either.
-   Editing legacy equipment/shift values does not clear organiser assignments. Completing work
-   uses existing `POST /jobs/{id}/completion` with the required cleanup photo.
+   Editing equipment/shift values does not clear organiser ownership; changed
+   resources may require a new preview before a stop can start. Completing work
+   uses existing `POST /jobs/{id}/completion` with an optional cleanup photo.
    No AI analysis of completion evidence is performed.
 
 All routing read/compute/dispatch endpoints require an organiser account. The
@@ -190,7 +194,9 @@ Unselected assignments remain unchanged. Current collection and the prefix throu
 the last organiser-locked job are fixed; a lock represents an en-route commitment
 in this MVP. Assigned-but-unstarted unlocked work can move among selected crews.
 An ineligible assigned selected job prevents dispatch until resolved; it is never
-silently unassigned. No area filtering or partial dispatch is implemented.
+silently unassigned. Optional routing limits, equipment checks and partial
+dispatch are documented in [routing-controls.md](routing-controls.md). No area
+filtering is implemented.
 
 Remaining service is `max(1, service_minutes - elapsed_since_start)` for ongoing
 work, or a labelled full-service fallback when no start time exists. Incoming
@@ -199,7 +205,8 @@ travel already completed is zero. No historical shift time is carried forward.
 Construction evaluates permitted insertions across all remaining jobs and selected
 crews with fixed denominators; improvement uses relocations and swaps including
 within-route reordering. Every changed directed edge and downstream completion
-time is recomputed. Full coverage outranks partial cost. An iteration budget gives
+time is recomputed. Existing assignments are preserved; served priority weight
+and job coverage outrank partial cost. An iteration budget gives
 repeatability; the operational time cutoff is explicitly reported and does not
 promise identical results. This heuristic does not guarantee global optimality.
 
@@ -214,8 +221,8 @@ preview. Becoming eligible changes membership and requires recomputation.
 Excluded jobs already assigned to selected crews remain in the revision because
 they can block a dispatch or fixed prefix. No road provider call happens under dispatch locks.
 
-The 10-metre intake hard-block change and mandatory resident GPS enforcement remain
-separate work. Existing PR #6 intake behaviour is unchanged.
+Resident coordinate capture and assessment review remain governed by report
+intake. Routing never clears a report review hold.
 
 ## Preserved assignment terms
 

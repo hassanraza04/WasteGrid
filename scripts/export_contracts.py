@@ -10,6 +10,7 @@ from uuid import UUID
 from pydantic import TypeAdapter
 
 from api import pilot_schemas as P
+from api import routing_schemas as R
 from api import schemas as S
 from api.auth import Principal
 from api.config import Settings
@@ -243,6 +244,82 @@ def fixtures():
             ],
         ),
         "followup-intent": FollowupIntent(kind="status"),
+        "routing-request": R.ComputeRoutes(
+            crew_ids=[cid],
+            job_ids=[jid],
+            constraints=R.RoutingConstraints(
+                max_duration_minutes=120,
+                max_stops_per_crew=10,
+                return_to_start=True,
+                allow_partial=False,
+            ),
+        ),
+        "routing-preview": R.RoutePreviewView(
+            id=UUID("40000000-0000-4000-8000-000000000002"),
+            job_ids=[jid],
+            computed_at=instant,
+            expires_at=instant.replace(minute=2),
+            matrix_id="EXAMPLE_FROZEN_MATRIX_REPLACE_WITH_CURRENT_PREVIEW",
+            travel_label="OSRM directional driving-time estimates using OpenStreetMap data (ODbL); no live traffic guarantee",
+            routes=[
+                R.CrewRoute(
+                    crew_id=cid,
+                    stops=[
+                        R.RoutingStop(
+                            job_id=jid,
+                            position=0,
+                            priority="routine",
+                            travel_minutes=2,
+                            service_minutes=5,
+                            completion_minutes=7,
+                            fixed=False,
+                            service_estimate_source="fixed_collection_time",
+                        )
+                    ],
+                    duration_minutes=10,
+                    travel_minutes=5,
+                    return_travel_minutes=3,
+                    returns_to_start=True,
+                )
+            ],
+            unassigned=[],
+            exclusions=[],
+            metrics=R.RoutingMetrics(
+                weighted_wait=7, latest_finish=10, total_travel=5, score=18.25
+            ),
+            termination_reason="local_optimum",
+            dispatchable=True,
+            reassignments=[
+                R.Reassignment(
+                    job_id=jid,
+                    previous_crew_id=None,
+                    proposed_crew_id=cid,
+                    previous_position=None,
+                    proposed_position=0,
+                )
+            ],
+            settings={
+                "routing_contract_version": 2,
+                "constraints": R.RoutingConstraints(
+                    max_duration_minutes=120,
+                    max_stops_per_crew=10,
+                    return_to_start=True,
+                ).model_dump(mode="json"),
+                "service_minutes": 5,
+                "priority_weights": {"high": 3, "medium": 2, "routine": 1},
+                "alpha": 1,
+                "beta": 1,
+                "gamma": 0.25,
+                "improvement_budget": 10000,
+                "solver_seconds": 5,
+                "location_max_age_seconds": 120,
+                "preview_max_age_seconds": 120,
+                "max_displacement_meters": 100,
+            },
+        ),
+        "routing-dispatch": R.DispatchRoutes(
+            command_id=UUID("50000000-0000-4000-8000-000000000002")
+        ),
         "error": S.ErrorResponse(
             detail="State changed; fetch current state before retrying"
         ),
