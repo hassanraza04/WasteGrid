@@ -12,14 +12,15 @@ export function OrganizerReportDetails({ api, onSessionExpired }: { api: Organiz
   const [error, setError] = useState("");
   const generation = useRef(0);
 
-  async function load(preserveVisible = false) {
-    if (!reportId) { setError("A report reference is required."); setBusy(false); return; }
+  async function load(preserveVisible = false): Promise<boolean> {
+    if (!reportId) { setError("A report reference is required."); setBusy(false); return false; }
     const request = ++generation.current;
-    if (!preserveVisible) setBusy(true);
+    let loaded = false;
+    if (!preserveVisible) { setDetails(null); setBusy(true); }
     setError("");
     try {
       const result = await api.report(reportId);
-      if (request === generation.current) setDetails(result);
+      if (request === generation.current) { setDetails(result); loaded = true; }
     } catch (caught) {
       if (request === generation.current) {
         const error = caught as Error;
@@ -29,6 +30,7 @@ export function OrganizerReportDetails({ api, onSessionExpired }: { api: Organiz
     } finally {
       if (request === generation.current && !preserveVisible) setBusy(false);
     }
+    return loaded;
   }
 
   useEffect(() => { void load(); return () => { generation.current++; }; }, [reportId]);
@@ -46,7 +48,7 @@ export function OrganizerReportDetails({ api, onSessionExpired }: { api: Organiz
     <section><h3>Chalk assessment</h3>{report.assessment ? <Assessment value={report.assessment} /> : <p>No assessment has been recorded yet.</p>}</section>
     <section><h3>Current organiser triage</h3>{report.triage ? <><Value label="Category" value={report.triage.category} /><Value label="Equipment" value={report.triage.proposed_equipment.join(", ")} /><Value label="Duplicate candidate" value={report.triage.duplicate_candidate_id} /><Value label="Duplicate confirmed" value={report.triage.duplicate_confirmed} /><Value label="Hazard" value={report.triage.hazard} /><Value label="Evidence sufficient" value={report.triage.evidence_sufficient} /><Value label="Missing information" value={report.triage.missing_information.join(", ")} /><Value label="Evidence report IDs" value={report.triage.evidence_report_ids.join(", ")} /><Value label="Decision summary" value={report.triage.decision_summary} /><Value label="Next action" value={report.triage.next_action} /><Value label="Estimated service minutes" value={report.triage.estimated_service_minutes} /></> : <p>No organiser decision has been recorded yet.</p>}</section>
     <section><h3>Activity</h3>{events.length ? <ul>{events.map(event => <li key={event.id}><strong>{event.kind}</strong><p>{formatDate(event.created_at)} · {event.actor}</p>{safeEventDetails(event.details).map(([key, value]) => <p key={key}>{humanizeKey(key)}: {String(value)}</p>)}</li>)}</ul> : <p>No activity recorded.</p>}</section>
-    <section><h3>Organiser decision</h3><OrganizerDecisionForm report={report} api={api} onReportUpdated={updated => { setDetails(current => current ? { ...current, report: updated } : current); void load(true); }} onReload={() => void load(true)} onSessionExpired={onSessionExpired} /></section>
+    <section><h3>Organiser decision</h3><OrganizerDecisionForm report={report} api={api} onReportUpdated={updated => { setDetails(current => current ? { ...current, report: updated } : current); void load(true); }} onReload={() => load(true)} onSessionExpired={onSessionExpired} /></section>
   </article>;
 }
 

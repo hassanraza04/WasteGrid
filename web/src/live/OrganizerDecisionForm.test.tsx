@@ -22,7 +22,7 @@ function setup(overrides: Partial<OrganizerApi> = {}) {
     ...overrides,
   } as unknown as OrganizerApi;
   const onReportUpdated = vi.fn();
-  const onReload = vi.fn();
+  const onReload = vi.fn().mockResolvedValue(true);
   render(<OrganizerDecisionForm report={report} api={api} onReportUpdated={onReportUpdated} onReload={onReload} />);
   return { api, onReportUpdated, onReload, user: userEvent.setup() };
 }
@@ -87,7 +87,20 @@ test("keeps the draft but requires a fresh review after a stale decision respons
   await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
   await user.click(screen.getByRole("button", { name: "Reload latest report" }));
   expect(onReload).toHaveBeenCalled();
-  expect(screen.getByLabelText("Category")).toHaveValue("general waste");
+  expect(await screen.findByLabelText("Category")).toHaveValue("general waste");
+  expect(screen.queryByRole("button", { name: "Apply organiser decision" })).not.toBeInTheDocument();
+});
+
+test("does not permit a stale decision to be edited or resent until reload succeeds", async () => {
+  vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("decision-id") });
+  const applyDecision = vi.fn().mockRejectedValue(new Error("This report changed or is not ready for that decision. Reload it and review the latest details."));
+  const { onReload, user } = setup({ applyDecision });
+  onReload.mockResolvedValue(false);
+  await prepareReview(user);
+  await user.click(screen.getByRole("button", { name: "Apply organiser decision" }));
+  await user.click(screen.getByRole("button", { name: "Reload latest report" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Unable to refresh the latest report");
+  expect(screen.queryByRole("button", { name: "Edit decision" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Apply organiser decision" })).not.toBeInTheDocument();
 });
 

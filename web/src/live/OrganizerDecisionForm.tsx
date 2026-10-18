@@ -16,13 +16,14 @@ type Draft = {
 
 type PendingDecision = { decision: DecisionCommand; priority: { commandId: string; priority: Priority; reason: string } | null };
 
-export function OrganizerDecisionForm({ report, api, onReportUpdated, onReload, onSessionExpired }: { report: OrganizerReport; api: OrganizerApi; onReportUpdated: (report: OrganizerReport) => void; onReload: () => void; onSessionExpired?: (error: AccessError) => void }) {
+export function OrganizerDecisionForm({ report, api, onReportUpdated, onReload, onSessionExpired }: { report: OrganizerReport; api: OrganizerApi; onReportUpdated: (report: OrganizerReport) => void; onReload: () => Promise<boolean>; onSessionExpired?: (error: AccessError) => void }) {
   const [draft, setDraft] = useState<Draft>(() => fromReport(report));
   const [validation, setValidation] = useState("");
   const [pending, setPending] = useState<PendingDecision | null>(null);
   const [decisionSaved, setDecisionSaved] = useState<OrganizerReport | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [stale, setStale] = useState(false);
 
   function update<K extends keyof Draft>(key: K, value: Draft[K]) { setDraft(current => ({ ...current, [key]: value })); }
   function toggleEquipment(value: Equipment) { update("selectedEquipment", draft.selectedEquipment.includes(value) ? draft.selectedEquipment.filter(item => item !== value) : [...draft.selectedEquipment, value]); }
@@ -56,6 +57,7 @@ export function OrganizerDecisionForm({ report, api, onReportUpdated, onReload, 
           if (caught instanceof AccessError) { onSessionExpired?.(caught); return; }
           setDecisionSaved(decisionResult);
           setError(`The triage decision was saved. ${safeMessage(caught)} Retry the priority update when ready.`);
+          setStale(isStale(caught));
         }
       } else {
         onReportUpdated(decisionResult); clear();
@@ -63,13 +65,20 @@ export function OrganizerDecisionForm({ report, api, onReportUpdated, onReload, 
     } catch (caught) {
       if (caught instanceof AccessError) { onSessionExpired?.(caught); return; }
       setError(safeMessage(caught));
+      setStale(isStale(caught));
     } finally {
       setSaving(false);
     }
   }
 
-  function clear() { setPending(null); setDecisionSaved(null); setError(""); }
-  function reloadAfterStale() { clear(); onReload(); }
+  function clear() { setPending(null); setDecisionSaved(null); setError(""); setStale(false); }
+  async function reloadAfterStale() {
+    setSaving(true); setError("");
+    const refreshed = await onReload();
+    if (refreshed) clear();
+    else setError("Unable to refresh the latest report. Keep this draft and retry the reload.");
+    setSaving(false);
+  }
 
   if (pending) return <section aria-label="Review organiser decision">
     <h4>Review decision</h4>
@@ -82,8 +91,8 @@ export function OrganizerDecisionForm({ report, api, onReportUpdated, onReload, 
     <p>Priority: {pending.priority?.priority ?? "Unchanged"}</p><p>Priority reason: {pending.priority?.reason ?? "Not recorded"}</p>
     <p>Applying this decision creates an attributed organiser event. It does not start a worker or send a message.</p>
     {error && <p role="alert">{error}</p>}
-    {error.includes("changed or is not ready") ? <button onClick={reloadAfterStale}>Reload latest report</button> : <button disabled={saving} onClick={() => void apply()}>{error ? "Retry organiser decision" : "Apply organiser decision"}</button>}
-    <button disabled={saving} onClick={clear}>Edit decision</button>
+    {stale ? <button disabled={saving} onClick={() => void reloadAfterStale()}>Reload latest report</button> : <button disabled={saving} onClick={() => void apply()}>{error ? "Retry organiser decision" : "Apply organiser decision"}</button>}
+    {!stale && <button disabled={saving} onClick={clear}>Edit decision</button>}
   </section>;
 
   return <section aria-label="Organiser decision form">
@@ -122,3 +131,4 @@ function validate(draft: Draft): string {
 
 function list(value: string) { return [...new Set(value.split(",").map(item => item.trim()).filter(Boolean))]; }
 function safeMessage(caught: unknown) { return caught instanceof Error ? caught.message : "Unable to save the organiser decision. Please retry."; }
+function isStale(caught: unknown) { return caught instanceof Error && caught.message.includes("changed or is not ready"); }

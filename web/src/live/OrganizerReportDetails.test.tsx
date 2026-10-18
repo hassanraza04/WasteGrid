@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, test, vi } from "vitest";
 
 import { OrganizerReportDetails } from "./OrganizerReportDetails";
@@ -46,4 +46,17 @@ test("loads the signed private photo only after the organiser asks for it", asyn
   expect(await screen.findByAltText("Reported waste")).toHaveAttribute("src", "https://photos.example/signed");
   expect(api.photo).toHaveBeenCalledWith("photo-123");
   expect(screen.queryByText("https://photos.example/signed")).not.toBeInTheDocument();
+});
+
+test("clears the previous report when loading a different report route fails", async () => {
+  const api = { report: vi.fn().mockResolvedValueOnce(details).mockRejectedValueOnce(new Error("Unable to load report details. Please retry.")), photo: vi.fn().mockResolvedValue("https://photos.example/signed"), applyDecision: vi.fn(), setPriority: vi.fn() } as unknown as OrganizerApi;
+  render(<MemoryRouter initialEntries={["/admin/reports/report-123"]}><Link to="/admin/reports/report-456">Other report</Link><Routes><Route path="/admin/reports/:reportId" element={<OrganizerReportDetails api={api} />} /></Routes></MemoryRouter>);
+  const user = userEvent.setup();
+  await screen.findByRole("heading", { name: "WG-123" });
+  await user.click(screen.getByRole("button", { name: "Load photo" }));
+  await screen.findByAltText("Reported waste");
+  await user.click(screen.getByRole("link", { name: "Other report" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Unable to load report details");
+  expect(screen.queryByRole("heading", { name: "WG-123" })).not.toBeInTheDocument();
+  expect(screen.queryByAltText("Reported waste")).not.toBeInTheDocument();
 });
