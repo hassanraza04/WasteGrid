@@ -82,6 +82,11 @@ test.each([401, 403, 500])("handles HTTP %s without exposing the server response
   const { api, fetcher } = setup(); fetcher.mockResolvedValue(new Response("private server response", { status }));
   await expect(api.reports(0)).rejects.toThrow(status === 500 ? "Unable to load" : "session expired");
 });
+test("preserves the generic safe error when private photo access fails", async () => {
+  const { api, fetcher } = setup(); fetcher.mockResolvedValue(new Response("private server response", { status: 404 }));
+  await expect(api.photo("photo-id")).rejects.toThrow("Unable to load reports. Please retry.");
+  await expect(api.photo("photo-id")).rejects.not.toThrow("private server response");
+});
 test("fails closed on expired sessions and reports a network failure", async () => {
   const { api, auth, fetcher } = setup(); vi.mocked(auth.token).mockResolvedValueOnce(undefined);
   await expect(api.reports(0)).rejects.toThrow("Please sign in"); expect(fetcher).not.toHaveBeenCalled();

@@ -152,7 +152,7 @@ export class OrganizerApi {
   }
 
   async photo(id: string): Promise<string> {
-    const result = await this.request<{ url: string }>(`/photos/${encodeURIComponent(id)}/access`);
+    const result = await this.request<{ url: string }>(`/photos/${encodeURIComponent(id)}/access`, {}, "reports");
     return result.url;
   }
 
