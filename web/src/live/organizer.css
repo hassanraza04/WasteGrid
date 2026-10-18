@@ -163,23 +163,21 @@
 .wg-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.7px;
   text-decoration: none;
   color: var(--wg-ink) !important;
 }
-.wg-brand-mark {
-  width: 38px;
-  height: 38px;
-  background: var(--wg-green);
-  border-radius: 12px;
-  color: white;
-  display: grid;
-  place-items: center;
-  font-size: 24px;
-  font-weight: 500;
+.wg-brand img {
+  display: block;
+  width: min(196px, 100%);
+  height: auto;
+}
+.wg-welcome-brand {
+  margin: 0;
+}
+.wg-welcome-brand img {
+  display: block;
+  width: min(100%, 340px);
+  height: auto;
 }
 .wg-navigation {
   display: grid;
@@ -818,13 +816,7 @@
     border-right: 0;
     border-bottom: 1px solid var(--wg-line);
   }
-  .wg-brand {
-    font-size: 20px;
-  }
-  .wg-brand-mark {
-    width: 34px;
-    height: 34px;
-  }
+  .wg-brand img { width: 174px; }
   .wg-navigation {
     display: flex;
     gap: 6px;

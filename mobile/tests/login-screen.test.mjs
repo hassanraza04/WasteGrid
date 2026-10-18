@@ -8,7 +8,8 @@ function loginScreen(session) {
  const fields = {}; let blocked = false, backs = 0;
  const back = () => { if (!blocked) backs++; };
  const Login = load('app/login.tsx', {
-  'react-native': { ...native, Platform: { OS: 'android' } },
+  'react-native': { ...native, Image: wrap, Platform: { OS: 'android' } },
+  '@/assets/images/wastegrid-logo.png': 1,
   'expo-router': {
    router: { back },
    usePreventRemove: busy => {

@@ -4,19 +4,17 @@
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/wastegrid-app-icon.png",
     "scheme": "mobile",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/wastegrid-app-icon.png",
       "bundleIdentifier": "com.anonymous.mobile"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/images/wastegrid-android-foreground.png"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -30,7 +28,7 @@
     },
     "web": {
       "output": "server",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/wastegrid-mark.png"
     },
     "plugins": [
       "expo-router",
@@ -50,9 +48,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#12804D",
-          "image": "./assets/images/splash-wordmark.png",
-          "imageWidth": 170
+          "backgroundColor": "#FFFFFF",
+          "image": "./assets/images/wastegrid-logo.png",
+          "imageWidth": 260
         }
       ],
       "expo-audio",
