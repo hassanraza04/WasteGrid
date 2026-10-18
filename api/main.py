@@ -321,6 +321,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # visible; all reports linked to a completed cleanup disappear together.
         rows = db.execute(
             select(latitude, longitude)
+            .distinct()
             .select_from(Report)
             .outerjoin(Job, Report.job_id == Job.id)
             .where(
@@ -330,16 +331,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 longitude_in_view,
                 or_(Report.job_id.is_(None), Job.status != "completed"),
             )
-            .order_by(Report.created_at.desc(), Report.id.desc())
+            .order_by(latitude, longitude)
             .limit(501)
         ).all()
         # A roughly 100 m grid avoids publishing the submitted GPS fix and
         # collapses nearby reports into one bin symbol.
-        cells = {(float(lat), float(lon)) for lat, lon in rows[:500]}
         return PublicMapMarkers(
             items=[
-                PublicMapMarker(latitude=lat, longitude=lon)
-                for lat, lon in sorted(cells)
+                PublicMapMarker(latitude=float(lat), longitude=float(lon))
+                for lat, lon in rows[:500]
             ],
             truncated=len(rows) > 500,
         )

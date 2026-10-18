@@ -37,7 +37,8 @@ def test_public_map_filters_and_returns_only_rounded_coordinates():
         }
         query = str(db.query.compile(dialect=postgresql.dialect())).lower()
         # Both selected coordinates and both viewport predicates use round().
-        assert query.count("round(") == 4
+        assert query.startswith("select distinct round(")
+        assert query.count("round(") >= 4
         assert "reports.title" not in query
         assert "reports.public_reference" not in query
     finally:
