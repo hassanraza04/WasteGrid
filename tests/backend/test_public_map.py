@@ -42,6 +42,7 @@ def test_public_map_marker_follows_report_and_job_lifecycle(client, png):
         db.add(job)
         db.flush()
         saved.job_id = job.id
+        saved.state = "linked_to_job"
         db.commit()
 
     assert len(client.get("/map/markers", params=BOUNDS).json()["items"]) == 1
