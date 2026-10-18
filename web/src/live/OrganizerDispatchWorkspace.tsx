@@ -499,8 +499,8 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
       )}
       {entry.stage === "conflict" && (
         <Alert>
-          Review the reason above and the refreshed routing state, then compute
-          a new preview with a new command.
+          Review the refreshed crews and jobs, then compute a new preview with
+          a new command.
         </Alert>
       )}
       {loading ? (

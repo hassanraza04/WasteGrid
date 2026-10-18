@@ -160,7 +160,7 @@ test("mismatched receipt blocks recovery without generating another command", as
 test("definite dispatch conflict refreshes and requires a new preview", async () => {
   const { api, user } = setup(); vi.mocked(api.dispatchRouting).mockRejectedValueOnce(new RoutingConflictError("State changed"));
   await review(user); await confirm(user);
-  await screen.findByText(/Review the reason above and the refreshed routing state/);
+  await screen.findByText(/Review the refreshed crews and jobs/);
   expect(screen.queryByRole("region", { name: "Route preview" })).not.toBeInTheDocument();
   await waitFor(() => expect(api.currentPlan).toHaveBeenCalledTimes(2));
   expect((await journal.readJournal(ENVIRONMENT, ACTOR))?.stage).toBe("conflict");

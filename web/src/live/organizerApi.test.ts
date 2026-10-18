@@ -382,9 +382,9 @@ test.each([
   "Illustrative Crew A has no timestamped location",
   "Selected job is not eligible",
 ])("preserves backend routing conflict detail: %s", async detail => {
-  const { api, fetcher } = setup(); fetcher.mockResolvedValue(Response.json({ detail }, { status: 409 }));
+  const { api, fetcher } = setup(); fetcher.mockImplementation(async () => Response.json({ detail }, { status: 409 }));
   await expect(api.previewRouting(["crew-1"], ["job-1"])).rejects.toThrow(detail);
-  await expect(api.dispatchRouting("preview-1", "command-1")).rejects.toBeInstanceOf(RoutingConflictError);
+  await expect(api.dispatchRouting("preview-1", "command-1")).rejects.toThrow(detail);
 });
 test.each([null, 3, [], { field: "invalid" }, "   "])("falls back for non-message routing detail %j", async detail => {
   const { api, fetcher } = setup(); fetcher.mockResolvedValue(Response.json({ detail }, { status: 409 }));
