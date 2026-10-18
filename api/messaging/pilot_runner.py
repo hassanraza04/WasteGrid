@@ -27,6 +27,17 @@ def run_pilot_once(
     seen: set[str] = set()
     submitted: list[str] = []
     while True:
+        if window.since == window.before:
+            # Activation (including a resumed first scan) has no interval yet.
+            # Photon requires createdSince < createdBefore; retain the activation
+            # boundary and let the next scan cover messages arriving after it.
+            ledger.page_processed(window, None)
+            if window.before < now:
+                # A saved empty scan may predate STOP messages received while
+                # offline. Ingest that elapsed interval before any queued send.
+                window = ledger.scan_window(now)
+                continue
+            break
         try:
             page = gateway.list_message_page(
                 window.since, window.before, window.page_token

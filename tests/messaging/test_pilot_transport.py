@@ -337,6 +337,63 @@ def test_http_claim_accepts_no_lease_only_for_an_existing_provider_submission(tm
         client.claim_pilot_outgoing()
 
 
+def test_initial_empty_window_skips_provider_then_next_scan_covers_activation(
+    tmp_path,
+):
+    config, backend, gateway = configuration(tmp_path), Backend(), Gateway()
+    ledger = PilotLedger(config.delivery_db_path)
+    first_poll = NOW
+    coordinator = PilotCoordinator(backend, gateway, ledger, config)
+
+    assert run_pilot_once(gateway, coordinator, ledger, config, first_poll) == []
+    assert gateway.reads == []
+    # An empty inbound interval still permits normal queued-send and receipt work.
+    assert len(gateway.sent) == 1
+    assert ledger.receipts()[0].latest_status == "delivered"
+
+    later = first_poll + timedelta(seconds=2)
+    gateway.pages = [MessagePage([raw_message()])]
+    assert run_pilot_once(gateway, coordinator, ledger, config, later) == ["message-1"]
+    assert gateway.reads == [(NOW, later, None)]
+    assert len(backend.inbound) == 1 and len(gateway.sent) == 1
+    # Activation stays intact across the zero-width window and process restart.
+    resumed = PilotLedger(config.delivery_db_path).scan_window(
+        later + timedelta(seconds=2)
+    )
+    assert resumed.since == NOW and resumed.before > resumed.since
+
+
+def test_resumed_empty_window_ingests_elapsed_stop_before_dispatch(tmp_path):
+    config, backend, gateway = configuration(tmp_path), Backend(), Gateway()
+    ledger = PilotLedger(config.delivery_db_path)
+    # Reproduce a process saving its first zero-width scan before Photon rejects it.
+    saved = ledger.scan_window(NOW)
+    assert saved.since == saved.before == NOW
+    ledger = PilotLedger(config.delivery_db_path)
+    later = NOW + timedelta(seconds=2)
+    gateway.pages = [
+        MessagePage(
+            [raw_message("stop-1", content=SimpleNamespace(type="text", text="STOP"))]
+        )
+    ]
+
+    def ingest_stop(message):
+        assert gateway.sent == []
+        assert message.text == "STOP"
+        backend.inbound.append(message)
+        backend.state = "paused"
+
+    backend.submit_pilot_inbound = ingest_stop
+    coordinator = PilotCoordinator(backend, gateway, ledger, config)
+    assert run_pilot_once(gateway, coordinator, ledger, config, later) == ["stop-1"]
+    assert gateway.reads == [(NOW, later, None)]
+    assert len(backend.inbound) == 1 and gateway.sent == []
+    resumed = PilotLedger(config.delivery_db_path).scan_window(
+        later + timedelta(seconds=2)
+    )
+    assert resumed.since == NOW and resumed.before > resumed.since
+
+
 def test_all_pages_including_empty_continuation_are_processed_before_sends(tmp_path):
     config, backend, gateway = configuration(tmp_path), Backend(), Gateway()
     gateway.pages = [
@@ -350,12 +407,12 @@ def test_all_pages_including_empty_continuation_are_processed_before_sends(tmp_p
         backend.inbound.append(message)
 
     backend.submit_pilot_inbound = submit
+    ledger = PilotLedger(config.delivery_db_path)
+    ledger.page_processed(ledger.scan_window(NOW - timedelta(seconds=1)), None)
     accepted = run_pilot_once(
         gateway,
-        PilotCoordinator(
-            backend, gateway, PilotLedger(config.delivery_db_path), config
-        ),
-        PilotLedger(config.delivery_db_path),
+        PilotCoordinator(backend, gateway, ledger, config),
+        ledger,
         config,
         NOW,
     )
@@ -367,6 +424,7 @@ def test_all_pages_including_empty_continuation_are_processed_before_sends(tmp_p
 def test_failed_page_restarts_from_durable_cursor_with_same_window(tmp_path):
     config, backend, gateway = configuration(tmp_path), Backend(), Gateway()
     ledger = PilotLedger(config.delivery_db_path)
+    ledger.page_processed(ledger.scan_window(NOW - timedelta(seconds=1)), None)
     window = ledger.scan_window(NOW)
     ledger.page_processed(window, "page-2")
     gateway.pages = [MessagePage([raw_message()])]
@@ -383,7 +441,7 @@ def test_failed_page_restarts_from_durable_cursor_with_same_window(tmp_path):
         NOW + timedelta(minutes=3)
     )
     assert restored.page_token == "page-2" and restored.before == NOW
-    assert restored.since == NOW
+    assert restored.since == NOW - timedelta(seconds=1)
 
 
 def test_overlap_and_periodic_reconciliation_return_to_activation(tmp_path):
@@ -520,6 +578,7 @@ def test_receipt_payload_is_immutable(tmp_path):
 def test_expired_page_token_restarts_same_window_not_a_new_checkpoint(tmp_path):
     config, backend, gateway = configuration(tmp_path), Backend(), Gateway()
     ledger = PilotLedger(config.delivery_db_path)
+    ledger.page_processed(ledger.scan_window(NOW - timedelta(seconds=1)), None)
     window = ledger.scan_window(NOW)
     ledger.page_processed(window, "expired")
 
