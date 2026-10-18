@@ -48,7 +48,16 @@ The user sees the refreshed server response only after a successful save.
 Priority is sent through its existing dedicated API with its own fresh command
 ID and expected report version. It is part of the same review summary but is
 submitted only after the triage decision succeeds and returns the latest report
-version.
+version. For reports already linked to a job, priority has its own confirmed
+update and does not resubmit triage. Reviewed payloads and retry command IDs
+remain fixed; a definite version conflict requires loading the latest report
+before reviewing or retrying the applicable update.
+
+A link decision includes the confirmed duplicate candidate among its evidence
+report IDs in both the review summary and submitted command. The saved outcome
+shows the committed report state and linked job ID; a saved review or
+information-required outcome is not presented as a successful link. Review and
+information requests do not require choosing cleanup equipment.
 
 If the backend rejects a stale version, duplicate command, malformed decision,
 or unavailable service, the page keeps unsaved edits on screen, displays the
@@ -68,6 +77,11 @@ ID. The screen does not silently retry a failed compute or dispatch.
 ## Security and operational constraints
 
 - Require the existing Supabase organizer session for every read and mutation.
+- Invalidate pending reads, mutation continuations and callbacks when their
+  report, mount or authentication session changes. A late operation cannot
+  update another report view, end a newer session or submit a follow-up command
+  using another account. Reject overlapping sign-ins instead of queuing passwords;
+  sign-out waits for an outstanding sign-in before clearing the SDK session.
 - Fetch private photos through the current short-lived signed-photo endpoint.
 - Never display the resident access token, Supabase server key, Chalk key, or
   signed URL as page text.
@@ -88,6 +102,11 @@ Add browser-component and API-adapter tests for:
 - submitting one command ID and expected version for a confirmed decision
 - applying priority after a successful triage response with the refreshed
   version
+- including duplicate candidates in reviewed evidence and displaying committed outcomes
+- priority-only updates on linked reports, immutable retries and conflict recovery
+- coordinate-only reports, resident location corrections and linked job inspection
+- safe, readable historical priority and triage rationales
+- logout, account changes, route changes and unmounts during pending requests
 - keeping routing preview and dispatch as distinct explicit actions
 - excluding messaging controls from the organizer UI
 
