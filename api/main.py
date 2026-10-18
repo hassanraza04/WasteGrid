@@ -89,6 +89,8 @@ from api.schemas import (
     OrganizerReportView,
     OutgoingView,
     PhotoAccess,
+    PublicMapMarker,
+    PublicMapMarkers,
     Recheck,
     ReportCreated,
     ReportDetails,
@@ -286,6 +288,52 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         db.execute(select(Task.id).limit(0))
         db.execute(select(MessagingPilot.id).limit(0))
         return {"status": "ready"}
+
+    @app.get("/map/markers", response_model=PublicMapMarkers)
+    def public_map_markers(
+        south: float = Query(ge=-90, le=90, allow_inf_nan=False),
+        north: float = Query(ge=-90, le=90, allow_inf_nan=False),
+        west: float = Query(ge=-180, le=180, allow_inf_nan=False),
+        east: float = Query(ge=-180, le=180, allow_inf_nan=False),
+        db: Session = Depends(get_db),
+    ):
+        if south >= north or west == east:
+            raise HTTPException(422, "Invalid map bounds")
+        # Filter the same rounded coordinates we publish. Filtering exact GPS
+        # would let repeated narrow viewport queries reconstruct a private fix.
+        latitude = func.round(Report.location["latitude"].as_float() * 1000) / 1000.0
+        longitude = func.round(Report.location["longitude"].as_float() * 1000) / 1000.0
+        longitude_in_view = (
+            longitude.between(west, east)
+            if west < east
+            else or_(longitude >= west, longitude <= east)
+        )
+        # An accepted report is a committed row. Pending/reviewed reports stay
+        # visible; all reports linked to a completed cleanup disappear together.
+        rows = db.execute(
+            select(latitude, longitude)
+            .select_from(Report)
+            .outerjoin(Job, Report.job_id == Job.id)
+            .where(
+                Report.illustrative.is_(False),
+                Report.location.is_not(None),
+                latitude.between(south, north),
+                longitude_in_view,
+                or_(Report.job_id.is_(None), Job.status != "completed"),
+            )
+            .order_by(Report.created_at.desc(), Report.id.desc())
+            .limit(501)
+        ).all()
+        # A roughly 100 m grid avoids publishing the submitted GPS fix and
+        # collapses nearby reports into one bin symbol.
+        cells = {(float(lat), float(lon)) for lat, lon in rows[:500]}
+        return PublicMapMarkers(
+            items=[
+                PublicMapMarker(latitude=lat, longitude=lon)
+                for lat, lon in sorted(cells)
+            ],
+            truncated=len(rows) > 500,
+        )
 
     @app.post("/reports", response_model=ReportCreated, status_code=201)
     def create_report(

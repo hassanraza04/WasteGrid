@@ -72,6 +72,18 @@ class Location(Contract):
     landmark: str | None = Field(default=None, max_length=300)
 
 
+class PublicMapMarker(Contract):
+    """Approximate location only; never expose a resident report identifier or details."""
+
+    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+
+
+class PublicMapMarkers(Contract):
+    items: list[PublicMapMarker]
+    truncated: bool
+
+
 class Command(Contract):
     command_id: UUID
     expected_version: int = Field(ge=1)
