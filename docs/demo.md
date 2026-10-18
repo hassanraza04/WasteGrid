@@ -9,7 +9,7 @@ follow the [one-phone finish checklist](backend/hackathon-finish.md) and
 
 ## Before starting
 
-1. Configure the clients using the [root quick start](../README.md#getting-started).
+1. Configure the clients using the [root quick start](development.md#getting-started).
    Use the same API and Supabase project in both clients.
 2. Obtain a provisioned organizer account and crew accounts privately. Confirm
    `/auth/me` returns their protected roles and the correct crew IDs.

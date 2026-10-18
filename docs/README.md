@@ -1,7 +1,8 @@
 # WasteGrid documentation
 
-Start with the [project README](../README.md) for the product overview,
-architecture, and quick start. This index groups the supporting documentation by
+Start with the [project README](../README.md) for the product story and demo
+experience. Use the [development guide](development.md) for architecture, setup,
+configuration, tests, and deployment. This index groups the supporting guides by
 the work you want to do.
 
 ## Run or demonstrate the project
