@@ -102,7 +102,7 @@ function PhoneUpdatesContent({ draft, owner }: { draft: ReportDraft; owner: stri
   return <View style={s.section}>
     <AppText variant="title">Report updates</AppText>
     {state?.enabled && !state.pending && <>
-      <AppText variant="caption" tone="muted">Send also sends a copy to {state.phone_label?.replace(/^Registered /, "") ?? "the registered phone"}.</AppText>
+      <AppText variant="caption" tone="muted">A copy will go to {state.phone_label?.replace(/^Registered /, "") ?? "the registered phone"}.</AppText>
       <View style={s.composer}>
         <TextField accessibilityLabel="Message for report update" placeholder="Type Status" value={message} style={s.field}
           onChangeText={setMessage} editable={!busy && !awaitingDelivery} autoCorrect={false} maxLength={100} />

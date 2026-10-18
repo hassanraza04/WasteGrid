@@ -28,7 +28,7 @@ test('Phone updates starts empty, shows the registered phone, and sends normaliz
   assert.match(view.container.textContent, /phone ending 1234/);
   assert.equal(app.field().value, ''); assert.equal(app.field().placeholder, 'Type Status');
   assert.equal(button(view.container, 'Send').disabled, true);
-  assert.match(view.container.textContent, /Send also sends a copy to phone ending 1234/);
+  assert.match(view.container.textContent, /A copy will go to phone ending 1234/);
   assert.doesNotMatch(view.container.textContent, /iMessage|LINK|QR|Open Messages|Report conversation/);
   assert.deepEqual(app.sent, []);
   await app.type('  sTaTuS '); await act(async () => button(view.container, 'Send').click());
@@ -110,7 +110,7 @@ test('disabled reports hide the empty feature while existing receipts remain vis
   app.state({ ...initial, enabled: false, latest_request: receipt('submitted') });
   await act(async () => app.foreground());
   assert.match(view.container.textContent, /Phone delivery pending/);
-  assert.doesNotMatch(view.container.textContent, /Send also sends/);
+  assert.doesNotMatch(view.container.textContent, /A copy will go/);
  } finally { await view.close(); }
 });
 test('refresh failure preserves an existing receipt and remains retryable', async () => {
