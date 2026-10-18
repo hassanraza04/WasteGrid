@@ -1,4 +1,4 @@
-// secure-random.ts — the two expo-crypto calls the app needs, backed by expo-modules-core's native uuidv4
+// secure-random.ts provides the two expo-crypto calls the app needs through expo-modules-core's native uuidv4.
 // (Android: java.util.UUID.randomUUID, which uses SecureRandom; iOS: Foundation UUID). That generator ships
 // in Expo Go and every build. expo-crypto >=58.0.5 doesn't register its main module on Android, so importing
 // it crashes there with "Cannot find native module 'ExpoCrypto'" (expo/expo#51198).
