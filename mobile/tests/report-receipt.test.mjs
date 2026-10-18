@@ -91,6 +91,46 @@ test('a repeated tap during submission sends one saved draft', async () => {
   } finally { await app.view.close(); }
 });
 
+test('same-account session restoration preserves a displayed receipt', async () => {
+  const account = { userId: 'resident-one', email: 'resident@example.com', role: 'user' };
+  const app = screen({ sendDraft: async () => accepted, session: account });
+  try {
+    await app.ready();
+    await act(async () => app.form().onSubmit());
+    assert.equal(app.receipt()?.reference, accepted.public_reference);
+    app.setSession({ ...account });
+    await app.view.render();
+    assert.match(app.view.container.textContent, /WG-ABCDEF123456/);
+  } finally { await app.view.close(); }
+});
+
+test('same-account session restoration during upload still shows acceptance', async () => {
+  const account = { userId: 'resident-one', email: 'resident@example.com', role: 'user' };
+  const pending = deferred();
+  const app = screen({ sendDraft: () => pending.promise, session: account });
+  try {
+    await app.ready();
+    await act(() => { void app.form().onSubmit(); });
+    assert.equal(app.sent.length, 1);
+    app.setSession({ ...account });
+    await app.view.render();
+    await act(async () => { pending.resolve(accepted); await pending.promise; });
+    assert.equal(app.receipt()?.reference, accepted.public_reference);
+  } finally { await app.view.close(); }
+});
+
+test('signing out clears a displayed account receipt', async () => {
+  const app = screen({ sendDraft: async () => accepted, session: { userId: 'resident-one', role: 'user' } });
+  try {
+    await app.ready();
+    await act(async () => app.form().onSubmit());
+    assert.equal(app.receipt()?.reference, accepted.public_reference);
+    app.setSession(null);
+    await app.view.render();
+    assert.doesNotMatch(app.view.container.textContent, /WG-ABCDEF123456/);
+  } finally { await app.view.close(); }
+});
+
 test('a late accepted response cannot show a receipt after unmount or account switch', async () => {
   for (const change of ['unmount', 'account']) {
     const pending = deferred();

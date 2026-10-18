@@ -3,7 +3,7 @@ import { router } from "expo-router";
 
 import { createDraft, discardDraft, sendDraft } from "@/services/reports";
 import { reportFields, ReportRejectedError, type ReportDraft } from "@/services/report-client";
-import { getSession, useSession, type Session } from "@/auth/session";
+import { getSession, useSession } from "@/auth/session";
 import { CameraStep } from "@/components/report/camera-step";
 import { ReportForm } from "@/components/report/report-form";
 import { SubmissionReceipt } from "@/components/report/submission-receipt";
@@ -22,7 +22,7 @@ export default function Report() {
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<ReportDraft | null>(null);
   const [receiptReference, setReceiptReference] = useState<string | null>(null);
-  const receiptSession = useRef<Session | null>(null);
+  const receiptOwner = useRef<string | null>(null);
   const submitting = useRef(false);
   const mounted = useRef(true);
   const locationRequest = useRef(0);
@@ -34,8 +34,8 @@ export default function Report() {
     return () => { mounted.current = false; locationRequests.current++; photoRevisions.current++; };
   }, []);
   useEffect(() => {
-    if (receiptReference && receiptSession.current !== session) {
-      receiptSession.current = null;
+    if (receiptReference && receiptOwner.current !== (session?.userId ?? null)) {
+      receiptOwner.current = null;
       setReceiptReference(null);
     }
   }, [session, receiptReference]);
@@ -77,7 +77,7 @@ export default function Report() {
 
   const onSubmit = async () => {
     if (submitting.current || !photoUri || !canSubmit) return;
-    const submittedSession = getSession();
+    const submittedOwner = getSession()?.userId;
     submitting.current = true; setBusy(true); setError("");
     // A GPS response must not change the visible form after its immutable draft is saved.
     locationRequest.current++; setLocating(false);
@@ -85,13 +85,13 @@ export default function Report() {
       const saved = draft ?? await createDraft(photoUri, fields!);
       if (!mounted.current) return;
       setDraft(saved);
-      if (getSession() !== submittedSession) return;
+      if (getSession()?.userId !== submittedOwner) return;
       const accepted = await sendDraft(saved);
-      if (!mounted.current || getSession() !== submittedSession) return;
-      receiptSession.current = submittedSession;
+      if (!mounted.current || getSession()?.userId !== submittedOwner) return;
+      receiptOwner.current = submittedOwner ?? null;
       setReceiptReference(accepted.public_reference);
     } catch (error) {
-      if (!mounted.current || getSession() !== submittedSession) return;
+      if (!mounted.current || getSession()?.userId !== submittedOwner) return;
       if (error instanceof ReportRejectedError) setDraft(value => value ? { ...value, rejection: error.message } : value);
       setError(error instanceof Error ? error.message : "Unable to confirm this upload. Keep the saved draft and retry.");
     } finally { submitting.current = false; if (mounted.current) setBusy(false); }
@@ -107,7 +107,7 @@ export default function Report() {
     finally { submitting.current = false; setBusy(false); }
   };
 
-  if (receiptReference && receiptSession.current === session) return <SubmissionReceipt
+  if (receiptReference && receiptOwner.current === (session?.userId ?? null)) return <SubmissionReceipt
     reference={receiptReference}
     onHistory={() => router.replace("/(tabs)/reports")}
     onDone={() => router.replace("/")}
