@@ -161,6 +161,46 @@ future duplicate targets based on that organizer audit.
 
 ## Verification
 
+### Shared-backend, report-scoped check
+
+Use a dedicated real report uploaded through the deployed API. It must have a
+private photo, valid coordinates, one new pending assessment task, and no prior
+triage task or job. Deploy the reviewed backend and migrations first. Keep
+`MESSAGING_PILOT_ENABLED=false` and `ORGANIZER_ROUTING_ENABLED=true`; set the
+intended `CHALK_MODEL` explicitly.
+
+The command reads the deployed `/ready` response before leasing any task. It
+requires `X-WasteGrid-Revision` to match the full reviewed commit SHA,
+`X-WasteGrid-Organizer-Routing: true`, and
+`X-WasteGrid-Messaging-Pilot: false`. Missing or mismatched headers fail closed.
+It also checks that the photo is registered in the configured Storage bucket
+and that Supabase reports that bucket as private before requesting a signed URL.
+
+Run this command only from the backend owner's configured environment:
+
+```sh
+uv run --extra backend python -m scripts.verify_assessment \
+  --api-url https://wastegrid-api-dev.onrender.com \
+  --expected-revision <full-reviewed-deployed-commit-sha> \
+  --report-id <dedicated-report-uuid>
+```
+
+The command refuses illustrative reports and pilot mode. It leases only that
+report's new assessment task, makes at most one Chalk image call, and then runs
+only that report's newly queued deterministic triage if the assessment is eligible.
+It does not recover an interrupted assessment or lease plan, follow-up, or other
+reports' tasks. Triage may create a job and enqueue plan invalidation, but this
+command never executes a plan. The output includes assessment and triage state,
+priority, review, job creation, and whether existing unrelated tasks and
+illustrative reports stayed unchanged during the run. Concurrent workers can
+also change that comparison, so a false value needs investigation.
+
+After running, read the dedicated report through the deployed API and confirm
+the persisted assessment, priority/review outcome, and linked job state. Record
+the deployed revision separately; a healthy `/ready` endpoint alone does not
+prove worker or model execution. Do not use `python -m api.worker --once` on a
+shared database: it selects from the general queue.
+
 Focused tests exercise the real gateway HTTP boundary with MockTransport, priority
 rules, failure retention, duplicate evidence, and a Chalk-only worker advancing
 assessment → triage → job → plan → followup without a second model call.
