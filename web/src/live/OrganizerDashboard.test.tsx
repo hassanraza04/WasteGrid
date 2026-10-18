@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, test, vi } from "vitest";
@@ -20,6 +20,7 @@ function setup(path = "/admin/reports") {
   const api = {
     signIn: vi.fn().mockResolvedValue(undefined),
     signOut: vi.fn().mockResolvedValue(undefined),
+    overview: vi.fn().mockResolvedValue({ counts: { needs_review: 0, high_priority_jobs: 0, in_progress_jobs: 0, available_crews: 0, blocked_jobs: 0, completed_24h: 0, awaiting_assessment: 0 } }),
     reports: vi.fn().mockResolvedValue([report]),
     reportIndex: vi.fn().mockResolvedValue({items:[{...report, category:null, job_status:null, crew_id:null, crew_name:null, route_position:null}],total:1,offset:0,limit:25}),
     report: vi.fn().mockResolvedValue({ report, events: [] } satisfies OrganizerReportDetails),
@@ -206,4 +207,40 @@ test("ignores a logout failure after the dashboard unmounts", async () => {
   unmount();
   await act(async () => reject(new Error("Old logout result")));
   expect(screen.queryByText("Old logout result")).not.toBeInTheDocument();
+});
+
+
+test("the documented sign-in URL opens the overview after successful authentication", async () => {
+  const { api, user } = setup("/admin/sign-in");
+  expect(api.overview).not.toHaveBeenCalled();
+  await signIn(user);
+  expect(await screen.findByRole("heading", { name: "Every report. A clearer next step." })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Page not found" })).not.toBeInTheDocument();
+  await waitFor(() => expect(api.overview).toHaveBeenCalled());
+});
+
+test.each(["resolve", "reject"])("a late completion photo %s cannot expose the previous account's evidence or expire the new session", async outcome => {
+  const { api, user } = setup("/admin/reports/report-123");
+  vi.mocked(api.report).mockResolvedValueOnce({ report: { ...report, display_status: "completed", completion_photo_ids: ["after-123"] }, events: [] });
+  let finish!: (url: string) => void;
+  let fail!: (error: Error) => void;
+  vi.mocked(api.photo).mockReturnValueOnce(new Promise((resolve, reject) => { finish = resolve; fail = reject; }));
+  await signIn(user);
+  const evidence = await screen.findByRole("region", { name: "Cleanup evidence" });
+  await user.click(within(evidence).getByRole("button", { name: "Load photo" }));
+  expect(api.photo).toHaveBeenCalledWith("after-123");
+  await user.click(screen.getByRole("button", { name: "Sign out" }));
+  expect(screen.queryByRole("region", { name: "Cleanup evidence" })).not.toBeInTheDocument();
+  await user.clear(screen.getByLabelText("Email"));
+  await user.type(screen.getByLabelText("Email"), "second@example.com");
+  await user.type(screen.getByLabelText("Password"), "other-password");
+  await user.click(screen.getByRole("button", { name: "Sign in" }));
+  await screen.findByRole("heading", { name: "WG-123" });
+  await act(async () => {
+    if (outcome === "resolve") finish("https://photos.example/previous-account");
+    else fail(new AccessError("Previous session expired"));
+  });
+  expect(screen.queryByAltText("Cleanup completion photo 1")).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Organiser dashboard" })).toBeInTheDocument();
+  expect(api.signOut).toHaveBeenCalledTimes(1);
 });

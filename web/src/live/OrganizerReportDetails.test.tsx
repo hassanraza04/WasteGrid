@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, test, vi } from "vitest";
@@ -217,4 +217,39 @@ test("the 15-second report poll updates evidence without rebasing an unsaved org
     expect(screen.getByRole("button", { name: "Reload latest report" })).toBeInTheDocument();
     expect(api.applyDecision).not.toHaveBeenCalled();
   } finally { vi.useRealTimers(); }
+});
+
+test("shows private completion evidence alongside the original photo", async () => {
+  const { api, user } = setup({ ...details, report: { ...details.report, display_status: "completed", completion_photo_ids: ["after-one", "after-two"] } });
+  const evidence = await screen.findByRole("region", { name: "Cleanup evidence" });
+  expect(within(evidence).getByText("Crew reported complete")).toBeInTheDocument();
+  expect(api.photo).not.toHaveBeenCalled();
+  await user.click(within(evidence).getAllByRole("button", { name: "Load photo" })[0]);
+  expect(api.photo).toHaveBeenCalledWith("after-one");
+  expect(await screen.findByAltText("Cleanup completion photo 1")).toHaveAttribute("src", "https://photos.example/signed");
+  await user.click(within(evidence).getAllByRole("button", { name: "Load photo" })[1]);
+  expect(api.photo).toHaveBeenCalledWith("after-two");
+  expect(await screen.findByAltText("Cleanup completion photo 2")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Resident evidence" })).toBeInTheDocument();
+  expect(document.body.textContent).not.toContain("https://photos.example/signed");
+});
+
+test("distinguishes completed without a photo from work still in progress", async () => {
+  setup({ ...details, report: { ...details.report, display_status: "completed", completion_photo_ids: [] } });
+  const evidence = await screen.findByRole("region", { name: "Cleanup evidence" });
+  expect(within(evidence).getByText(/Completed without a photo/)).toBeInTheDocument();
+  expect(within(evidence).queryByRole("button", { name: "Load photo" })).not.toBeInTheDocument();
+});
+
+test("retains previous completion evidence when a cleanup is reopened", async () => {
+  setup({ ...details, report: { ...details.report, display_status: "recheck_requested", completion_photo_ids: ["previous-after"] } });
+  const evidence = await screen.findByRole("region", { name: "Cleanup evidence" });
+  expect(within(evidence).getByText("Previous completion")).toBeInTheDocument();
+  expect(screen.queryByText(/Completed without a photo/)).not.toBeInTheDocument();
+});
+
+test("does not label an unfinished cleanup as completed without a photo", async () => {
+  setup({ ...details, report: { ...details.report, display_status: "in_progress", completion_photo_ids: [] } });
+  await screen.findByRole("heading", { name: "WG-123" });
+  expect(screen.queryByRole("region", { name: "Cleanup evidence" })).not.toBeInTheDocument();
 });

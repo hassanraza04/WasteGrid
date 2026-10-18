@@ -17,7 +17,6 @@ const TABS: Tab[] = [
   { name: "dispatch", title: "Dispatch", icon: "truck", roles: ["admin"] },
   { name: "my-route", title: "My route", icon: "navigation", roles: ["crew"] },
   { name: "reports", title: "Reports", icon: "file-text" },
-  { name: "stats", title: "Stats", icon: "bar-chart-2" },
 ];
 
 export default function AppTabs() {
@@ -38,6 +37,10 @@ export default function AppTabs() {
           />
         </Tabs.Protected>
       ))}
+      {/* Illustrative statistics stay out of the live app until connected. */}
+      <Tabs.Protected guard={false}>
+        <Tabs.Screen name="stats" />
+      </Tabs.Protected>
     </Tabs>
   );
 }

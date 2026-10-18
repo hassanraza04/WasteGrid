@@ -98,7 +98,6 @@ test('report screen requires a confirmed pin and unlocks rejected drafts for cor
   '@/components/report/camera-step': { CameraStep: props => { camera = props; return null; } },
   '@/components/report/report-form': { ReportForm: props => { form = props; return null; } },
   '@/components/report/submission-receipt': { SubmissionReceipt: () => null },
-  '@/utils/describe-photo': { describePhoto: async () => null },
   '@/utils/location': { getPhotoLocation: async () => null },
  }).default;
  const view = mount(Report, {});
@@ -132,7 +131,6 @@ test('retaking clears the first photo location and requires a fresh fix or confi
   '@/components/report/camera-step': { CameraStep: props => { camera = props; return null; } },
   '@/components/report/report-form': { ReportForm: props => { form = props; return null; } },
   '@/components/report/submission-receipt': { SubmissionReceipt: () => null },
-  '@/utils/describe-photo': { describePhoto: async () => null },
   '@/utils/location': { getPhotoLocation: () => { const request = deferred(); requests.push(request); return request.promise; } },
  }).default;
  const view = mount(Report, {});

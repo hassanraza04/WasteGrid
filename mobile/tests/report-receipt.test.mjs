@@ -26,7 +26,6 @@ function screen({ sendDraft, createDraft = async () => draft, session = null } =
     '@/components/report/camera-step': { CameraStep: props => { camera = props; return null; } },
     '@/components/report/report-form': { ReportForm: props => { form = props; return null; } },
     '@/components/report/submission-receipt': { SubmissionReceipt: props => { receipt = props; return React.createElement('div', null, props.reference); } },
-    '@/utils/describe-photo': { describePhoto: async () => null },
     '@/utils/location': { getPhotoLocation: async () => ({ coords: { latitude: 24.9, longitude: 67.1 }, address: '' }) },
   }).default;
   const view = mount(Report, {});
@@ -176,7 +175,7 @@ test('receipt exposes only a selectable public reference and explains gated hist
     await view.render();
     assert.match(view.container.textContent, /Report received/);
     assert.equal(view.container.querySelector('[data-selectable="true"]').textContent, accepted.public_reference);
-    assert.match(view.container.textContent, /requires logging in and explicitly importing reports saved on this device/);
+    assert.match(view.container.textContent, /View history on this device with the account that submitted the report/);
     assert.doesNotMatch(view.container.textContent, /wg_r_|token|file:\/\//i);
     await act(() => button(view.container, 'Done').click());
     assert.deepEqual(paths, ['done']);

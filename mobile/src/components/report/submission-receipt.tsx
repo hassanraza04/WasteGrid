@@ -14,7 +14,7 @@ export function SubmissionReceipt({ reference, onHistory, onDone }: Props) {
       <AppText variant="headline" selectable>{reference}</AppText>
       <AppText tone="muted">Touch and hold the reference to copy it.</AppText>
     </Card>
-    <AppText tone="muted">Report history requires logging in and explicitly importing reports saved on this device.</AppText>
+    <AppText tone="muted">View history on this device with the account that submitted the report. If you submitted before logging in, sign in and import this device&apos;s reports.</AppText>
     <Button label="View report history" variant="outline" onPress={onHistory} />
     <Button label="Done" onPress={onDone} />
   </Screen>;

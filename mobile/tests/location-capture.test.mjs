@@ -36,7 +36,6 @@ test('denied GPS exposes manual selection and a confirmed pin ignores a late GPS
   '@/components/report/camera-step': { CameraStep: props => { camera = props; return null; } },
   '@/components/report/report-form': { ReportForm: props => { form = props; return null; } },
   '@/components/report/submission-receipt': { SubmissionReceipt: () => null },
-  '@/utils/describe-photo': { describePhoto: async () => null },
   '@/utils/location': { getPhotoLocation: () => { const pending = deferred(); requests.push(pending); return pending.promise; } },
  }).default;
  const view = mount(Report, {});

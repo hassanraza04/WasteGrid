@@ -46,6 +46,29 @@ def public_url(value, protocols):
     return parsed
 
 
+def valid_dashboard_origin(value):
+    """Accept local development or one HTTPS origin, never a URL path/pattern."""
+    if value in {"http://localhost:5173", "http://127.0.0.1:5173"}:
+        return True
+    parsed = public_url(value, {"https"})
+    if parsed is None:
+        return False
+    try:
+        canonical = str(httpx.URL(value))
+    except httpx.InvalidURL:
+        return False
+    # Comparing the entire authority also rejects empty query/fragment markers,
+    # which urlsplit otherwise represents as empty strings. Bracketed IPv6 is
+    # validated by urlsplit; ordinary hosts must not be wildcard/encoded patterns.
+    return (
+        not parsed.path
+        and value == f"https://{parsed.netloc}"
+        # Browser origins normalize host case and omit the default HTTPS port.
+        and value == canonical
+        and not any(char in parsed.hostname for char in "*%<>^|")
+    )
+
+
 def public_configuration(values):
     issues = []
     for name, protocols in (
@@ -61,9 +84,10 @@ def public_configuration(values):
     ):
         issues.append("VITE_SUPABASE_PUBLISHABLE_KEY must be a public publishable key")
     origin = values.get("DASHBOARD_ORIGIN") or "http://127.0.0.1:5173"
-    if origin not in {"http://localhost:5173", "http://127.0.0.1:5173"}:
+    if not valid_dashboard_origin(origin):
         issues.append(
-            "DASHBOARD_ORIGIN must exactly match http://localhost:5173 or http://127.0.0.1:5173"
+            "DASHBOARD_ORIGIN must exactly match a browser HTTPS origin without a path, query, "
+            "fragment or credentials, or http://localhost:5173 or http://127.0.0.1:5173"
         )
     try:
         origins = json.loads(values.get("CORS_ORIGINS") or "[]")

@@ -63,12 +63,13 @@ test("public home links to real staff login and unmatched routes show a fallback
  await user.click(screen.getByRole("link", { name: "Organiser sign in" })); expect(screen.getByLabelText("Password")).toBeInTheDocument();
 });
 test("unknown routes show a fallback", () => { setup("/not-a-route"); expect(screen.getByRole("heading", { name: "Page not found" })).toBeInTheDocument(); });
-test("keeps customer report routes available beside the hosted dashboard", async () => {
- const { user } = setup("/report/new");
- await user.type(screen.getByLabelText("What needs attention?"), "Overflowing bin");
- await user.type(screen.getByLabelText("Address"), "14 Market Street");
- await user.click(screen.getByRole("button", { name: "Create report" }));
- expect(await screen.findByRole("heading", { name: /Report WG-/ })).toBeInTheDocument();
+test.each(["/report/new", "/report/track", "/report/WG-DEMO", "/report/UNKNOWN"])("redirects legacy %s to the honest Android entry without creating local reports", async path => {
+ const { api } = setup(path);
+ expect(await screen.findByRole("heading", { name: "WasteGrid" })).toBeInTheDocument();
+ expect(screen.getByText(/Use the WasteGrid Android app/)).toBeInTheDocument();
+ expect(screen.getByText(/Earlier browser-local prototype reports were never submitted/)).toBeInTheDocument();
+ expect(screen.queryByRole("button", { name: /Create report|Track report/ })).not.toBeInTheDocument();
+ expect(api.reportIndex).not.toHaveBeenCalled();
 });
 test("missing public configuration fails closed", () => {
  vi.stubEnv("VITE_API_BASE_URL", "");

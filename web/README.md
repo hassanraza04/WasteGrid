@@ -3,7 +3,8 @@
 ## Organizer dashboard
 
 The organizer routes use Supabase email and password sign-in, then load shared
-illustrative reports from the hosted WasteGrid API. Set these public values in
+reports from the hosted WasteGrid API. Real records are shown by default; the
+illustrative-data checkbox exposes the labelled fixtures. Set these public values in
 the ignored root `.env` file:
 
 ```text
@@ -17,16 +18,25 @@ Supabase secret or service-role key, an organizer password, or any messaging or
 Photon key with a `VITE_` prefix.
 
 1. Run `npm run dev` from `web` and open
-   `http://127.0.0.1:5173/admin/sign-in`.
+   `http://127.0.0.1:5173/admin`.
 2. Sign in with the privately supplied organizer account.
-3. Confirm the organizer dashboard lists illustrative hosted reports.
+3. Confirm the organizer overview loads and open Reports.
 4. Sign out and confirm `/admin` returns to sign-in.
 
-## Customer demo boundary
+## Demo entry and evidence
 
-Public customer report creation, tracking, and report storage remain a
-browser-local demo in this release. Customer reports are not created in or read
-from the hosted API.
+The public home page explains the Android resident/crew app and links to organizer
+sign-in. Legacy `/report/*` URLs redirect there; browser-local prototype reports
+are not submitted to the shared API. Use the installed Android app for the
+resident and crew steps, with the organizer dashboard in a browser.
+
+The report details page shows original evidence and private completion photos.
+A completed cleanup without a submitted photo is labelled explicitly.
+
+`npm run test:browser` exercises a fixture-backed organizer decision that creates
+the same report's cleanup job before preview and dispatch. It is not evidence of
+a live API, assessment worker, Android, or provider integration. Rehearse those
+separately against one shared report before the presentation.
 
 ## Checks
 

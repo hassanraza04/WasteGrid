@@ -201,6 +201,31 @@ export function OrganizerReportDetails({
               )}
             </details>
           </section>
+          {(report.completion_photo_ids.length > 0 || report.display_status === "completed") && (
+            <section className="wg-card wg-stack" aria-label="Cleanup evidence">
+              <div className="wg-section-heading">
+                <h3>Cleanup evidence</h3>
+                <Chip>{report.display_status === "completed" ? "Crew reported complete" : "Previous completion"}</Chip>
+              </div>
+              {report.completion_photo_ids.length > 0 ? (
+                <>
+                  <p className="wg-muted">Crew-submitted photos after cleanup. Compare with the original resident evidence above.</p>
+                  {report.completion_photo_ids.map((photoId, index) => (
+                    <OrganizerPhoto
+                      key={photoId}
+                      api={api}
+                      id={photoId}
+                      width={640}
+                      alt={`Cleanup completion photo ${index + 1}`}
+                      onSessionExpired={sessionExpired}
+                    />
+                  ))}
+                </>
+              ) : (
+                <p>Completed without a photo. The crew reported cleanup complete; no completion photo was submitted.</p>
+              )}
+            </section>
+          )}
           <section className="wg-card">
             <div className="wg-section-heading">
               <div>

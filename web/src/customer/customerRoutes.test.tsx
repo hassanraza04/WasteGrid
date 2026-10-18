@@ -1,11 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, test } from "vitest";
 
 import { BrowserReportRepository } from "../data/browserReportRepository";
 import type { ReportRepository } from "../data/reportRepository";
-import { LiveApp } from "../live/LiveApp";
+import { CustomerHomePage } from "./CustomerHomePage";
+import { CreateReportPage } from "./CreateReportPage";
+import { TrackReportPage } from "./TrackReportPage";
+import { ReportDetailPage } from "./ReportDetailPage";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -14,7 +17,13 @@ beforeEach(() => {
 function renderAppAt(path: string, repository: ReportRepository): void {
   render(
     <MemoryRouter initialEntries={[path]}>
-      <LiveApp repository={repository} />
+      {/* Archived local prototype components; these routes are not mounted by LiveApp. */}
+      <Routes>
+        <Route path="/" element={<CustomerHomePage repository={repository} />} />
+        <Route path="/report/new" element={<CreateReportPage repository={repository} />} />
+        <Route path="/report/track" element={<TrackReportPage />} />
+        <Route path="/report/:reference" element={<ReportDetailPage repository={repository} />} />
+      </Routes>
     </MemoryRouter>,
   );
 }

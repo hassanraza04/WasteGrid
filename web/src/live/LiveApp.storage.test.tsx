@@ -22,7 +22,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-test("renders the organiser dashboard when browser storage is blocked", async () => {
+test.each(["/admin", "/", "/report/new"])("renders %s when browser storage is blocked", async path => {
   storageDescriptor = Object.getOwnPropertyDescriptor(window, "localStorage");
   Object.defineProperty(window, "localStorage", {
     configurable: true,
@@ -35,7 +35,7 @@ test("renders the organiser dashboard when browser storage is blocked", async ()
   vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test");
 
   const { LiveApp } = await import("./LiveApp");
-  render(<MemoryRouter initialEntries={["/admin"]}><LiveApp api={api} /></MemoryRouter>);
+  render(<MemoryRouter initialEntries={[path]}><LiveApp api={api} /></MemoryRouter>);
 
-  expect(screen.getByRole("heading", { name: "Organiser sign in" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: path === "/admin" ? "Organiser sign in" : "WasteGrid" })).toBeInTheDocument();
 });

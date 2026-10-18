@@ -26,3 +26,11 @@ services:
         sync: false
       - key: SUPABASE_PHOTO_BUCKET
         value: report-photos
+      - key: ORGANIZER_ROUTING_ENABLED
+        value: "true"
+      - key: MESSAGING_PILOT_ENABLED
+        value: "false"
+      - key: ROUTING_OSRM_BASE_URL
+        value: https://routing.openstreetmap.de/routed-car
+      - key: ROUTING_PROVIDER_TIMEOUT_SECONDS
+        value: "10"

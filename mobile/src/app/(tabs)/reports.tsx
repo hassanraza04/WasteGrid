@@ -25,11 +25,36 @@ export default function Reports() {
     working.current = false;
     if (!owner) { setBusy(false); setHistory(null); return; }
     setBusy(true);
-    Promise.all([listDrafts(), countUnclaimedDrafts()]).then(([drafts, unclaimed]) => {
-      if (revision === operation.current) setHistory({ owner, drafts, unclaimed, reports: {}, error: "" });
+    const current = () => revision === operation.current && getSession()?.userId === owner;
+    Promise.all([listDrafts(), countUnclaimedDrafts()]).then(async ([drafts, unclaimed]) => {
+      if (!current()) return;
+      // Keep this account's last confirmed evidence visible while refreshing.
+      // Unconfirmed uploads remain explicit retries: opening history sends no photos.
+      setHistory(previous => ({ owner, drafts, unclaimed, error: "", reports: Object.fromEntries(
+        drafts.flatMap(draft => previous?.owner === owner && previous.reports[draft.id]
+          ? [[draft.id, previous.reports[draft.id]]] : []),
+      ) }));
+      const accepted = drafts.filter(draft => draft.reference);
+      const results = await Promise.allSettled(accepted.map(draft => refreshReport(draft)));
+      if (!current()) return;
+      setHistory(previous => {
+        if (!previous || previous.owner !== owner) return previous;
+        const reports = { ...previous.reports };
+        let failed = false;
+        results.forEach((result, index) => {
+          if (result.status === "fulfilled" && result.value) reports[result.value.id] = result.value;
+          else {
+            failed = true;
+            // An explicit missing report must not retain an obsolete status.
+            if (result.status === "fulfilled") delete reports[accepted[index].id];
+          }
+        });
+        return { ...previous, reports, error: failed
+          ? "Some report statuses could not be refreshed. Your saved reports remain on this device. Use Check status to retry." : "" };
+      });
     }).catch(() => {
-      if (revision === operation.current) setHistory({ owner, drafts: [], unclaimed: 0, reports: {}, error: "Unable to read reports saved on this device." });
-    }).finally(() => { if (revision === operation.current) setBusy(false); });
+      if (current()) setHistory({ owner, drafts: [], unclaimed: 0, reports: {}, error: "Unable to read reports saved on this device." });
+    }).finally(() => { if (current()) setBusy(false); });
     return () => { operation.current++; };
   }, [owner]));
 
