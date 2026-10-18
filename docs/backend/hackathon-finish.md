@@ -152,3 +152,36 @@ A successful rehearsal means the same real report has a committed assessment,
 review/job, dispatch, crew completion and resident-visible outcome. A green health
 endpoint, a fixture route or a passed automated test is not evidence of that live
 journey. Preserve the recording as a fallback for connectivity/provider failure.
+
+## Explicit additional recording capacity
+
+The default approval remains four image attempts and two new reports. A user may
+explicitly authorize additional capacity; this requires migration 0017 and an
+append-only capacity grant. Never reset counters, delete the original run, or
+edit an already applied migration. The existing API and scoped worker already
+read the persisted limits, so this database extension does not require an API
+redeploy.
+
+For an exhausted or expired, closed, drained run, use the deployed revision and
+a fresh command UUID. Retain that UUID for retries: repeating the same command
+is idempotent, and changing its approved scope is rejected.
+
+```sh
+python -m scripts.extend_assessment_demo \
+  --env-file /home/omerh/WasteGrid/.env \
+  --api-url https://wastegrid-api-dev.onrender.com \
+  --expected-revision DEPLOYED_SHA --run-id ORIGINAL_RUN_UUID \
+  --command-id NEW_APPROVAL_UUID \
+  --additional-attempts 5 --additional-reports 5 \
+  --reason "User approved five additional recording attempts"
+```
+
+Each grant permits 1–20 additional attempts and 0–20 additional reports, with
+lifetime limits capped at 100 each. It opens one new hour, preserves all consumed
+attempts and admitted reports, and records the old and new limits, expiry,
+revision and reason. The database refuses increases without a matching audit
+record, changes to original report scope/model/identity, counter decrements,
+active-worker overlap, and edits or deletion of grant history. Resume the same
+scoped worker using its existing command and the deployed revision recorded by
+the grant. Failed reports are retained and do not automatically retry; newly
+submitted eligible reports can use the extra admission slots.
