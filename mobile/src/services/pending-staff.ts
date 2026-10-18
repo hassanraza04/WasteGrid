@@ -26,7 +26,7 @@ function authorised(command: StaffCommand) {
     throw new Error("Sign in to the staff account that saved this action.");
   }
 }
-export async function pendingStaff(): Promise<StaffCommand[]> {
+async function savedStaff(): Promise<StaffCommand[]> {
   const newest = new Map<string, ReturnType<typeof records>[number]>();
   for (const record of records()) if (!newest.has(record.id)) newest.set(record.id, record);
   const commands: StaffCommand[] = [];
@@ -35,14 +35,27 @@ export async function pendingStaff(): Promise<StaffCommand[]> {
       const command: StaffCommand = JSON.parse(await record.file.text());
       if (!command || command.command_id !== record.id || !["start", "dispatch", "completion", "release"].includes(command.kind) ||
           typeof command.resource_id !== "string" || typeof command.ownerId !== "string" || typeof command.apiUrl !== "string" ||
+          (command.recomputeRequired !== undefined && typeof command.recomputeRequired !== "boolean") ||
+          (command.reconciled !== undefined && typeof command.reconciled !== "boolean") ||
           (command.kind !== "dispatch" && (!Number.isSafeInteger(command.expected_version) || command.expected_version! < 1)) ||
           (["start", "completion"].includes(command.kind) && typeof command.crewId !== "string") ||
           (command.kind === "completion" && typeof command.photoUri !== "string") ||
           (command.kind === "release" && !command.reason?.trim())) continue;
+      // Older builds stored definitive dispatch rejections without their status.
+      if (command.kind === "dispatch" && command.rejected && command.recomputeRequired === undefined) command.recomputeRequired = true;
       authorised(command); commands.push(command);
     } catch { /* Keep corrupt and other-account records private and intact. */ }
   }
   return commands;
+}
+export async function pendingStaff(): Promise<StaffCommand[]> {
+  return (await savedStaff()).filter(command => !command.reconciled);
+}
+function terminalDispatch(command: StaffCommand) {
+  return command.kind === "dispatch" && (command.recomputeRequired || command.reconciled);
+}
+function requireFreshDispatch(command: StaffCommand) {
+  if (terminalDispatch(command)) throw new Error("This preview was rejected. Refresh routing state and compute a new preview.");
 }
 async function save(command: StaffCommand) {
   const previous = records().filter(record => record.id === command.command_id);
@@ -63,10 +76,10 @@ export function prepareStaff(kind: StaffCommand["kind"], resource: string | Job,
   return serial(async () => {
     if (!owner || getSession() !== owner) throw new Error("Your account changed. Try again.");
     const id = typeof resource === "string" ? resource : resource.id;
-    const commands = await pendingStaff();
+    const commands = await savedStaff();
     if (getSession() !== owner) throw new Error("Your account changed. Try again.");
     const existing = commands.find(command => command.kind === kind && command.resource_id === id);
-    if (existing) return existing;
+    if (existing) { requireFreshDispatch(existing); return existing; }
     const command: StaffCommand = { command_id: Crypto.randomUUID(), kind, resource_id: id, ownerId: owner.userId,
       crewId: owner.crewId, apiUrl: apiUrl(), ...(typeof resource !== "string" ? { expected_version: resource.version } : {}), ...(reason ? { reason } : {}) };
     authorised(command);
@@ -93,14 +106,31 @@ export function submitStaff(command: StaffCommand): Promise<unknown> {
   const existing = running.get(command.command_id);
   if (existing) return existing;
   const work = (async () => {
+    const saved = await serial(async () => {
+      authorised(command);
+      const record = (await savedStaff()).find(item => item.command_id === command.command_id);
+      authorised(command);
+      return record;
+    });
     authorised(command);
+    if (!saved) throw new Error("The saved action is unavailable. Refresh your pending actions before retrying.");
+    const current = saved;
+    if (current.kind !== command.kind || current.resource_id !== command.resource_id) throw new Error("The saved action identity changed. Refresh your pending actions.");
+    requireFreshDispatch(current);
     try {
-      const result = await recoverOrSend(command, staffApi, command.photoUri ? new File(command.photoUri) : undefined);
-      await serial(async () => { try { remove(command); } catch { /* Retry recovers the accepted command if cleanup failed. */ } });
+      const result = await recoverOrSend(current, staffApi, current.photoUri ? new File(current.photoUri) : undefined);
+      await serial(async () => { try { remove(current); } catch { /* Retry recovers the accepted command if cleanup failed. */ } });
       return result;
     } catch (error) {
       if (error instanceof StaffApiError && [409, 413, 415, 422].includes(error.status)) {
-        await serial(() => save({ ...command, rejected: true }));
+        try {
+          await serial(() => save({ ...current, rejected: true,
+            ...(current.kind === "dispatch" ? { recomputeRequired: error.status === 409 } : {}),
+          }));
+        } catch (storageError) {
+          // The UI must still invalidate a definitively rejected dispatch preview.
+          if (current.kind !== "dispatch" || error.status !== 409) throw storageError;
+        }
       }
       throw error;
     }
@@ -108,9 +138,30 @@ export function submitStaff(command: StaffCommand): Promise<unknown> {
   running.set(command.command_id, work);
   return work;
 }
+export function reconcileDispatchConflict(command: StaffCommand): Promise<{ plan_id: string | null }> {
+  return serial(async () => {
+    authorised(command);
+    const current = (await savedStaff()).find(record => record.command_id === command.command_id);
+    authorised(command);
+    if (!current || current.kind !== "dispatch" || !current.rejected || !terminalDispatch(current) ||
+        current.resource_id !== command.resource_id || running.has(command.command_id)) {
+      throw new Error("Only a rejected dispatch can be reconciled. Keep uncertain actions for recovery.");
+    }
+    const [preview] = await Promise.all([staffApi.preview(current.resource_id), staffApi.currentPlan()]);
+    authorised(current);
+    // Keep a private tombstone so old objects cannot recreate or repost this preview.
+    // An observed plan can belong to another organiser; this is state reconciliation.
+    await save({ ...current, reconciled: true });
+    authorised(current);
+    return { plan_id: preview.plan_id ?? null };
+  });
+}
 export function discardRejectedStaff(command: StaffCommand) {
   return serial(async () => {
     authorised(command);
+    const current = (await savedStaff()).find(record => record.command_id === command.command_id);
+    authorised(command);
+    if (current && terminalDispatch(current)) throw new Error("Refresh routing state to reconcile this rejected dispatch.");
     if (!command.rejected || running.has(command.command_id)) throw new Error("Only a rejected submission can be discarded. Retry uncertain actions with their saved identity.");
     if (command.kind === "dispatch") {
       const preview = await staffApi.preview(command.resource_id);

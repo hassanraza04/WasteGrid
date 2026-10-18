@@ -55,8 +55,14 @@ Only proposed jobs receive assignment/version/planning-event changes. Existing
 outside assignments retain their order, travel/service values and execution
 provenance in the global current-plan snapshot. Outside unassigned work is
 labelled `outside_scope`; its business row is unchanged. An uncertain dispatch
-retry must reuse the same preview ID and command ID. A definite conflict requires
-refresh/recomputation.
+retry must reuse the same preview ID and command ID. A definite HTTP 409 ends
+retries for the old preview: the app clears the proposal, retains the selected
+crews/jobs, reads current routing state and requires a new computation and
+confirmation. A durable conflict marker also prevents stale callbacks or a
+restarted app from recovering that old command. If reconciliation cannot reach
+the server, keep the saved conflict and offer **Refresh routing state** instead
+of **Recover dispatch**. A conflict can mean another command already dispatched
+the preview, so inspect the current plan rather than claiming no dispatch exists.
 
 ## Supervised acceptance
 

@@ -88,3 +88,126 @@ test('a replacement account cannot borrow an in-flight action promise',async()=>
  }finally{reply.resolve(Response.json({...job,status:'completed'}));await settled;}
  assert.equal(app.files.has(command.photoUri),true);assert.deepEqual(await app.service.pendingStaff(),[]);
 });
+
+test('a definite dispatch 409 is terminal across restart even for the original command object',async()=>{
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','old-preview');let posts=0;
+ app.respond((_url,init)=>{if(init.method==='POST'){posts++;return new Response(null,{status:409});}return Response.json({id:'old-preview',plan_id:null});});
+ await assert.rejects(app.service.submitStaff(command),error=>error instanceof transport.StaffApiError&&error.status===409);
+ assert.equal(command.recomputeRequired,undefined);
+ const restarted=app.reload(),[saved]=await restarted.pendingStaff();
+ assert.equal(saved.rejected,true);assert.equal(saved.recomputeRequired,true);assert.equal(saved.resource_id,'old-preview');assert.equal(saved.command_id,command.command_id);
+ await assert.rejects(restarted.submitStaff(command),/compute a new preview/);
+ await assert.rejects(restarted.submitStaff(saved),/compute a new preview/);
+ await assert.rejects(restarted.prepareStaff('dispatch','old-preview'),/compute a new preview/);
+ await assert.rejects(restarted.discardRejectedStaff(saved),/Refresh routing state/);
+ assert.equal(posts,1);
+ const requests=[];app.respond((url,init)=>{requests.push({url,method:init.method??'GET'});return Response.json(url.endsWith('/plans/current')?{plan:null}:{id:'old-preview',plan_id:null});});
+ assert.deepEqual(await restarted.reconcileDispatchConflict(command),{plan_id:null});
+ assert.deepEqual(await restarted.pendingStaff(),[]);assert.ok(requests.every(request=>request.method==='GET'));assert.equal(requests.length,2);
+ const tombstones=[...app.files].filter(([uri])=>uri.endsWith('.json')).map(([,text])=>JSON.parse(text));
+ assert.equal(tombstones.length,1);assert.equal(tombstones[0].reconciled,true);
+ const again=app.reload();await assert.rejects(again.submitStaff(command),/compute a new preview/);
+ await assert.rejects(again.prepareStaff('dispatch','old-preview'),/compute a new preview/);
+ const fresh=await again.prepareStaff('dispatch','fresh-preview');assert.notEqual(fresh.command_id,command.command_id);assert.equal(fresh.resource_id,'fresh-preview');
+ assert.equal(posts,1);
+});
+
+test('failed conflict reconciliation preserves the visible action and its terminal state',async()=>{
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','preview');let posts=0;
+ app.respond((_url,init)=>{if(init.method==='POST'){posts++;return new Response(null,{status:409});}return Response.json({plan_id:null});});
+ await assert.rejects(app.service.submitStaff(command));
+ app.respond(url=>url.endsWith('/plans/current')?new Response(null,{status:503}):Response.json({plan_id:null}));
+ await assert.rejects(app.service.reconcileDispatchConflict(command),transport.StaffApiError);
+ const restarted=app.reload(),[saved]=await restarted.pendingStaff();assert.equal(saved.recomputeRequired,true);assert.notEqual(saved.reconciled,true);
+ await assert.rejects(restarted.submitStaff(command),/compute a new preview/);assert.equal(posts,1);
+});
+
+test('conflict reconciliation observes another organiser dispatch without claiming our command succeeded',async()=>{
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','preview');let posts=0;
+ app.respond((_url,init)=>{if(init.method==='POST'){posts++;return new Response(null,{status:409});}return Response.json({plan_id:null});});
+ await assert.rejects(app.service.submitStaff(command));
+ app.respond(url=>Response.json(url.endsWith('/plans/current')?{plan:{id:'another-organiser-plan'}}:{plan_id:'another-organiser-plan'}));
+ assert.deepEqual(await app.service.reconcileDispatchConflict(command),{plan_id:'another-organiser-plan'});
+ assert.deepEqual(await app.service.pendingStaff(),[]);
+ const saved=[...app.files].filter(([uri])=>uri.endsWith('.json')).map(([,text])=>JSON.parse(text))[0];
+ assert.equal(saved.reconciled,true);assert.equal(saved.rejected,true);assert.equal(saved.command_id,command.command_id);assert.equal(saved.accepted,undefined);
+ assert.equal(posts,1);
+});
+
+test('reconciliation reauthorises after GET and never retires another accounts action',async()=>{
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','preview');
+ app.respond((_url,init)=>init.method==='POST'?new Response(null,{status:409}):Response.json({plan_id:null}));
+ await assert.rejects(app.service.submitStaff(command));
+ const reading=deferred(),reply=deferred();let gets=0;
+ app.respond(()=>{gets++;if(gets===2)reading.resolve();return reply.promise;});
+ const pending=app.service.reconcileDispatchConflict(command);const settled=pending.catch(()=>{});
+ await reading.promise;app.session({userId:'different',role:'admin'});reply.resolve(Response.json({plan_id:null,plan:null}));
+ await assert.rejects(pending,/account changed|account that saved/);await settled;
+ app.session({userId:'owner',role:'admin'});const [saved]=await app.reload().pendingStaff();assert.equal(saved.recomputeRequired,true);assert.notEqual(saved.reconciled,true);
+});
+
+test('lost dispatch acknowledgement recovers the observed plan without a second POST',async()=>{
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','preview');let posts=0,accepted=false;
+ app.respond((_url,init)=>{if(init.method==='POST'){posts++;assert.deepEqual(JSON.parse(init.body),{command_id:command.command_id});accepted=true;throw Error('lost acknowledgement');}return Response.json({plan_id:accepted?'accepted-plan':null});});
+ await assert.rejects(app.service.submitStaff(command),/lost acknowledgement/);
+ const restarted=app.reload(),[saved]=await restarted.pendingStaff();assert.equal(saved.recomputeRequired,undefined);assert.equal(saved.rejected,undefined);assert.equal(saved.resource_id,command.resource_id);assert.equal(saved.command_id,command.command_id);
+ await assert.rejects(restarted.reconcileDispatchConflict(saved),/Only a rejected dispatch/);
+ assert.deepEqual(await restarted.submitStaff(saved),{plan_id:'accepted-plan'});assert.equal(posts,1);assert.deepEqual(await restarted.pendingStaff(),[]);
+});
+
+test('dispatch network and 5xx failures retry immutable preview and command identities',async()=>{
+ for(const failure of ['network','server']){
+  const app=setup();app.session({userId:'owner',role:'admin'});
+  const command=await app.service.prepareStaff('dispatch','preview');let posts=0;const payloads=[];
+  app.respond((_url,init)=>{if(init.method==='POST'){posts++;payloads.push(JSON.parse(init.body));if(posts===1){if(failure==='network')throw Error('network unavailable');return new Response(null,{status:503});}return Response.json({plan_id:'accepted-plan'});}return Response.json({plan_id:null});});
+  await assert.rejects(app.service.submitStaff(command));
+  const restarted=app.reload(),[saved]=await restarted.pendingStaff();assert.equal(saved.recomputeRequired,undefined);assert.equal(saved.rejected,undefined);assert.equal(saved.resource_id,command.resource_id);
+  await restarted.submitStaff(saved);assert.equal(posts,2);assert.deepEqual(payloads,[{command_id:command.command_id},{command_id:command.command_id}]);
+ }
+});
+
+test('non-dispatch 409 keeps the existing recovery and discard contract',async()=>{
+ const app=setup();const command=await app.service.prepareStaff('start',job);let posts=0;
+ app.respond((_url,init)=>{if(init.method==='PATCH'){posts++;return new Response(null,{status:409});}return Response.json({job,events:[]});});
+ await assert.rejects(app.service.submitStaff(command));
+ const [saved]=await app.reload().pendingStaff();assert.equal(saved.rejected,true);assert.equal(saved.recomputeRequired,undefined);
+ await assert.rejects(app.service.submitStaff(saved));assert.equal(posts,2);
+});
+
+test('legacy rejected dispatch records require recomputation after restart without changing uncertain records',async()=>{
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const legacy=await app.service.prepareStaff('dispatch','legacy-preview');
+ for(const [uri,text] of app.files){if(uri.endsWith('.json')){const record=JSON.parse(text);if(record.command_id===legacy.command_id)app.files.set(uri,JSON.stringify({...record,rejected:true}));}}
+ const uncertain=await app.service.prepareStaff('dispatch','uncertain-preview');
+ const restarted=app.reload(),pending=await restarted.pendingStaff();
+ assert.equal(pending.find(command=>command.command_id===legacy.command_id).recomputeRequired,true);
+ assert.equal(pending.find(command=>command.command_id===uncertain.command_id).recomputeRequired,undefined);
+ let calls=0;app.respond(url=>{calls++;return Response.json(url.endsWith('/plans/current')?{plan:null}:{plan_id:null});});
+ await assert.rejects(restarted.submitStaff(legacy),/compute a new preview/);assert.equal(calls,0);
+ await restarted.reconcileDispatchConflict(legacy);assert.equal(calls,2);
+ assert.deepEqual((await app.reload().pendingStaff()).map(command=>command.command_id),[uncertain.command_id]);
+});
+
+test('a stale command object cannot submit when its durable journal is missing or corrupt',async()=>{
+ for(const corrupt of [false,true]){
+  const app=setup();app.session({userId:'owner',role:'admin'});
+  const command=await app.service.prepareStaff('dispatch','preview');
+  for(const [uri] of app.files){if(uri.endsWith('.json')){if(corrupt)app.files.set(uri,'{');else app.files.delete(uri);}}
+  let requests=0;app.respond(()=>{requests++;return Response.json({plan_id:null});});
+  await assert.rejects(app.reload().submitStaff(command),/saved action is unavailable/);assert.equal(requests,0);
+ }
+});
+
+test('dispatch keeps its definite HTTP 409 classification if rejection metadata cannot publish',async()=>{
+ const app=setup();app.session({userId:'owner',role:'admin'});
+ const command=await app.service.prepareStaff('dispatch','preview');
+ app.respond((_url,init)=>init.method==='POST'?new Response(null,{status:409}):Response.json({plan_id:null}));
+ app.faults.move=true;
+ await assert.rejects(app.service.submitStaff(command),error=>error instanceof transport.StaffApiError&&error.status===409);
+ assert.equal((await app.reload().pendingStaff())[0].command_id,command.command_id);
+});

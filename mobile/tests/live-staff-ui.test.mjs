@@ -2,22 +2,24 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {act,button,load,mount,native,theme,ui,wrap,deferred} from './helpers/render.mjs';
+const {StaffApiError}=load('services/staff-client.ts');
 const blocks={...ui,Screen:wrap,Card:wrap,ScreenHeader:props=>React.createElement('h1',null,props.title),TextField:wrap};
 const job={id:'job',version:2,status:'assigned',category:'mixed_waste',location:{latitude:24,longitude:67},assigned_crew_id:'A',route_position:0,held:false,locked:false,illustrative:false};
 function preview(patch={}){return{id:'preview',job_ids:['job'],expires_at:new Date(Date.now()+120000).toISOString(),dispatchable:true,plan_id:null,termination_reason:'complete',travel_label:'Driving times',routes:[{crew_id:'A',duration_minutes:6,travel_minutes:1,stops:[{job_id:'job',position:0,priority:'routine',travel_minutes:1,service_minutes:5,completion_minutes:6}]}],unassigned:[],exclusions:[],reassignments:[],...patch};}
-function dispatchSetup(calculate=async()=>preview(),submit=async()=>{},prepare){
+function dispatchSetup(calculate=async()=>preview(),submit=async()=>{},prepare,reconcile){
  const state={data:{crews:[{id:'A',name:'Crew A',available:true,location_recorded_at:null},{id:'B',name:'Crew B',available:true,location_recorded_at:null}],jobs:[job],pending:[],currentPlan:{plan:null}},loading:false,error:'',refresh:async()=>{}};
- const requests=[],prepared=[];let read,planReads=0;
+ const requests=[],prepared=[],reconciled=[];let read,planReads=0;
  const api={crews:async()=>state.data.crews,jobs:async()=>state.data.jobs,currentPlan:async()=>{planReads++;return state.data.currentPlan;},compute:(ids,jobIds)=>{requests.push({crew_ids:ids,job_ids:jobIds});return calculate(ids,jobIds);}};
  state.refresh=async()=>{state.data=await read();};
  const {LiveDispatch}=load('components/admin/live-dispatch.tsx',{
   'expo-router':{Link:({href,children})=>React.createElement('a',{href},children)},
   'react-native':native,'@/components/ui':blocks,'@/components/account/account-button':{AccountButton:wrap},'@/theme':theme,
   '@/hooks/use-staff-data':{useStaffData:callback=>{read=callback;return state;}},'@/services/staff':{staffApi:api},
-  '@/services/pending-staff':{pendingStaff:async()=>[],prepareStaff:async(kind,id)=>{prepared.push({kind,id});return prepare?prepare(kind,id):{command_id:'stable'};},submitStaff:submit},
+  '@/services/pending-staff':{pendingStaff:async()=>state.data?.pending??[],prepareStaff:async(kind,id)=>{prepared.push({kind,id});return prepare?prepare(kind,id):{command_id:'stable',kind,resource_id:id};},submitStaff:submit,reconcileDispatchConflict:async command=>{reconciled.push(command);const result=await reconcile?.(command);state.data.pending=[];return result;}},
+  '@/services/staff-client':{StaffApiError},
   '@/components/route/pending-actions':{PendingActions:wrap},'@/components/route/route-map':{RouteMap:wrap},
  });
- return{state,requests,prepared,planReads:()=>planReads,view:mount(LiveDispatch,{})};
+ return{state,requests,prepared,reconciled,planReads:()=>planReads,view:mount(LiveDispatch,{})};
 }
 test('compute is read-only; selection changes invalidate the preview and only approval dispatches',async()=>{
  const app=dispatchSetup();const {view}=app;
@@ -155,4 +157,46 @@ test('unmount during durable dispatch preparation does not submit or refresh a d
  await act(()=>button(view.container,'Approve and dispatch').click());
  await view.close();await act(async()=>preparation.resolve({command_id:'stable'}));
  assert.equal(app.prepared.length,1);assert.equal(submits,0);assert.equal(app.planReads(),0);
+});
+
+
+test('a definitive dispatch conflict removes the old preview, keeps scope and requires a fresh explicit approval',async()=>{
+ let calculations=0,submits=0;
+ const app=dispatchSetup(async()=>preview({id:calculations++?'fresh-preview':'old-preview'}),async command=>{
+  submits++;
+  if(submits===1){app.state.data.pending=[{...command,rejected:true,recomputeRequired:true}];throw new StaffApiError(409);}
+ });const {view}=app;
+ try{
+  await view.render();await act(()=>button(view.container,'Crew A').click());await act(()=>button(view.container,'Job job').click());
+  await act(async()=>button(view.container,'Compute routes').click());
+  await act(async()=>button(view.container,'Approve and dispatch').click());
+  assert.equal(view.container.textContent.includes('Route preview'),false);
+  assert.equal(button(view.container,'Crew A').dataset.selected,'true');assert.equal(button(view.container,'Job job').dataset.selected,'true');
+  assert.equal(app.reconciled[0].resource_id,'old-preview');assert.equal(app.planReads(),1);assert.equal(app.requests.length,1);assert.equal(app.prepared.length,1);
+  assert.equal(button(view.container,'Compute routes').disabled,false);
+  await act(async()=>button(view.container,'Compute routes').click());assert.equal(app.prepared.length,1);
+  await act(async()=>button(view.container,'Approve and dispatch').click());
+  assert.deepEqual(app.prepared,[{kind:'dispatch',id:'old-preview'},{kind:'dispatch',id:'fresh-preview'}]);assert.equal(submits,2);
+ }finally{await view.close();}
+});
+
+test('an unreadable conflicting preview remains flagged and blocks competing calculations',async()=>{
+ const app=dispatchSetup(undefined,async command=>{app.state.data.pending=[{...command,rejected:true,recomputeRequired:true}];throw new StaffApiError(409);},undefined,async()=>{throw Error('read failed');});const {view}=app;
+ try{
+  await view.render();await act(()=>button(view.container,'Crew A').click());await act(()=>button(view.container,'Job job').click());await act(async()=>button(view.container,'Compute routes').click());
+  await act(async()=>button(view.container,'Approve and dispatch').click());
+  assert.equal(view.container.textContent.includes('Route preview'),false);assert.equal(button(view.container,'Compute routes').disabled,true);
+  assert.match(view.container.textContent,/Use Refresh routing state/);assert.equal(app.state.data.pending[0].recomputeRequired,true);
+  assert.equal(app.requests.length,1);assert.equal(app.prepared.length,1);
+ }finally{await view.close();}
+});
+
+test('an unknown dispatch failure retains the original preview and durable command for recovery',async()=>{
+ const app=dispatchSetup(undefined,async command=>{app.state.data.pending=[command];throw Error('response lost');});const {view}=app;
+ try{
+  await view.render();await act(()=>button(view.container,'Crew A').click());await act(()=>button(view.container,'Job job').click());await act(async()=>button(view.container,'Compute routes').click());
+  await act(async()=>button(view.container,'Approve and dispatch').click());
+  assert.match(view.container.textContent,/Route preview/);assert.equal(button(view.container,'Compute routes').disabled,true);
+  assert.equal(app.reconciled.length,0);assert.equal(app.state.data.pending[0].resource_id,'preview');assert.equal(app.state.data.pending[0].recomputeRequired,undefined);
+ }finally{await view.close();}
 });

@@ -5,8 +5,9 @@ import { AppText, Button, Card, Chip, Screen, ScreenHeader, TextField } from "@/
 import { AccountButton } from "@/components/account/account-button";
 import { useStaffData } from "@/hooks/use-staff-data";
 import { staffApi } from "@/services/staff";
-import { pendingStaff, prepareStaff, submitStaff } from "@/services/pending-staff";
-import type { Job, Preview } from "@/services/staff-client";
+import { pendingStaff, prepareStaff, reconcileDispatchConflict, submitStaff } from "@/services/pending-staff";
+import { StaffApiError, type Job, type Preview } from "@/services/staff-client";
+import type { StaffCommand } from "@/services/staff-commands";
 import { PendingActions } from "@/components/route/pending-actions";
 import { RouteMap } from "@/components/route/route-map";
 import { Spacing } from "@/theme";
@@ -52,12 +53,24 @@ export function LiveDispatch() {
     if (working.current || !result || !canDispatch) return;
     working.current = true; setBusy(true); setError("");
     const version = ++revision.current;
+    let command: StaffCommand | undefined;
     try {
-      const command = await prepareStaff("dispatch", result.preview.id);
+      command = await prepareStaff("dispatch", result.preview.id);
       if (version !== revision.current) return;
       await submitStaff(command);
       if (version === revision.current) setResult(null);
-    } catch (error) { if (version === revision.current) setError(error instanceof Error ? error.message : "Dispatch confirmation pending. Recover the saved action."); }
+    } catch (error) {
+      if (version !== revision.current) return;
+      if (command && error instanceof StaffApiError && error.status === 409) {
+        setResult(null);
+        setError("This routing proposal is no longer available for approval. Refresh routing state, then compute and review a new preview.");
+        try {
+          await reconcileDispatchConflict(command);
+        } catch {
+          if (version === revision.current) setError("Unable to reconcile the saved dispatch. Use Refresh routing state on its saved action before computing a new preview.");
+        }
+      } else setError(error instanceof Error ? error.message : "Dispatch confirmation pending. Recover the saved action.");
+    }
     finally {
       working.current = false;
       if (version === revision.current) { setBusy(false); await state.refresh(); }
@@ -118,7 +131,7 @@ export function LiveDispatch() {
     })}
     {!!selectedJobs.length && <Button label="Clear job selection" variant="outline" disabled={busy} onPress={() => { revision.current++; setSelectedJobs([]); setResult(null); setError(""); }} />}
     {(selected.length > 0 || selectedJobs.length > 0) && !!selectionIssue && <AppText accessibilityRole="alert">{selectionIssue}</AppText>}
-    {pendingDispatch && <AppText>Recover or discard the saved dispatch before computing another preview.</AppText>}
+    {pendingDispatch && <AppText>Resolve the saved dispatch action below before computing another preview.</AppText>}
     <Button label="Compute routes" disabled={busy || state.loading || pendingDispatch || !state.data || !!selectionIssue || selected.some(id => !state.data?.crews.some(crew => crew.id === id && crew.available))} loading={busy} onPress={() => { void compute(); }} />
     {error ? <AppText accessibilityRole="alert">{error}</AppText> : null}
     {result && state.data && <>
