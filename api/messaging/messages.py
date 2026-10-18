@@ -1,6 +1,7 @@
 """Small, provider-agnostic representations of inbound Photon messages."""
 
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass(frozen=True)
@@ -11,6 +12,20 @@ class InboundMessage:
     agent_sender_id: str
     space_id: str
     text: str
+
+
+@dataclass(frozen=True)
+class PilotInboundMessage:
+    """Provider identities needed for report-link and consent authorization."""
+
+    project_id: str
+    agent_sender_id: str
+    external_id: str
+    message_id: str
+    text: str
+    created_at: str
+    peer_id: str
+    space_kind: str
 
 
 def _string_attribute(value: object, name: str) -> str | None:
@@ -69,4 +84,49 @@ def extract_inbound_text(message: object) -> InboundMessage | None:
         agent_sender_id=agent_sender_id,
         space_id=space_id,
         text=text.strip(),
+    )
+
+
+def extract_pilot_inbound(
+    message: object,
+    *,
+    project_id: str,
+    agent_sender_id: str,
+    chat_ids: tuple[str, ...],
+) -> PilotInboundMessage | None:
+    """Accept only the allowlisted direct chat received by this project's agent."""
+    basic = extract_inbound_text(message)
+    if basic is None or basic.agent_sender_id != agent_sender_id:
+        return None
+    payload = _unwrap_root_model(message)
+    space = _unwrap_root_model(getattr(payload, "space", None))
+    peer = _unwrap_root_model(getattr(payload, "sentBy", None))
+    actual_project = _string_attribute(payload, "projectId")
+    peer_id = _string_attribute(peer, "id")
+    created_at = _string_attribute(payload, "createdAt")
+    if (
+        actual_project != project_id
+        or basic.space_id not in chat_ids
+        or _string_attribute(space, "kind") != "direct"
+        or not peer_id
+        or not created_at
+    ):
+        return None
+    try:
+        timestamp = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            return None
+    except ValueError:
+        return None
+    # Preserve the provider's exact text for the backend's immutable inbox hash.
+    content = getattr(payload, "content", None)
+    return PilotInboundMessage(
+        actual_project,
+        basic.agent_sender_id,
+        basic.space_id,
+        basic.id,
+        getattr(content, "text"),
+        created_at,
+        peer_id,
+        "direct",
     )

@@ -1,9 +1,11 @@
 import { View, StyleSheet } from "react-native";
+import { useState } from "react";
 import { Image } from "expo-image";
 
 import { AppText, Button, IconButton, Screen, TextField } from "@/components/ui";
 import { Colors, Layout, Radius, Sizes, Spacing, Type } from "@/theme";
-import type { PhotoLocation } from "@/utils/location";
+import type { Coords, PhotoLocation } from "@/utils/location";
+import { PinPicker } from "./pin-picker";
 
 const CAPTION_MAX = 280;
 
@@ -11,8 +13,10 @@ type Props = {
   photoUri: string;
   location: PhotoLocation | null;
   locating: boolean;
+  locationError: string;
   onAddressChange: (address: string) => void;
   onRelocate: () => void;
+  onConfirmPin: (coords: Coords) => void;
   caption: string;
   onCaptionChange: (caption: string) => void;
   describing: boolean;
@@ -31,6 +35,7 @@ type Props = {
 export function ReportForm(props: Props) {
   const { photoUri, location, locating, caption, describing, canSubmit } = props;
   const coords = location?.coords;
+  const [picking, setPicking] = useState(false);
 
   return (
     <Screen
@@ -57,7 +62,7 @@ export function ReportForm(props: Props) {
 
       <View style={s.locationRow}>
         <TextField
-          label="Location"
+          label="Address or landmark (optional)"
           editable={!props.frozen}
           maxLength={500}
           style={s.flex}
@@ -76,6 +81,10 @@ export function ReportForm(props: Props) {
           style={s.locate}
         />
       </View>
+      {props.locationError ? <AppText tone="muted">{props.locationError}</AppText> : null}
+      {!coords && <AppText tone="muted">A GPS location or confirmed map pin is required to submit.</AppText>}
+      <Button label={coords ? "Adjust map pin" : "Choose location on map"} icon="map-pin" variant="outline" disabled={props.frozen} onPress={() => setPicking(true)} />
+      {picking && <PinPicker initial={coords ?? null} onClose={() => setPicking(false)} onConfirm={pin => { props.onConfirmPin(pin); setPicking(false); }} />}
 
       <TextField
         label="Caption"

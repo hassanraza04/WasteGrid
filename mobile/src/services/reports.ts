@@ -3,7 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import { Directory, File, Paths } from "expo-file-system";
 import { fetch } from "expo/fetch";
 import { Platform } from "react-native";
-import { discardRejectedDraft, readReportUpdates, readPhotoAccess, readReport, residentToken, sendSavedDraft, type ReportDraft, type Transport } from "./report-client";
+import { createFollowupLink, discardRejectedDraft, readMessagingLinks, readReportMessages, unlinkMessaging, readReportUpdates, readPhotoAccess, readReport, residentToken, sendSavedDraft, type ReportDraft, type Transport } from "./report-client";
 
 import { getSession } from "@/auth/session";
 
@@ -128,6 +128,7 @@ async function credential(draft: ReportDraft) {
   if (!stored) throw new Error("This saved report is no longer available on this device.");
   if (stored.ownerId && stored.ownerId !== getSession()?.userId) throw new Error("Sign in to the account that saved this report.");
   const token = await SecureStore.getItemAsync(tokenKey(draft.id));
+  if (stored.ownerId && stored.ownerId !== getSession()?.userId) throw new Error("Sign in to the account that saved this report.");
   if (!token) throw new Error("The private access key for this report is unavailable on this device.");
   return token;
 }
@@ -169,3 +170,7 @@ export async function reportUpdates(draft: ReportDraft, offset = 0) {
 export async function reportPhoto(draft: ReportDraft, photoId: string) {
   return readPhotoAccess(draft, await credential(draft), photoId, request);
 }
+export async function followupLink(draft: ReportDraft) { return createFollowupLink(draft, await credential(draft), request); }
+export async function messagingLinks(draft: ReportDraft) { return readMessagingLinks(draft, await credential(draft), request); }
+export async function unlinkReportMessaging(draft: ReportDraft, linkId: string) { return unlinkMessaging(draft, await credential(draft), linkId, request); }
+export async function reportMessages(draft: ReportDraft, offset = 0) { return readReportMessages(draft, await credential(draft), offset, request); }

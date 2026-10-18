@@ -8,7 +8,7 @@ from uuid import UUID, uuid4, uuid5
 
 from fastapi import HTTPException
 from pydantic import ValidationError
-from sqlalchemy import and_, or_, select
+from sqlalchemy import String, and_, cast, or_, select
 from sqlalchemy.orm import Session
 
 from api.assessment import calculate_priority
@@ -76,6 +76,7 @@ def process_one(
     *,
     duplicate_radius_meters=10,
     organizer_routing=False,
+    pilot_settings=None,
 ) -> bool:
     if provider is None and assessment_client is not None:
         from api.decisions import AssessmentDecisionProvider
@@ -86,11 +87,26 @@ def process_one(
         supported_kinds.append("assessment")
     if provider is not None:
         supported_kinds.extend(("triage", "plan", "followup"))
+    pilot_mode = pilot_settings is not None and pilot_settings.messaging_pilot_enabled
+    if pilot_mode:
+        from api.pilot import enabled
+
+        if not enabled(pilot_settings):
+            return False
+        supported_kinds = [k for k in supported_kinds if k in ("assessment", "triage")]
     with Session(engine) as db:
         mutation_lock(db)
+        query = select(Task)
+        if pilot_mode:
+            query = query.join(
+                Report, cast(Report.id, String) == Task.payload["report_id"].as_string()
+            ).where(
+                Report.id.in_(pilot_settings.messaging_pilot_report_ids),
+                Report.illustrative.is_(False),
+                Task.kind.in_(["assessment", "triage"]),
+            )
         task = db.scalar(
-            select(Task)
-            .where(
+            query.where(
                 or_(
                     and_(Task.status == "pending", Task.next_attempt_at <= now()),
                     and_(Task.status == "running", Task.leased_until < now()),
@@ -128,6 +144,14 @@ def process_one(
             task.leased_until = None
             db.commit()
             return True
+        if pilot_mode:
+            from api.pilot import ensure_run
+
+            run = ensure_run(db, pilot_settings)
+            if task.kind == "assessment":
+                if run.image_calls >= 2:
+                    return False
+                run.image_calls += 1
         task.status = "running"
         task.attempts += 1
         task.lease_id = uuid4()
@@ -218,6 +242,11 @@ def process_one(
                         Event.kind == "report.possible_duplicate",
                     )
                 )
+                if report.needs_review:
+                    decision.needs_review = True
+                    decision.priority_reason += (
+                        " Existing review requirements remain in effect."
+                    )
                 if report.organizer_review_required:
                     decision.needs_review = True
                     decision.priority_reason += " Organizer review must be resolved before automatic assignment."
@@ -335,7 +364,14 @@ def main():
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
     settings = Settings()
-    engine, provider = make_engine(settings), load_provider(settings)
+    from api.decisions import AssessmentDecisionProvider
+
+    engine = make_engine(settings)
+    provider = (
+        AssessmentDecisionProvider(settings.duplicate_radius_meters)
+        if settings.messaging_pilot_enabled
+        else load_provider(settings)
+    )
     assessment_client = (
         ChalkAssessmentClient(settings)
         if settings.chalk_router_api_key and settings.chalk_env_id
@@ -349,16 +385,36 @@ def main():
         logger.warning(
             "Chalk assessment is not configured; unattempted assessment tasks remain pending"
         )
+    from api.followup_ai import ChalkFollowupClient
+    from api.pilot import enabled
+    from api.pilot_worker import process_followup
+
+    if settings.messaging_pilot_enabled and not enabled(settings):
+        raise SystemExit(
+            "The messaging pilot requires its fixed report/chat scope and organizer routing"
+        )
+    followup_client = (
+        ChalkFollowupClient(settings) if settings.messaging_pilot_enabled else None
+    )
     cloud = SupabaseCloud(settings)
     try:
         while True:
-            worked = process_one(
-                engine,
-                provider,
-                cloud,
-                assessment_client,
-                duplicate_radius_meters=settings.duplicate_radius_meters,
-                organizer_routing=settings.organizer_routing_enabled,
+            worked = (
+                process_followup(engine, settings, followup_client)
+                if followup_client
+                else False
+            )
+            worked = (
+                process_one(
+                    engine,
+                    provider,
+                    cloud,
+                    assessment_client,
+                    duplicate_radius_meters=settings.duplicate_radius_meters,
+                    organizer_routing=settings.organizer_routing_enabled,
+                    pilot_settings=settings,
+                )
+                or worked
             )
             if args.once:
                 break
@@ -366,6 +422,8 @@ def main():
                 time.sleep(2)
     finally:
         cloud.close()
+        if followup_client is not None:
+            followup_client.close()
         if provider is not None:
             provider.close()
         if assessment_client is not None:

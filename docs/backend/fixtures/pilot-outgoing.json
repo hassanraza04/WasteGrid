@@ -1,0 +1,12 @@
+{
+  "channel": "imessage",
+  "consent_revision": 1,
+  "external_id": "example-private-chat",
+  "id": "70000000-0000-4000-8000-000000000001",
+  "lease_id": "90000000-0000-4000-8000-000000000001",
+  "provider_message_id": null,
+  "sender_id": "example-bot",
+  "status": "leased",
+  "text": "WG-A1B2C3D4E5F6: Your report has been received.",
+  "thread_id": "50000000-0000-4000-8000-000000000001"
+}

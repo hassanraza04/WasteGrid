@@ -5,6 +5,7 @@ import { AppText, Button } from "@/components/ui";
 import { reportPhoto, reportUpdates } from "@/services/reports";
 import type { PhotoAccess, ReportDraft, ReportUpdate, SavedReport } from "@/services/report-client";
 import { Spacing } from "@/theme";
+import { ReportMessaging } from "./report-messaging";
 
 export function PrivateReportPhoto({ draft, photoId, label }: { draft: ReportDraft; photoId: string; label: string }) {
   const [result, setResult] = useState<{ draft: ReportDraft; photoId: string; revision: number; access: PhotoAccess | null; error: boolean } | null>(null);
@@ -94,6 +95,7 @@ function ReportDetailsContent({ draft, report }: DetailsProps) {
     <Button label="Refresh history" variant="outline" disabled={busy} onPress={() => start(0)} />
     {next !== null && <Button label="Load more updates" variant="outline" disabled={busy} onPress={() => start(next)} />}
     {busy && <AppText tone="muted">Loading history…</AppText>}
+    <ReportMessaging draft={draft} />
     {report.photo_id && <PrivateReportPhoto draft={draft} photoId={report.photo_id} label="Reported photo" />}
     {[...new Set(report.completion_photo_ids ?? [])].map(id => <PrivateReportPhoto key={id} draft={draft} photoId={id} label="Cleanup photo · crew-submitted" />)}
   </View>;

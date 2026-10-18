@@ -35,6 +35,7 @@ export const Sizes = {
   iconButtonSm: 36,
   icon: 22,
   iconSm: 18,
+  mapPicker: 360,
   tabBar: 68,
 } as const;
 

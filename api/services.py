@@ -12,6 +12,7 @@ from api.models import (
     Conversation,
     Event,
     Job,
+    MessagingThread,
     OutgoingMessage,
     Photo,
     Plan,
@@ -184,7 +185,13 @@ def event(
         )
     )
     conversations = db.scalars(
-        select(Conversation).where(Conversation.report_id.in_(reports))
+        select(Conversation)
+        .outerjoin(MessagingThread, Conversation.thread_id == MessagingThread.id)
+        .where(
+            Conversation.report_id.in_(reports),
+            MessagingThread.pilot_id.is_(None),
+            Conversation.active.is_(True),
+        )
     ).all()
     for conversation in conversations:
         db.add(
@@ -198,6 +205,9 @@ def event(
                 },
             )
         )
+    from api.pilot import emit_event
+
+    emit_event(db, record, reports)
     return record
 
 

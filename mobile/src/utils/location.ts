@@ -44,20 +44,21 @@ function withTimeout<T>(promise: Promise<T>, ms?: number): Promise<T | null> {
 }
 
 export type PhotoLocation = {
-  coords: Coords | null; // null if the user typed the address by hand
+  coords: Coords | null; // An address alone does not establish the report's coordinates.
   address: string;
 };
 
 // Current position + a readable address. Returns null if permission is denied or location is unavailable.
 export async function getPhotoLocation(): Promise<PhotoLocation | null> {
-  const result = await getCurrentCoords({
+  const result = await withTimeout(getCurrentCoords({
     maxCacheAgeMs: 60_000,
     requiredCacheAccuracyM: 50,
     accuracy: Location.Accuracy.Highest,
-  });
-  if (!result.ok) return null;
+    timeoutMs: 15_000,
+  }), 15_000);
+  if (!result?.ok) return null;
 
-  const [address] = await Location.reverseGeocodeAsync(result.coords).catch(() => []);
+  const [address] = await withTimeout(Location.reverseGeocodeAsync(result.coords).catch(() => []), 2_000) ?? [];
   return { coords: result.coords, address: address ? formatAddress(address) : "" };
 }
 

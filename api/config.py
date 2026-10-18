@@ -1,8 +1,9 @@
 """Backend-only configuration. Missing cloud configuration fails closed at use."""
 
 from typing import Literal
+from uuid import UUID
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,6 +32,14 @@ class Settings(BaseSettings):
     )
     assessment_timeout_seconds: float = Field(default=30, gt=0, le=120)
     duplicate_radius_meters: float = Field(default=10, ge=0, le=100)
+    # Explicit, bounded canary. Empty allowlists never mean unrestricted access.
+    messaging_pilot_enabled: bool = False
+    messaging_pilot_id: UUID | None = None
+    messaging_pilot_report_ids: list[UUID] = Field(default_factory=list, max_length=2)
+    messaging_pilot_chat_ids: list[str] = Field(default_factory=list, max_length=1)
+    messaging_imessage_recipient: str = ""
+    photon_project_id: str = ""
+    photon_agent_sender_id: str = ""
     organizer_routing_enabled: bool = False
     routing_osrm_base_url: str = ""
     routing_provider_timeout_seconds: float = Field(default=10, gt=0, le=30)
@@ -46,3 +55,14 @@ class Settings(BaseSettings):
     routing_travel_weight: float = Field(
         default=0.25, gt=0, le=100, allow_inf_nan=False
     )
+
+    @model_validator(mode="after")
+    def validate_pilot_report_scope(self):
+        if self.messaging_pilot_enabled and (
+            len(self.messaging_pilot_report_ids) != 2
+            or len(set(self.messaging_pilot_report_ids)) != 2
+        ):
+            raise ValueError(
+                "An enabled messaging pilot requires two distinct report IDs"
+            )
+        return self

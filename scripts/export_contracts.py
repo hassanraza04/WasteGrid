@@ -9,9 +9,11 @@ from uuid import UUID
 
 from pydantic import TypeAdapter
 
+from api import pilot_schemas as P
 from api import schemas as S
 from api.auth import Principal
 from api.config import Settings
+from api.followup_ai import FollowupIntent
 from api.main import create_app
 
 DEST = Path(__file__).resolve().parents[1] / "docs" / "backend"
@@ -210,6 +212,37 @@ def fixtures():
             lease_id=UUID("90000000-0000-4000-8000-000000000001"),
             leased_until=instant,
         ),
+        "pilot-inbound": P.PilotInboundEnvelope(
+            project_id="example-project",
+            agent_sender_id="example-bot",
+            external_id="example-private-chat",
+            message_id="example-inbound-1",
+            peer_id="example-resident",
+            space_kind="direct",
+            text="What is the status?",
+            created_at=instant,
+        ),
+        "pilot-outgoing": P.PilotOutgoingView(
+            id=UUID("70000000-0000-4000-8000-000000000001"),
+            lease_id=UUID("90000000-0000-4000-8000-000000000001"),
+            thread_id=conversation_id,
+            external_id="example-private-chat",
+            sender_id="example-bot",
+            text="WG-A1B2C3D4E5F6: Your report has been received.",
+            provider_message_id=None,
+            status="leased",
+            consent_revision=1,
+        ),
+        "pilot-links": P.ResidentMessagingLinks(
+            enabled=True,
+            recipient="example-bot@invalid.example",
+            links=[
+                P.ResidentMessagingLink(
+                    id=conversation_id, channel="imessage", active=True, paused=False
+                )
+            ],
+        ),
+        "followup-intent": FollowupIntent(kind="status"),
         "error": S.ErrorResponse(
             detail="State changed; fetch current state before retrying"
         ),
@@ -231,6 +264,7 @@ def artifacts():
         "FollowupResult",
     ):
         result[f"schemas/{name}.json"] = getattr(S, name).model_json_schema()
+    result["schemas/FollowupIntent.json"] = FollowupIntent.model_json_schema()
     result.update(
         {
             f"fixtures/{name}.json": TypeAdapter(Any).dump_python(value, mode="json")

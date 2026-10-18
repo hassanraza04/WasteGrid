@@ -98,7 +98,12 @@ def test_retry_safe_report_creation(client, png, engine):
     token = "wg_r_" + token_urlsafe(32)
     kwargs = {
         "headers": {"X-Report-Token": token},
-        "data": {"client_report_id": rid, "note": "first"},
+        "data": {
+            "client_report_id": rid,
+            "note": "first",
+            "latitude": 24.92,
+            "longitude": 67.09,
+        },
         "files": {"photo": ("image.png", png, "image/png")},
     }
     first = client.post("/reports", **kwargs)
@@ -115,7 +120,11 @@ def test_retry_safe_report_creation(client, png, engine):
 
 def test_upload_failure_is_atomic(client, png, engine):
     client.app.state.cloud.fail_upload = True
-    result = client.post("/reports", files={"photo": ("image.png", png, "image/png")})
+    result = client.post(
+        "/reports",
+        data={"latitude": 24.92, "longitude": 67.09},
+        files={"photo": ("image.png", png, "image/png")},
+    )
     assert result.status_code == 503
     with Session(engine) as db:
         for model in (Report, Photo, Event, Task):
@@ -518,8 +527,11 @@ def test_blocked_assignment_replan_requires_current_crew_resources(
 
 def test_missing_information_and_hazard_do_not_create_jobs(client, png, engine):
     report(client, png, note="Suspected hazard")
-    missing = client.post("/reports", files={"photo": ("a.png", png, "image/png")})
-    assert missing.status_code == 201
+    missing = report(client, png, latitude=24.96, longitude=67.12)
+    # Preserve processing coverage for reports accepted before coordinates became mandatory.
+    with Session(engine) as db:
+        db.get(Report, UUID(missing["report"]["id"])).location = None
+        db.commit()
     drain(client, engine)
     listing = client.get("/organizer/reports", headers=auth("org")).json()
     assert {r["state"] for r in listing} == {"needs_review", "needs_info"}
@@ -713,9 +725,11 @@ def test_triage_safety_duplicate_and_stale_decision(client, png, engine):
 
 
 def test_followup_action_is_validated_and_persisted(client, png, engine):
-    created = client.post(
-        "/reports", files={"photo": ("a.png", png, "image/png")}
-    ).json()
+    created = report(client, png)
+    # A previously accepted legacy report can still need location clarification.
+    with Session(engine) as db:
+        db.get(Report, UUID(created["report"]["id"])).location = None
+        db.commit()
     convo = bind(client, created)
     drain(client, engine)
 
@@ -792,7 +806,7 @@ def test_concurrent_submission_retries_create_one_report(client, png, engine):
         return client.post(
             "/reports",
             headers={"X-Report-Token": token},
-            data={"client_report_id": rid},
+            data={"client_report_id": rid, "latitude": 24.92, "longitude": 67.09},
             files={"photo": ("a.png", png, "image/png")},
         )
 
@@ -900,7 +914,7 @@ def test_commit_acknowledgement_loss_preserves_committed_photo(
     rid = str(uuid4())
     params = {
         "headers": {"X-Report-Token": token},
-        "data": {"client_report_id": rid},
+        "data": {"client_report_id": rid, "latitude": 24.92, "longitude": 67.09},
         "files": {"photo": ("a.png", png, "image/png")},
     }
     response = client.post("/reports", **params)
@@ -1458,15 +1472,13 @@ def test_clarification_entrypoints_apply_configured_proximity(
 
     client.app.state.settings.duplicate_radius_meters = radius
     first = report(client, png)
-    second_response = client.post(
-        "/reports", files={"photo": ("a.png", png, "image/png")}
-    )
-    assert second_response.status_code == 201
-    second = second_response.json()
+    second = report(client, png, latitude=24.96, longitude=67.12)
     rid = UUID(second["report"]["id"])
     convo = bind(client, second)
     with Session(engine) as db:
-        seed_eligible_assessment(db.get(Report, rid))
+        legacy = db.get(Report, rid)
+        legacy.location = None
+        seed_eligible_assessment(legacy)
         # Isolate the settled-assessment clarification path from photo processing.
         for task in db.scalars(select(Task).where(Task.kind == "assessment")):
             task.status = "succeeded"

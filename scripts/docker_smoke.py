@@ -13,8 +13,10 @@ from uuid import uuid4
 
 
 def inside():
+    from datetime import timedelta
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     from io import BytesIO
+    from secrets import token_urlsafe
     from threading import Thread
 
     import httpx
@@ -22,9 +24,10 @@ def inside():
     from sqlalchemy import text
     from sqlalchemy.orm import Session
 
+    from api.auth import digest
     from api.config import Settings
     from api.db import make_engine
-    from api.models import StaffRole
+    from api.models import LinkCode, StaffRole, now
 
     uid = uuid4()
     engine = make_engine(Settings())
@@ -90,6 +93,8 @@ def inside():
             "/reports",
             data={
                 "note": "Docker smoke report",
+                "latitude": 24.92,
+                "longitude": 67.09,
                 "title": "Illustrative overflowing bin",
                 "address": "Illustrative park gate, Gulshan-e-Iqbal",
             },
@@ -101,7 +106,11 @@ def inside():
         pid = created["report"]["photo_id"]
         resident = {"Authorization": "Bearer " + created["access_token"]}
         reference = created["report"]["public_reference"]
-        assert created["report"]["location"] is None
+        assert created["report"]["location"] == {
+            "latitude": 24.92,
+            "longitude": 67.09,
+            "landmark": None,
+        }
         assert created["report"]["address"] == "Illustrative park gate, Gulshan-e-Iqbal"
         assert client.get("/reports/by-reference/" + reference).status_code == 401
         assert (
@@ -132,12 +141,24 @@ def inside():
             == reference
         )
         integration = {"X-Integration-Key": "smoke-messaging-only"}
-        link = client.post(f"/reports/{rid}/followup-link", headers=resident).json()
+        link = client.post(f"/reports/{rid}/followup-link", headers=resident)
+        assert link.status_code == 503, link.text
+        # Existing legacy links still work while new enrollment is disabled.
+        code = token_urlsafe(32)
+        with Session(engine) as db:
+            db.add(
+                LinkCode(
+                    code_hash=digest(code),
+                    report_id=rid,
+                    expires_at=now() + timedelta(minutes=10),
+                )
+            )
+            db.commit()
         bound = client.post(
             "/internal/conversations/bind",
             headers=integration,
             json={
-                "link_code": link["link_code"],
+                "link_code": code,
                 "channel": "imessage",
                 "external_id": "smoke-conversation",
                 "opted_in": True,
@@ -196,6 +217,7 @@ def inside():
                         "durable task enqueue",
                         "title/address and authorized reference lookup",
                         "customer update history",
+                        "disabled pilot rejects new enrollment",
                         "idempotent inbound message history",
                         "acknowledged outbound history",
                     ],

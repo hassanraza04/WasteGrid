@@ -2,6 +2,8 @@
 
 import json
 import logging
+import os
+import re
 from contextlib import asynccontextmanager
 from datetime import timedelta, timezone
 from hashlib import sha256
@@ -48,6 +50,8 @@ from api.models import (
     Event,
     Job,
     LinkCode,
+    MessagingPilot,
+    MessagingThread,
     OutgoingMessage,
     Photo,
     Plan,
@@ -55,6 +59,8 @@ from api.models import (
     Task,
     now,
 )
+from api.pilot import allowed_report, enabled, ensure_run
+from api.pilot import router as pilot_router
 from api.routing import routing_router
 from api.schemas import (
     BindConversation,
@@ -167,10 +173,18 @@ def upload_commit(request: Request, db: Session, path: str, content: bytes, mime
         raise
 
 
-def linked_conversation(db: Session, conversation_id: UUID) -> Conversation:
+def linked_conversation(
+    db: Session, conversation_id: UUID, *, mutation=False
+) -> Conversation:
     conversation = db.get(Conversation, conversation_id)
-    if conversation is None:
+    if conversation is None or not conversation.active:
         raise HTTPException(404, "Conversation not found")
+    if mutation and conversation.thread_id:
+        thread = db.get(MessagingThread, conversation.thread_id)
+        if thread and thread.pilot_id:
+            raise HTTPException(
+                409, "Pilot actions must use the durable messaging inbox"
+            )
     return conversation
 
 
@@ -201,6 +215,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = make_engine(settings)
     app.state.cloud = SupabaseCloud(settings)
     app.include_router(routing_router(settings))
+    app.include_router(pilot_router)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -223,6 +238,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
+        revision = os.environ.get("RENDER_GIT_COMMIT", "")
+        if re.fullmatch(r"[0-9a-f]{40}", revision):
+            response.headers["X-WasteGrid-Revision"] = revision
+        response.headers["X-WasteGrid-Organizer-Routing"] = str(
+            settings.organizer_routing_enabled
+        ).lower()
+        response.headers["X-WasteGrid-Messaging-Pilot"] = str(
+            settings.messaging_pilot_enabled
+        ).lower()
         return response
 
     @app.exception_handler(RequestValidationError)
@@ -260,6 +284,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not settings.supabase_url or not settings.supabase_secret_key:
             raise HTTPException(503, "Supabase is not configured")
         db.execute(select(Task.id).limit(0))
+        db.execute(select(MessagingPilot.id).limit(0))
         return {"status": "ready"}
 
     @app.post("/reports", response_model=ReportCreated, status_code=201)
@@ -326,6 +351,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return ReportCreated(
                     report=report_view(db, previous), access_token=x_report_token
                 )
+        if location is None:
+            raise HTTPException(
+                422, "GPS coordinates or a confirmed map pin are required"
+            )
         report_id, photo_id = client_report_id or uuid4(), uuid4()
         token = x_report_token or "wg_r_" + token_urlsafe(32)
         path = f"reports/{report_id}/{photo_id}"
@@ -479,13 +508,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ):
         report = find_report(db, report_id)
         require_resident(report, authorization)
+        if not enabled(settings):
+            raise HTTPException(503, "The supervised messaging pilot is not configured")
+        if not allowed_report(settings, report):
+            raise HTTPException(
+                403, "This report is outside the supervised messaging pilot"
+            )
+        ensure_run(db, settings)
         code = token_urlsafe(32)
         expires = now() + timedelta(minutes=10)
         db.add(
             LinkCode(code_hash=digest(code), report_id=report_id, expires_at=expires)
         )
         db.commit()
-        return LinkCreated(link_code=code, expires_at=expires)
+        return LinkCreated(
+            link_code=code,
+            expires_at=expires,
+            recipient=settings.messaging_imessage_recipient or None,
+            channel="imessage",
+        )
 
     @app.get("/photos/{photo_id}/access", response_model=PhotoAccess)
     def photo_access(
@@ -807,6 +848,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         if code is None:
             raise HTTPException(404, "Invalid link code")
+        if (
+            settings.messaging_pilot_enabled
+            and code.report_id in settings.messaging_pilot_report_ids
+        ):
+            raise HTTPException(409, "Pilot links must use the durable messaging inbox")
         existing = db.scalar(
             select(Conversation).where(
                 Conversation.channel == body.channel,
@@ -846,7 +892,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def clarify(
         conversation_id: UUID, body: Clarification, db: Session = Depends(get_db)
     ):
-        conversation = linked_conversation(db, conversation_id)
+        conversation = linked_conversation(db, conversation_id, mutation=True)
         report = apply_clarification(
             db,
             conversation.report_id,
@@ -862,7 +908,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dependencies=internal,
     )
     def recheck(conversation_id: UUID, body: Recheck, db: Session = Depends(get_db)):
-        conversation = linked_conversation(db, conversation_id)
+        conversation = linked_conversation(db, conversation_id, mutation=True)
         report = find_report(db, conversation.report_id)
         apply_recheck(db, report, body)
         db.commit()
@@ -874,15 +920,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dependencies=internal,
     )
     def resolve_conversation(body: ConversationLookup, db: Session = Depends(get_db)):
-        conversation = db.scalar(
-            select(Conversation).where(
-                Conversation.channel == body.channel,
-                Conversation.external_id == body.external_id,
+        conversations = list(
+            db.scalars(
+                select(Conversation).where(
+                    Conversation.channel == body.channel,
+                    Conversation.external_id == body.external_id,
+                    Conversation.active.is_(True),
+                )
             )
         )
-        if conversation is None:
+        if not conversations:
             raise HTTPException(404, "Conversation not linked")
-        return conversation
+        if len(conversations) != 1:
+            raise HTTPException(409, "Select a report through the messaging thread")
+        return conversations[0]
 
     @app.post(
         "/internal/conversations/{conversation_id}/followup",
@@ -895,7 +946,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ):
         if not body.text.strip():
             raise HTTPException(422, "Message text must not be blank")
-        linked_conversation(db, conversation_id)
+        linked_conversation(db, conversation_id, mutation=True)
         key = digest(str(conversation_id) + ":" + body.message_id)
         task = enqueue(
             db,
@@ -946,7 +997,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         rows = list(
             db.scalars(
                 select(OutgoingMessage)
+                .join(Conversation, Conversation.id == OutgoingMessage.conversation_id)
+                .outerjoin(
+                    MessagingThread, MessagingThread.id == Conversation.thread_id
+                )
                 .where(
+                    Conversation.active.is_(True),
+                    MessagingThread.pilot_id.is_(None),
                     OutgoingMessage.delivered_at.is_(None),
                     OutgoingMessage.next_attempt_at <= now(),
                     or_(
@@ -955,7 +1012,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ),
                 )
                 .order_by(OutgoingMessage.created_at, OutgoingMessage.id)
-                .with_for_update(skip_locked=True)
+                .with_for_update(of=OutgoingMessage, skip_locked=True)
                 .limit(body.limit)
             )
         )

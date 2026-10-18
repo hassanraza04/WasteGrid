@@ -161,11 +161,14 @@ All example URLs, IDs and credentials in the fixture files are illustrative.
 | Claim outgoing messages | `POST /internal/outgoing-messages/claim`, `{limit:20}` | 200 array of [outgoing records](fixtures/outgoing-message.json) |
 | Acknowledge successful send | `POST /internal/outgoing-messages/{id}/delivered`, [request](fixtures/delivery-ack.json) | [200 delivery status](fixtures/delivery-status.json) |
 
-To obtain a link code before binding, the resident calls
-`POST /reports/{id}/followup-link` with their bearer token; it returns
-`{"link_code":"<one-time-code>","expires_at":"<UTC timestamp>"}`. It expires after
-ten minutes. A conversation maps to one report; do not resolve by sender alone.
-The existing resolver works after the adapter restarts.
+New link codes require an enabled, fully configured supervised pilot and an
+allowlisted report. The resident calls `POST /reports/{id}/followup-link` with
+their bearer token; the response contains a ten-minute `link_code`, `expires_at`,
+verified `recipient`, and `channel: imessage`. Disabled/incomplete pilot
+configuration returns `503`, an out-of-scope report returns `403`, and a persisted
+scope conflict returns `409`. Pilot enrollment uses the durable messaging inbox
+described in [the pilot contract](photon-chalk-pilot.md). The legacy integration
+routes above retain existing conversation handling after adapter restarts.
 
 Creation uses the existing multipart endpoint, with **photo required**:
 

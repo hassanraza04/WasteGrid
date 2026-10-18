@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "links": [
+    {
+      "active": true,
+      "channel": "imessage",
+      "id": "50000000-0000-4000-8000-000000000001",
+      "paused": false
+    }
+  ],
+  "recipient": "example-bot@invalid.example"
+}
