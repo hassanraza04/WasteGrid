@@ -94,8 +94,10 @@ test('report screen requires a confirmed pin and unlocks rejected drafts for cor
    discardDraft: async () => { discarded = true; },
   },
   '@/services/report-client': client,
+  '@/auth/session': { getSession: () => null, useSession: () => null },
   '@/components/report/camera-step': { CameraStep: props => { camera = props; return null; } },
   '@/components/report/report-form': { ReportForm: props => { form = props; return null; } },
+  '@/components/report/submission-receipt': { SubmissionReceipt: () => null },
   '@/utils/describe-photo': { describePhoto: async () => null },
   '@/utils/location': { getPhotoLocation: async () => null },
  }).default;
@@ -123,11 +125,13 @@ test('retaking clears the first photo location and requires a fresh fix or confi
   'expo-router': { router: { replace() {}, back() {} } },
   '@/services/reports': {
    createDraft: async (photoUri, fields) => { submitted = { photoUri, fields }; return { id: 'draft', photoUri, fields }; },
-   sendDraft: async () => {}, discardDraft: async () => {},
+   sendDraft: async () => ({ public_reference: 'WG-ABCDEF123456' }), discardDraft: async () => {},
   },
   '@/services/report-client': client,
+  '@/auth/session': { getSession: () => null, useSession: () => null },
   '@/components/report/camera-step': { CameraStep: props => { camera = props; return null; } },
   '@/components/report/report-form': { ReportForm: props => { form = props; return null; } },
+  '@/components/report/submission-receipt': { SubmissionReceipt: () => null },
   '@/utils/describe-photo': { describePhoto: async () => null },
   '@/utils/location': { getPhotoLocation: () => { const request = deferred(); requests.push(request); return request.promise; } },
  }).default;
