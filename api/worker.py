@@ -77,7 +77,19 @@ def process_one(
     duplicate_radius_meters=10,
     organizer_routing=False,
     pilot_settings=None,
+    report_scope: UUID | None = None,
+    scoped_kind: str | None = None,
 ) -> bool:
+    if (
+        report_scope is not None
+        and pilot_settings is not None
+        and pilot_settings.messaging_pilot_enabled
+    ):
+        raise ValueError("Report-scoped verification cannot run in pilot mode")
+    if scoped_kind is not None and (
+        report_scope is None or scoped_kind not in ("assessment", "triage")
+    ):
+        raise ValueError("A scoped kind requires a report ID and assessment or triage")
     if provider is None and assessment_client is not None:
         from api.decisions import AssessmentDecisionProvider
 
@@ -94,8 +106,26 @@ def process_one(
         if not enabled(pilot_settings):
             return False
         supported_kinds = [k for k in supported_kinds if k in ("assessment", "triage")]
+    if report_scope is not None:
+        supported_kinds = [k for k in supported_kinds if k in ("assessment", "triage")]
+        if scoped_kind is not None:
+            supported_kinds = [k for k in supported_kinds if k == scoped_kind]
     with Session(engine) as db:
         mutation_lock(db)
+        if report_scope is not None:
+            report = db.get(Report, report_scope)
+            if report is None or report.illustrative or not report.location:
+                raise ValueError(
+                    "Scoped report must exist, be real, and have coordinates"
+                )
+            if scoped_kind == "assessment" and (
+                report.assessment_status != "pending" or report.job_id is not None
+            ):
+                raise ValueError("Scoped assessment is no longer pending")
+            if scoped_kind == "triage" and (
+                report.assessment_status != "assessed" or report.needs_review
+            ):
+                raise ValueError("Scoped triage is no longer eligible")
         query = select(Task)
         if pilot_mode:
             query = query.join(
@@ -104,6 +134,13 @@ def process_one(
                 Report.id.in_(pilot_settings.messaging_pilot_report_ids),
                 Report.illustrative.is_(False),
                 Task.kind.in_(["assessment", "triage"]),
+            )
+        if report_scope is not None:
+            query = query.where(
+                Task.payload["report_id"].as_string() == str(report_scope),
+                Task.kind.in_(["assessment", "triage"]),
+                Task.status == "pending",
+                Task.attempts == 0,
             )
         task = db.scalar(
             query.where(
@@ -117,7 +154,11 @@ def process_one(
                     Task.kind.in_(supported_kinds),
                     # Recover interrupted one-call work even without credentials;
                     # this branch terminalizes it below without invoking a model.
-                    and_(Task.kind == "assessment", Task.attempts > 0),
+                    and_(
+                        Task.kind == "assessment",
+                        Task.attempts > 0,
+                        report_scope is None,
+                    ),
                 )
             )
             .order_by(Task.created_at, Task.id)
