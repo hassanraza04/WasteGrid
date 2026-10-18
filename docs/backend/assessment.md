@@ -167,8 +167,15 @@ Use a dedicated real report uploaded through the deployed API. It must have a
 private photo, valid coordinates, one new pending assessment task, and no prior
 triage task or job. Deploy the reviewed backend and migrations first. Keep
 `MESSAGING_PILOT_ENABLED=false` and `ORGANIZER_ROUTING_ENABLED=true`; set the
-intended `CHALK_MODEL` explicitly. Run this command only from the backend owner's
-configured environment:
+intended `CHALK_MODEL` explicitly.
+
+Before the run, inspect the deployed `/ready` response headers. Confirm
+`X-WasteGrid-Revision` is the reviewed commit,
+`X-WasteGrid-Organizer-Routing: true`, and
+`X-WasteGrid-Messaging-Pilot: false`. If a header is missing, the deployed
+revision or configuration is not established; stop before leasing the task.
+
+Run this command only from the backend owner's configured environment:
 
 ```sh
 uv run --extra backend python -m scripts.verify_assessment --report-id <dedicated-report-uuid>
