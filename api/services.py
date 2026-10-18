@@ -71,6 +71,8 @@ def report_update(record: Event) -> ReportUpdate:
             "needs_review": "Your report needs organizer review.",
             "linked_to_job": "Your report is linked to a cleanup job.",
         }.get(record.report_state, message)
+    elif record.kind == "job.completed" and not record.details.get("photo_id"):
+        message = "The crew reported cleanup complete."
     elif record.kind in ("job.planned", "job.changed"):
         message = {
             "assigned": "A crew has been assigned to the cleanup.",

@@ -42,7 +42,7 @@ async function savedStaff(): Promise<StaffCommand[]> {
           (command.dispatchAttemptPending !== undefined && typeof command.dispatchAttemptPending !== "boolean") ||
           (command.kind !== "dispatch" && (!Number.isSafeInteger(command.expected_version) || command.expected_version! < 1)) ||
           (["start", "completion"].includes(command.kind) && typeof command.crewId !== "string") ||
-          (command.kind === "completion" && typeof command.photoUri !== "string") ||
+          (command.kind === "completion" && command.photoUri !== undefined && (typeof command.photoUri !== "string" || !command.photoUri.trim())) ||
           (command.kind === "release" && !command.reason?.trim())) continue;
       if (command.kind === "dispatch" && knownDispatchConflicts.has(command.command_id)) {
         command.rejected = true; command.recomputeRequired = true;
@@ -90,10 +90,10 @@ export function prepareStaff(kind: StaffCommand["kind"], resource: string | Job,
     const command: StaffCommand = { command_id: Crypto.randomUUID(), kind, resource_id: id, ownerId: owner.userId,
       crewId: owner.crewId, apiUrl: apiUrl(), ...(typeof resource !== "string" ? { expected_version: resource.version } : {}), ...(reason ? { reason } : {}) };
     authorised(command);
-    if (kind === "completion") {
-      if (!photoUri) throw new Error("Capture a cleanup photo first.");
+    if (kind === "completion" && photoUri !== undefined) {
+      if (!photoUri.trim()) throw new Error("Choose a valid cleanup photo or complete without one.");
       const source = new File(photoUri);
-      if (!source.exists || source.size > 8 * 1024 * 1024 || ![".jpg", ".jpeg", ".png", ".webp"].includes(source.extension.toLowerCase())) throw new Error("Use a JPEG, PNG or WebP photo below 8 MiB.");
+      if (!source.exists || source.size <= 0 || source.size > 8 * 1024 * 1024 || ![".jpg", ".jpeg", ".png", ".webp"].includes(source.extension.toLowerCase())) throw new Error("Use a JPEG, PNG or WebP photo below 8 MiB.");
       const photo = new File(directory(), `${command.command_id}${source.extension}`);
       await source.copy(photo); command.photoUri = photo.uri;
     }

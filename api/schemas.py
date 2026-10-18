@@ -255,7 +255,7 @@ class JobPatch(Command):
 
 
 class CompletionCommand(Command):
-    photo_hash: str
+    photo_hash: str | None
     note: str | None
 
 

@@ -549,7 +549,7 @@ def change_job(
     if not is_organizer and override_fields:
         raise HTTPException(403, "Only organizers can override assignments")
     if body.status == "completed":
-        raise HTTPException(409, "Completion requires crew photo evidence")
+        raise HTTPException(409, "Use the assigned crew completion endpoint")
     transitions = {
         "assigned": {"in_progress", "blocked"},
         "in_progress": {"blocked"},

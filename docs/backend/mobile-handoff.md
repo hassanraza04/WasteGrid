@@ -248,7 +248,7 @@ are excluded. Empty history is valid while messaging is unconnected.
 | `latest_update` | Latest customer-facing update or null |
 | `timeline` | Event summaries (`id`, `kind`, `created_at`); use `/updates` for readable history |
 | `clarifications` | Prior notes/locations with timestamps |
-| `completion_photo_ids` | After-photo IDs; obtain authorized access as below |
+| `completion_photo_ids` | Submitted after-photo IDs; may be empty even when completed; obtain authorized access as below |
 | `job_id`, `location`, `address`, `note` | May be null; do not fabricate missing values |
 | `version` | Server version; preserve for any supported versioned command |
 | `illustrative` | Label synthetic demo content explicitly |
@@ -319,7 +319,7 @@ shared PR. Do not hardcode demo passwords in source.
 | `GET /jobs` | Array of jobs, maximum 100; crew sees only its own assignments, organizer sees all |
 | `GET /jobs/{job_id}` | `{job, photo_ids, events}`; cross-crew access denied |
 | `PATCH /jobs/{job_id}` | Versioned job command, subject to role/state/plan validation |
-| `POST /jobs/{job_id}/completion` | Assigned crew only; multipart after-photo plus command fields |
+| `POST /jobs/{job_id}/completion` | Assigned crew only; command fields and optional multipart after-photo |
 
 For a crew start action, send JSON with `Content-Type: application/json`:
 
@@ -336,12 +336,29 @@ per intended action and reuse the identical command on retry. Starting/resuming
 requires a valid current plan and eligible assignment. Organizer changes also
 require a reason; consult the full contract before implementing organizer controls.
 
-Completion sends multipart `photo`, `command_id`, `expected_version` and optional
-`note` (maximum 2,000 characters). The job must already be `in_progress`. Photo rules
-match report submission; the backend computes the photo hash. The response is the
-updated `JobView`. Completion invalidates the plan, so later starts can require
-replanning. With the worker inactive, do not assume this will happen automatically.
-Crew accounts cannot read resident conversation history.
+The backend accepts completion form fields `command_id`, `expected_version` and
+optional `note` (maximum 2,000 characters), with an optional multipart `photo`.
+The job must already be `in_progress`; omitting the photo does not bypass crew
+ownership, version or state checks. If supplied, photo rules match report
+submission and the backend computes its hash. If omitted, no photo record or
+Storage object is created and the staff audit has `photo_id: null`. Both paths
+record `verification: "crew_submitted"` and return the updated `JobView`; neither
+means independent cleanup verification.
+
+The native crew screen offers both a cleanup-photo flow and a separate explicit
+confirmation for completion without a photo. Review makes the selected evidence
+choice clear before submission. Both choices save a durable command; recovery
+must preserve the same command ID, original expected version, note and photo
+presence/bytes. A retry with added, removed or changed photo content conflicts
+instead of altering an accepted completion. Test both choices on real devices
+before claiming the full walkthrough has passed. Residents can see completed
+status with an empty `completion_photo_ids` list; render only actual photo IDs and do not infer image
+submission from the completed status.
+
+Completion invalidates the plan, so later starts can require replanning. With the
+worker inactive, do not assume this will happen automatically. Crew accounts
+cannot read resident conversation history. No crew undo toggle or generic PATCH
+completion is introduced.
 
 ## 8. Messaging and follow-up boundary
 
