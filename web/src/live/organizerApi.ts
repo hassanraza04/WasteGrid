@@ -122,6 +122,7 @@ export interface OrganizerCrew {
 export interface OrganizerRoutingJob {
   id: string;
   status: OrganizerJobDetails["job"]["status"];
+  priority: Priority;
   location: OrganizerLocation;
   category: string;
   required_equipment: Equipment[];

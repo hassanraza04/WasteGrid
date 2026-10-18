@@ -63,7 +63,7 @@ Run: `npm test -- organizerApi.test.ts`
 
 Expected: PASS.
 
-### Task 2: Dispatch workspace selection and preview
+### Task 2: Dispatch workspace selection and preview ✅
 
 **Files:**
 - Create: `web/src/live/OrganizerDispatchWorkspace.tsx`
@@ -102,7 +102,7 @@ Run: `npm test -- OrganizerDispatchWorkspace.test.tsx`
 
 Expected: PASS.
 
-### Task 3: Separate confirmation and conflict behavior
+### Task 3: Separate confirmation and conflict behavior ✅
 
 **Files:**
 - Modify: `web/src/live/OrganizerDispatchWorkspace.tsx`
@@ -140,7 +140,7 @@ Run: `npm test -- OrganizerDispatchWorkspace.test.tsx`
 
 Expected: PASS.
 
-### Task 4: Full verification
+### Task 4: Full verification ✅
 
 **Files:**
 - Modify if required by test failures only.
