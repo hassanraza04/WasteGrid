@@ -16,7 +16,7 @@ import {
   type DispatchJournal,
 } from "./dispatchJournal";
 import { OrganizerRouteMap } from "./OrganizerRouteMap";
-import { crewGpsIssue } from "./crewGps";
+import { crewGpsAge, crewGpsIssue } from "./crewGps";
 import {
   Alert,
   Chip,
@@ -30,21 +30,21 @@ type Props = {
   onSessionExpired: (error: AccessError) => void;
 };
 async function loadRoutingState(api: OrganizerApi) {
-  const [crews, jobs, currentPlan] = await Promise.all([
-    api.crews(),
+  const [crewState, jobs, currentPlan] = await Promise.all([
+    api.crews().then(crews => ({ crews, receivedAt: performance.now() })),
     api.indexedJobs(),
     api.currentPlan(),
   ]);
-  return { crews, jobs, currentPlan };
+  return { crews: crewState.crews, crewsReceivedAt: crewState.receivedAt, jobs, currentPlan };
 }
 type RoutingState = Awaited<ReturnType<typeof loadRoutingState>>;
 const minutes = (value: number) => `${Math.round(value * 10) / 10} min`;
 
 export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
   const [state, setState] = useState<RoutingState | null>(null);
-  const [now, setNow] = useState(Date.now);
+  const [now, setNow] = useState(() => performance.now());
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    const timer = window.setInterval(() => setNow(performance.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
   const [entry, setEntry] = useState<DispatchJournal>(emptyJournal);
@@ -217,11 +217,12 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
   const missingCrews = entry.crewIds.some(
     (id) => !state?.crews.some((crew) => crew.id === id && crew.available),
   );
+  const gpsElapsed = state ? Math.max(0, now - state.crewsReceivedAt) : 0;
   const invalidGpsCrew = state?.crews.find(
-    (crew) => entry.crewIds.includes(crew.id) && crewGpsIssue(crew, now),
+    (crew) => entry.crewIds.includes(crew.id) && crewGpsIssue(crew, gpsElapsed),
   );
   const scopeIssue = invalidGpsCrew
-    ? `${invalidGpsCrew.name}: ${crewGpsIssue(invalidGpsCrew, now)}. Share fresh GPS from this crew’s mobile screen, then refresh routing state.`
+    ? `${invalidGpsCrew.name}: ${crewGpsIssue(invalidGpsCrew, gpsElapsed)}. Share fresh GPS from this crew’s mobile screen, then refresh routing state.`
     : missingCrews
       ? "Selected crews are no longer available. Review your selection."
       : !entry.crewIds.length
@@ -251,9 +252,9 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
     if (disabled || locked.current || scopeIssue) return;
     // Recheck at the click boundary in case a background tab delayed the timer.
     if (state?.crews.some(
-      (crew) => entry.crewIds.includes(crew.id) && crewGpsIssue(crew),
+      (crew) => entry.crewIds.includes(crew.id) && crewGpsIssue(crew, performance.now() - state.crewsReceivedAt),
     )) {
-      setNow(Date.now());
+      setNow(performance.now());
       return;
     }
     locked.current = true;
@@ -546,14 +547,8 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
                       const proposed = preview?.routes.find(
                         (route) => route.crew_id === crew.id,
                       );
-                      const gpsIssue = crewGpsIssue(crew, now);
-                      const age = crew.location_recorded_at
-                        ? Math.round(
-                            (Date.now() -
-                              Date.parse(crew.location_recorded_at)) /
-                              1000,
-                          )
-                        : null;
+                      const gpsIssue = crewGpsIssue(crew, gpsElapsed);
+                      const age = crewGpsAge(crew, gpsElapsed);
                       return (
                         <article className="wg-routing-choice" key={crew.id}>
                           <div className="wg-actions">
@@ -567,7 +562,7 @@ export function OrganizerDispatchWorkspace({ api, onSessionExpired }: Props) {
                               ? "Illustrative crew"
                               : "Real crew"}{" "}
                             ·{" "}
-                            {gpsIssue || `GPS fresh · ${age}s old`}{" "}
+                            {gpsIssue || (age === null ? "GPS timestamp received; server freshness check required" : `GPS fresh · ${age}s old`)}{" "}
                             ·{" "}
                             {proposed
                               ? `${Math.max(0, Math.round((budget - proposed.duration_minutes) * 10) / 10)} min remaining after preview`

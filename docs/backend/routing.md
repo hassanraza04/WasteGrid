@@ -13,7 +13,11 @@ job eligibility failures. Crew cards label missing or stale GPS and cannot selec
 those crews for a new preview. A saved selection also blocks preview when either
 its observation or receipt expires. `GET /crews` includes
 `location_max_age_seconds`, matching the API configuration (120 seconds by
-default). Refresh routing state after a crew shares a new foreground observation.
+default), and `location_checked_at` from the server. The dashboard advances that
+reference with monotonic elapsed time, so an inaccurate organiser device clock
+does not block fresh GPS. Older APIs without that reference leave age validation
+to the backend. Routing metadata stays out of the legacy `PlanningInput` contract.
+Refresh routing state after a crew shares a new foreground observation.
 
 For the hosted demo, use the dedicated account provisioned with
 `scripts/provision_demo_crew.py`. Sign into **My route** in the existing mobile app,

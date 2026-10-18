@@ -149,6 +149,7 @@ export interface OrganizerCrew {
   location_received_at: string | null;
   location_revision: number;
   location_max_age_seconds?: number;
+  location_checked_at?: string;
 }
 
 export interface OrganizerRoutingJob {

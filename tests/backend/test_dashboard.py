@@ -520,3 +520,26 @@ def test_crew_list_reports_configured_gps_freshness_limit(client):
     assert response.status_code == 200
     assert response.json()
     assert all(crew["location_max_age_seconds"] == 45 for crew in response.json())
+    from datetime import datetime
+
+    from api.models import now
+
+    assert all(
+        0
+        <= (now() - datetime.fromisoformat(crew["location_checked_at"])).total_seconds()
+        < 5
+        for crew in response.json()
+    )
+
+
+def test_routing_freshness_metadata_does_not_change_legacy_planner_payload(
+    engine, seeded
+):
+    from api.workflows import build_planning_input
+
+    with Session(engine) as db:
+        payload = build_planning_input(db).model_dump(mode="json")
+    assert payload["crews"]
+    for crew in payload["crews"]:
+        assert "location_max_age_seconds" not in crew
+        assert "location_checked_at" not in crew

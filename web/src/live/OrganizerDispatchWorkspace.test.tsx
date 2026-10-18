@@ -422,7 +422,7 @@ test("a restored crew selection with stale GPS blocks preview and explains recov
 test("uses the server freshness limit and blocks an already selected crew as GPS ages", async () => {
   const { api, user } = setup(routePreview(), [{ ...crew, location_max_age_seconds: 10 }]);
   await selectScope(user); expect(screen.getByRole("button", { name: "Compute route preview" })).toBeEnabled();
-  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 11_000);
+  vi.spyOn(performance, "now").mockReturnValue(performance.now() + 11_000);
   await waitFor(() => expect(screen.getByRole("button", { name: "Compute route preview" })).toBeDisabled(), { timeout: 2000 });
   expect(screen.getByText(/Crew One: GPS stale/)).toBeInTheDocument();
   expect(api.previewRouting).not.toHaveBeenCalled();
@@ -440,9 +440,20 @@ test("refreshing after the crew shares GPS enables preview for its saved selecti
   const { api, user } = setup(routePreview(), [{ ...crew, location_recorded_at: null }]);
   await screen.findByRole("button", { name: "Remove Crew One (crew-1)" });
   expect(screen.getByRole("button", { name: "Compute route preview" })).toBeDisabled();
-  vi.mocked(api.crews).mockResolvedValueOnce([{ ...crew, location_recorded_at: new Date().toISOString(), location_received_at: new Date().toISOString() }]);
+  const fresh = new Date().toISOString();
+  vi.mocked(api.crews).mockResolvedValueOnce([{ ...crew, location_checked_at: fresh, location_recorded_at: fresh, location_received_at: fresh }]);
   await user.click(screen.getByRole("button", { name: "Refresh routing state" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "Compute route preview" })).toBeEnabled());
+  await user.click(screen.getByRole("button", { name: "Compute route preview" }));
+  await waitFor(() => expect(api.previewRouting).toHaveBeenCalledTimes(1));
+});
+
+
+test.each([-3_600_000, 3_600_000])("organiser clock offset %s does not block a fresh server GPS observation", async offset => {
+  const { api, user } = setup();
+  vi.spyOn(Date, "now").mockReturnValue(Date.now() + offset);
+  await selectScope(user);
+  expect(screen.getByRole("button", { name: "Compute route preview" })).toBeEnabled();
   await user.click(screen.getByRole("button", { name: "Compute route preview" }));
   await waitFor(() => expect(api.previewRouting).toHaveBeenCalledTimes(1));
 });

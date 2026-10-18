@@ -4,10 +4,12 @@ import { DEFAULT_CONSTRAINTS } from "../live/dispatchJournal";
 export const ACTOR = "60000000-0000-4000-8000-000000000002";
 export const COMMAND = "50000000-0000-4000-8000-000000000002";
 export const ENVIRONMENT = "https://api.example.invalid";
+const crewLocationTime = new Date().toISOString();
 export const crew: OrganizerCrew = {
   id: "crew-1", name: "Crew One", equipment: ["gloves"], shift_minutes: 480, available: true,
   start_location: { latitude: 24.92, longitude: 67.09, landmark: "Depot" }, illustrative: false,
-  location_recorded_at: new Date().toISOString(), location_received_at: new Date().toISOString(), location_revision: 1,
+  location_checked_at: crewLocationTime,
+  location_recorded_at: crewLocationTime, location_received_at: crewLocationTime, location_revision: 1,
 };
 export const job: OrganizerIndexedJob = {
   id: "job-1", status: "unassigned", location: { latitude: 24.93, longitude: 67.1, landmark: "Gate" },

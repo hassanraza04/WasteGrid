@@ -23,11 +23,6 @@
           "title": "Illustrative",
           "type": "boolean"
         },
-        "location_max_age_seconds": {
-          "default": 120,
-          "title": "Location Max Age Seconds",
-          "type": "integer"
-        },
         "location_received_at": {
           "anyOf": [
             {
