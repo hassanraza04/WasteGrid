@@ -55,7 +55,14 @@ export interface OrganizerEvent {
   command_id?: string | null;
 }
 
+export interface OrganizerLocation {
+  latitude: number;
+  longitude: number;
+  landmark: string | null;
+}
+
 export interface OrganizerReport extends LiveReport {
+  location: OrganizerLocation | null;
   version: number;
   state: string;
   dashboard_status: string;
@@ -65,7 +72,7 @@ export interface OrganizerReport extends LiveReport {
   assessment: OrganizerAssessment | null;
   triage: OrganizerTriage | null;
   resident_answers: { fire: boolean | null; sharp_objects: boolean | null };
-  clarifications: Array<{ note: string; location: { latitude: number; longitude: number; landmark: string | null } | null; created_at: string }>;
+  clarifications: Array<{ note: string; location: OrganizerLocation | null; created_at: string }>;
   latest_update: { id: string; kind: string; created_at: string; message: string; status: string | null; report_state: string | null; job_status: string | null } | null;
   created_at: string;
   updated_at: string;
@@ -74,6 +81,28 @@ export interface OrganizerReport extends LiveReport {
 
 export interface OrganizerReportDetails {
   report: OrganizerReport;
+  events: OrganizerEvent[];
+}
+
+export interface OrganizerJobDetails {
+  job: {
+    id: string;
+    status: "unassigned" | "assigned" | "in_progress" | "blocked" | "completed" | "recheck_requested";
+    location: OrganizerLocation;
+    category: string;
+    required_equipment: Equipment[];
+    estimated_service_minutes: number;
+    assigned_crew_id: string | null;
+    locked: boolean;
+    held: boolean;
+    route_position: number | null;
+    travel_minutes: number;
+    decision_summary: string;
+    unassigned_reason: string | null;
+    version: number;
+    illustrative: boolean;
+  };
+  photo_ids: string[];
   events: OrganizerEvent[];
 }
 
@@ -112,20 +141,49 @@ export class AccessError extends Error {}
 export class DashboardConfigurationError extends Error {}
 
 export class OrganizerApi {
+  private authenticationVersion = 0;
+  private signingIn: Promise<void> | null = null;
+  private signingOut: Promise<void> | null = null;
+
+  get sessionVersion(): number { return this.authenticationVersion; }
+
   constructor(private readonly auth: StaffAuth, private readonly baseUrl: string) {}
 
-  async signIn(email: string, password: string): Promise<void> {
-    await this.auth.signIn(email, password);
+  signIn(email: string, password: string): Promise<void> {
+    if (this.signingIn || this.signingOut) return Promise.reject(new Error("Authentication is already in progress. Please wait and try again."));
+    const version = ++this.authenticationVersion;
+    this.signingIn = this.authenticate(email, password, version).finally(() => { this.signingIn = null; });
+    return this.signingIn;
+  }
+
+  private async authenticate(email: string, password: string, version: number): Promise<void> {
     try {
+      await this.auth.signIn(email, password);
+      this.requireSession(version);
       const identity = await this.request<{ role: string }>("/auth/me");
       if (identity.role !== "organizer") throw new AccessError("This account does not have organiser access.");
     } catch (error) {
-      await this.auth.signOut();
+      if (version === this.authenticationVersion) {
+        this.authenticationVersion++;
+        await this.auth.signOut();
+      }
       throw error;
     }
   }
 
-  signOut(): Promise<void> { return this.auth.signOut(); }
+  signOut(): Promise<void> {
+    this.authenticationVersion++;
+    if (this.signingOut) return this.signingOut;
+    const pendingSignIn = this.signingIn;
+    this.signingOut = this.clearAuthentication(pendingSignIn).finally(() => { this.signingOut = null; });
+    return this.signingOut;
+  }
+
+  private async clearAuthentication(pendingSignIn: Promise<void> | null): Promise<void> {
+    // An SDK sign-in can write its session after logout was requested.
+    if (pendingSignIn) await pendingSignIn.catch(() => undefined);
+    await this.auth.signOut();
+  }
 
   reports(offset: number): Promise<LiveReport[]> {
     return this.request(`/organizer/reports?limit=50&offset=${offset}`, {}, "reports");
@@ -133,6 +191,10 @@ export class OrganizerApi {
 
   report(id: string): Promise<OrganizerReportDetails> {
     return this.request(`/organizer/reports/${encodeURIComponent(id)}`, {}, "details");
+  }
+
+  job(id: string): Promise<OrganizerJobDetails> {
+    return this.request(`/jobs/${encodeURIComponent(id)}`, {}, "job");
   }
 
   applyDecision(id: string, command: DecisionCommand): Promise<OrganizerReport> {
@@ -156,8 +218,11 @@ export class OrganizerApi {
     return result.url;
   }
 
-  private async request<T>(path: string, init: RequestInit = {}, action: "reports" | "details" | "mutation" = "details"): Promise<T> {
+  private async request<T>(path: string, init: RequestInit = {}, action: "reports" | "details" | "job" | "mutation" = "details"): Promise<T> {
+    const version = this.sessionVersion;
+    if (this.signingOut) throw new AccessError("Please sign in again.");
     const token = await this.auth.token();
+    this.requireSession(version);
     if (!token) throw new AccessError("Please sign in again.");
     let response: Response;
     try {
@@ -170,16 +235,25 @@ export class OrganizerApi {
     } catch {
       throw new Error("Unable to reach WasteGrid. The service may be waking up; please retry.");
     }
+    this.requireSession(version);
     if (response.status === 401 || response.status === 403) throw new AccessError("Your session expired or access was denied. Please sign in again.");
     if (!response.ok) {
+      if (action === "job" && response.status === 404) throw new Error("This cleanup job is no longer available. Reload the report.");
       if (action === "details" && response.status === 404) throw new Error("This report is no longer available. Refresh the reports list.");
       if (action === "mutation" && response.status === 409) throw new Error("This report changed or is not ready for that decision. Reload it and review the latest details.");
       if (action === "mutation" && response.status === 422) throw new Error("Check the decision fields and try again.");
       if (action === "mutation") throw new Error("Unable to save the organiser decision. Please retry.");
       if (action === "reports") throw new Error("Unable to load reports. Please retry.");
+      if (action === "job") throw new Error("Unable to load cleanup job details. Please retry.");
       throw new Error("Unable to load report details. Please retry.");
     }
-    return response.json() as Promise<T>;
+    const result = await response.json() as T;
+    this.requireSession(version);
+    return result;
+  }
+
+  private requireSession(version: number): void {
+    if (version !== this.authenticationVersion) throw new Error("Your organiser session changed. Please sign in again.");
   }
 }
 

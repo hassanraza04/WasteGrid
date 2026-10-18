@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Route, Routes } from "react-router-dom";
 
 import { AccessError, type OrganizerApi } from "./organizerApi";
@@ -11,28 +11,52 @@ export function OrganizerDashboard({ api }: { api: OrganizerApi }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const generation = useRef(0);
+  const authPending = useRef(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; generation.current++; };
+  }, []);
+
+  function current(request: number) {
+    return mounted.current && request === generation.current;
+  }
 
   async function login(event: FormEvent) {
     event.preventDefault();
+    if (authPending.current) return;
+    authPending.current = true;
+    const request = ++generation.current;
     setBusy(true); setError("");
     try {
       await api.signIn(email.trim(), password);
-      setPassword(""); setSignedIn(true);
+      if (current(request)) { setPassword(""); setSignedIn(true); }
     } catch (caught) {
-      setError((caught as Error).message);
+      if (current(request)) setError((caught as Error).message);
     } finally {
-      setBusy(false);
+      if (current(request)) { authPending.current = false; setBusy(false); }
     }
   }
 
-  async function logout() {
-    setSignedIn(false); setError(""); setBusy(false);
-    await api.signOut();
+  async function logout(message = "") {
+    const request = ++generation.current;
+    authPending.current = true;
+    setSignedIn(false); setError(message); setBusy(true); setPassword("");
+    try {
+      await api.signOut();
+    } catch {
+      if (current(request)) setError("Unable to finish signing out. Please try signing in again.");
+    } finally {
+      if (current(request)) { authPending.current = false; setBusy(false); }
+    }
   }
 
+  // A callback retained by an older report cannot end a newer login session.
+  const session = generation.current;
   function sessionExpired(caught: AccessError) {
-    setSignedIn(false); setError(caught.message); setBusy(false);
-    void api.signOut();
+    if (current(session)) void logout(caught.message);
   }
 
   if (!signedIn) return <main>
